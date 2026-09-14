@@ -14,16 +14,14 @@ import android.system.Os
 import android.system.OsConstants
 import android.system.StructPollfd
 import android.util.Log
-import java.io.BufferedInputStream
-import java.io.BufferedOutputStream
-import java.io.DataInputStream
 import java.io.FileDescriptor
 import java.io.IOException
 import java.io.OutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
-import java.net.SocketTimeoutException
+import java.nio.ByteBuffer
 import java.nio.channels.SocketChannel
+import kotlinx.coroutines.delay
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -73,6 +71,27 @@ class Phase0VpnService : VpnService() {
         val buf = ByteArray(FrameCodec.HEADER_LENGTH + capacity)
         var len = 0
         val frameLength: Int get() = FrameCodec.HEADER_LENGTH + len
+    }
+
+    /** readFully over a blocking SocketChannel; EOF -> IOException like DataInputStream. */
+    private class ChannelInput(private val ch: SocketChannel) {
+        fun readFully(buf: ByteArray) = readFully(buf, 0, buf.size)
+        fun readFully(buf: ByteArray, off: Int, len: Int) {
+            val bb = ByteBuffer.wrap(buf, off, len)
+            while (bb.hasRemaining()) {
+                val n = ch.read(bb)
+                if (n < 0) throw IOException("peer closed connection")
+            }
+        }
+    }
+
+    /** OutputStream facade over a blocking SocketChannel; every write is a full frame. */
+    private class ChannelOutput(private val ch: SocketChannel) : OutputStream() {
+        override fun write(b: Int) = write(byteArrayOf(b.toByte()), 0, 1)
+        override fun write(b: ByteArray, off: Int, len: Int) {
+            val bb = ByteBuffer.wrap(b, off, len)
+            while (bb.hasRemaining()) ch.write(bb)
+        }
     }
 
     private class ProtocolError(message: String) : Exception(message)
@@ -165,19 +184,30 @@ class Phase0VpnService : VpnService() {
             sock.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), devicePort), CONNECT_TIMEOUT_MS)
             running = true
 
-            val input = DataInputStream(BufferedInputStream(sock.getInputStream(), 64 * 1024))
-            val output = BufferedOutputStream(sock.getOutputStream(), 64 * 1024)
+            // Direct channel I/O, NOT ch.socket().getInputStream()/getOutputStream():
+            // the SocketAdaptor streams and Channels.writeFully both synchronize on
+            // sc.blockingLock() for the whole blocking call, so a blocked reader starves
+            // the writer (observed deadlock on Android 14). SocketChannelImpl itself uses
+            // independent read/write locks.
+            val input = ChannelInput(ch)
+            val output = ChannelOutput(ch)
             txOutput = output
 
-            // Blocking reads: bound the handshake with a socket read timeout, not a
-            // coroutine timeout (there is no suspension point to cancel at).
-            sock.soTimeout = HANDSHAKE_TIMEOUT_MS
+            // Blocking reads: bound the handshake with a watchdog that closes the channel
+            // (there is no suspension point to cancel at, and no soTimeout on a channel).
+            var handshakeTimedOut = false
+            val watchdog = scope.launch {
+                delay(HANDSHAKE_TIMEOUT_MS.toLong())
+                handshakeTimedOut = true
+                runCatching { ch.close() }
+            }
             val (mtu, config) = try {
                 handshake(input, output, session, devicePort)
-            } catch (e: SocketTimeoutException) {
-                throw ProtocolError("handshake timed out")
+            } catch (e: IOException) {
+                if (handshakeTimedOut) throw ProtocolError("handshake timed out") else throw e
+            } finally {
+                watchdog.cancel()
             }
-            sock.soTimeout = 0
 
             val pfd = try {
                 establishVpn(config)
@@ -228,7 +258,7 @@ class Phase0VpnService : VpnService() {
     }
 
     /** Returns (negotiated packet mtu, vpn config). Throws on any protocol violation. */
-    private fun handshake(input: DataInputStream, output: OutputStream, session: String, devicePort: Int): Pair<Int, VpnConfig> {
+    private fun handshake(input: ChannelInput, output: OutputStream, session: String, devicePort: Int): Pair<Int, VpnConfig> {
         sendControl(output, FrameCodec.Type.HELLO, JSONObject().apply {
             put("protocol", FrameCodec.PROTOCOL_VERSION)
             put("session", session)
@@ -260,7 +290,7 @@ class Phase0VpnService : VpnService() {
      * Reads frames until one of `expected` arrives. PING is answered inline; STOP/ERROR close;
      * IP_PACKET before Active closes; anything else is out-of-state and closes.
      */
-    private fun readControl(input: DataInputStream, output: OutputStream, mtu: Int, expected: Int): JSONObject {
+    private fun readControl(input: ChannelInput, output: OutputStream, mtu: Int, expected: Int): JSONObject {
         val header = ByteArray(FrameCodec.HEADER_LENGTH)
         while (true) {
             input.readFully(header)
@@ -361,7 +391,7 @@ class Phase0VpnService : VpnService() {
      * Runs the four pump coroutines. Returns when the host sends STOP, when the socket closes,
      * or when any pump fails (the failure is rethrown after the others are stopped).
      */
-    private suspend fun pumpUntilClosed(input: DataInputStream, output: OutputStream, tun: FileDescriptor, mtu: Int) {
+    private suspend fun pumpUntilClosed(input: ChannelInput, output: OutputStream, tun: FileDescriptor, mtu: Int) {
         // VPN -> socket direction (tx). Extra byte lets the VPN reader detect an oversize packet.
         val txFree = Channel<Slot>(POOL_SIZE)
         val txFilled = Channel<Slot>(QUEUE_DEPTH)
@@ -463,7 +493,7 @@ class Phase0VpnService : VpnService() {
 
     /** socket -> validate -> rxFilled; PING -> PONG via txFilled; STOP/ERROR end the loop. */
     private suspend fun socketReader(
-        input: DataInputStream,
+        input: ChannelInput,
         mtu: Int,
         free: Channel<Slot>,
         filled: Channel<Slot>,
