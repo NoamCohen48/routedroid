@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Routedroid Phase 0</string>
+    <string name="phase0_note">Phase 0 throwaway probe. This app exists only to prove the adb-reverse packet tunnel (implementation-plan §3.1). No authentication, no bootstrap provider, no rate limiting. Do not use on an unmanaged LAN.</string>
+    <string name="stop">Stop</string>
+    <string name="status_idle">idle</string>
+    <string name="notification_channel_name">Phase 0 tunnel</string>
+    <string name="notification_title">Routedroid Phase 0 tunnel</string>
+    <string name="bootstrap_missing_extras">Missing extras. Start with:\nam start -n dev.routedroid.phase0/.BootstrapActivity --es session &lt;id&gt; --ei device_port &lt;port&gt;</string>
+    <string name="bootstrap_vpn_denied">VPN consent denied; nothing started.</string>
+</resources>

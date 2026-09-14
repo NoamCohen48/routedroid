@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.Phase0"
+        android:usesCleartextTraffic="false">
+
+        <!-- Launcher UI: status + Stop. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            Started explicitly by the host via `am start -n dev.routedroid.phase0/.BootstrapActivity`
+            with string extra `session` and int extra `device_port` (see README.md).
+            Exported so the shell can start it; deliberately no intent-filter, so it is not
+            browsable and cannot be reached by implicit intents.
+        -->
+        <activity
+            android:name=".BootstrapActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.Phase0.Bootstrap" />
+
+        <!--
+            Foreground VpnService. android:permission=BIND_VPN_SERVICE ensures only the system
+            can bind it. Not exported for third parties beyond the system VPN binding, which is
+            what the intent-filter is for.
+        -->
+        <service
+            android:name=".Phase0VpnService"
+            android:exported="true"
+            android:foregroundServiceType="specialUse"
+            android:permission="android.permission.BIND_VPN_SERVICE">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Phase 0 feasibility VPN packet tunnel over adb reverse" />
+        </service>
+    </application>
+</manifest>
