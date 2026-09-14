@@ -51,6 +51,7 @@ fi
 
 TUNNEL_PID=""
 cleanup() {
+    trap - EXIT INT TERM   # run once: INT would otherwise be followed by EXIT
     set +e
     echo; echo "--- cleanup"
     [[ -n $TUNNEL_PID ]] && kill -INT "$TUNNEL_PID" 2>/dev/null && for _ in $(seq 1 50); do kill -0 "$TUNNEL_PID" 2>/dev/null || break; sleep 0.1; done
@@ -102,7 +103,7 @@ table inet routedroid_p0 {
     chain output {
         type filter hook output priority -10; policy accept;
         oifname "$TUN" ip daddr $PHONE_IP counter name "host_to_phone" accept
-        oifname "$TUN" counter name "output_drop" drop
+        oifname "$TUN" meta nfproto ipv4 counter name "output_drop" drop
     }
 }
 EOF
