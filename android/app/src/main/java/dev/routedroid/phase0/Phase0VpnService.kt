@@ -181,7 +181,9 @@ class Phase0VpnService : VpnService() {
             val sock = ch.socket()
             if (!protect(sock)) throw VpnFailure("protect_failed", "VpnService.protect() returned false")
             sock.tcpNoDelay = true
-            sock.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), devicePort), CONNECT_TIMEOUT_MS)
+            // Explicit 127.0.0.1: getLoopbackAddress() is ::1 on some Android versions (seen on
+            // Android 10) and adbd's reverse listener is IPv4-only.
+            sock.connect(InetSocketAddress(InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)), devicePort), CONNECT_TIMEOUT_MS)
             running = true
 
             // Direct channel I/O, NOT ch.socket().getInputStream()/getOutputStream():
