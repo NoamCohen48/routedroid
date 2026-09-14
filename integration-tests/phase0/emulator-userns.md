@@ -94,3 +94,47 @@ connection and exits on a mid-frame close.
 returned `127.0.0.1` on the Android 14 emulator); adbd's `reverse` listener is
 IPv4-only, so the app got `Connection refused`. The app now connects to an
 explicit `127.0.0.1`.
+
+# Real LAN: `lan-proxyarp.sh` (needs root in the host namespace)
+
+`sudo integration-tests/phase0/lan-proxyarp.sh SERIAL eno1 PHONE_IP` — manual
+address from the PC's own subnet, `/32` route via `phone0`, proxy ARP on the
+NIC, deny-first nftables table `inet routedroid_p0`, baseline restored on
+Ctrl-C.
+
+## Results, 2026-09-14, Samsung SM-J810G (Android 10) on USB; PC `eno1`
+## 10.100.102.18/24 behind an ISP home router; laptop on the same router's Wi-Fi
+
+Phone address `10.100.102.222/32` (manual, unused, outside the router's
+observed DHCP allocations).
+
+| Check | Result |
+|---|---|
+| PC <-> phone at the LAN address | PASS |
+| **Gate 2: proxy ARP through the Wi-Fi AP** | PASS: laptop's `ip neigh` shows `10.100.102.222 lladdr <PC eno1 MAC>` |
+| Laptop -> phone ICMP | PASS, 10–16 ms |
+| Laptop -> phone TCP, 200 KB into `nc -l` on the phone | PASS, md5 equal |
+| Phone -> laptop ICMP, TCP (SSH banner) | PASS |
+| Phone -> router HTTP, phone -> Internet ICMP, DNS via router | PASS |
+| 1300/1372-byte payloads; DF at 1428 | PASS / correctly rejected at MTU 1400 |
+| Spoof/input/postrouting drop counters | 0 (nothing to drop; spoofing itself needs a raw socket on the phone — covered by the netns lab) |
+| Baseline restored after Ctrl-C | see script output |
+
+## Host firewall interactions found (exactly the §11 "existing host firewall" case)
+
+Both are things `routedroid doctor` must detect and report:
+
+1. **Docker**: `iptables -P FORWARD DROP`. Our accept at priority -10 is
+   irrelevant because Docker's `ip filter FORWARD` is a separate base chain
+   in the same hook. Counters proved it: `phone_to_lan 158`, `lan_to_phone 3`
+   accepted by our table, zero traffic delivered. Remedy:
+   `iptables -I DOCKER-USER -i phone0 -j ACCEPT; iptables -I DOCKER-USER -o phone0 -j ACCEPT`.
+2. **firewalld**: rejected LAN -> phone with ICMP admin-prohibited ("Packet
+   filtered" from the PC) while phone -> LAN passed. firewalld classifies by
+   ingress interface: `phone0` is in no zone, so `iif eno1 -> oif phone0` is
+   not intra-zone forwarding. Remedy (runtime):
+   `firewall-cmd --zone=public --add-interface=phone0`.
+
+`output_drop` counted 15 packets: kernel IPv6 ND/RA toward `phone0`. Expected
+for an IPv4-only v1; the output chain should match `ip` only to keep the counter
+meaningful.
