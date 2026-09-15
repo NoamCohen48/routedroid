@@ -23,6 +23,52 @@ ISP home router; second LAN host: laptop on the same router's Wi-Fi.
 | — | Protected ADB-stdin bootstrap | — | not yet run | **OPEN** | §3.4 |
 | §12 | Per-interface forwarding sufficient without global `ip_forward` | netns lab, kernel 6.18 | forwarding worked with `ip_forward=0` and only `conf.{phone0,lan}.forwarding=1` | **PASS** | Keep global forwarding as operator prerequisite only where needed |
 
+## Gate 3: what was observed
+
+Setup (`integration-tests/phase0/phone-multialias.sh`): host side of `phone0`
+carries three subnets standing in for an office LAN, a lab LAN and the
+Internet (`10.77.0.1`, `10.78.0.1`, `10.99.0.1`); the phone receives two
+aliases, `10.77.0.2` (primary, added first) and `10.78.0.2`, plus routes
+`10.77.0.0/24`, `10.78.0.0/24`, `0.0.0.0/0`.
+
+Observed on the phone (Samsung, Android 10; identical shape on Android 14):
+
+```text
+inet 10.77.0.2/24 scope global tun0
+inet 10.78.0.2/24 scope global tun0:1
+14000: from all iif lo oif tun0 uidrange 0-99999 lookup 1031
+table 1031: default        dev tun0 proto static scope link
+table 1031: 10.77.0.0/24   dev tun0 proto static scope link
+table 1031: 10.78.0.0/24   dev tun0 proto static scope link
+```
+
+No route carries a `src`. Captured on `phone0` while the phone pinged and
+connected (unbound sockets, `ping` and toybox `nc`):
+
+```text
+10.77.0.2 -> 10.77.0.1   (office: correct)
+10.77.0.2 -> 10.78.0.1   (lab: WRONG, expected 10.78.0.2)
+10.77.0.2 -> 10.99.0.1   (default: correct, primary)
+TCP peers seen by host listeners: 10.77.0.2, 10.77.0.2, 10.77.0.2
+```
+
+Same result with `/32` aliases. Inbound direction, both aliases:
+
+```text
+host -> 10.77.0.2 ICMP           PASS
+host -> 10.78.0.2 ICMP           PASS
+TCP -> 10.77.0.2 (0.0.0.0 listener)   PASS
+TCP -> 10.78.0.2 (0.0.0.0 listener)   PASS
+TCP -> 10.78.0.2 (listener bound to 10.78.0.2)   PASS
+```
+
+The problem, stated plainly: a phone with a foot in two LANs can be *called*
+on either address, but every connection it *opens* leaves with the office
+address. On the lab LAN that packet arrives with a source from a foreign
+subnet; the lab host replies via its default gateway, which has no route to
+the office alias, and the reply is lost. Only a router route (Model A) or NAT
+on the PC could repair it, and the operator controls neither router.
+
 ## Gate 3 analysis and decision
 
 Android's `VpnService.Builder.addRoute()` installs routes as
@@ -46,11 +92,11 @@ the primary alias, which that LAN cannot return without a router route.
 
 Decision (per the architecture's rule "restrict, never silently NAT"):
 
-1. Version 1 multi-interface mode claims **inbound reachability on every
-   selected LAN and outbound identity only through the primary alias**.
-   Phone-initiated traffic to a secondary LAN is dropped by the host's
-   alias-to-interface forward rule and reported in status/diagnostics as
-   "secondary LAN reachable inbound only".
+1. **Version 1 supports exactly one selected interface and one alias per
+   phone** (operator decision, 2026-09-15: routers are not under the
+   operator's control, so neither Model A nor an inbound-only secondary mode
+   is worth shipping now). Multi-interface support is removed from the
+   architecture and plan, not degraded.
 2. The `/32` representation is adopted (simplest; behaviour is identical and
    it never implies on-link semantics). The actual LAN prefix is still sent
    for route construction.

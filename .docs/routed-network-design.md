@@ -429,6 +429,15 @@ This permits an office machine to use `192.168.10.50` and a lab machine to use `
 
 If the phone only needs to communicate with every subnet, Model A is simpler. Use Model B only when the phone specifically needs a local-looking address in each subnet.
 
+**Phase 0 result (decision record 0001):** Model B was tested on Android 10
+(Samsung) and Android 14 (AOSP) with two aliases, both as `/32` and with the
+real LAN prefix. Android installs every VPN route as `dev tun0` with no
+preferred source, so the kernel selects the first VPN address for all
+phone-initiated traffic: the lab LAN received packets from the office alias
+and could not reply. Inbound to both aliases worked. Model B therefore cannot
+provide outbound identity on more than one LAN without a router route or
+NAT, and Routedroid version 1 supports one selected interface only.
+
 ### Overlapping Subnets
 
 Ordinary routing becomes ambiguous if two PC interfaces lead to overlapping address ranges, such as two unrelated networks both using `192.168.1.0/24`. Linux cannot select the intended interface from the destination address alone.

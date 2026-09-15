@@ -8,10 +8,12 @@ The primary deployment assumes:
 
 - the operator controls the Linux PC but not the attached LAN routers;
 - the phone may use Android `VpnService` and may visibly report an active VPN;
-- each selected LAN may have DHCP but cannot be given a static route to a separate phone subnet; and
+- the selected LAN may have DHCP but cannot be given a static route to a separate phone subnet; and
 - the desired result is normal bidirectional IP connectivity, not transparent Ethernet bridging.
 
-The primary mode therefore gives the phone one DHCP-assigned, local-looking IPv4 address from every selected host interface and uses proxy ARP to make those addresses reachable.
+The primary mode therefore gives the phone one DHCP-assigned, local-looking IPv4 address from **one operator-selected host interface** and uses proxy ARP to make that address reachable.
+
+Version 1 supports exactly one selected interface per phone. Phase 0 showed (decision record 0001, gate 3) that Android installs VPN routes without a preferred source, so a phone with several aliases always initiates traffic from the first one; multi-LAN outbound identity is therefore impossible without router routes or NAT, and the operator does not control routers. Multi-interface support is removed from version 1 rather than shipped half-working.
 
 ## 2. Scope
 
@@ -22,18 +24,18 @@ The primary mode therefore gives the phone one DHCP-assigned, local-looking IPv4
 - Android 8.0 or newer, subject to validation in the compatibility matrix.
 - IPv4 packet transport.
 - TCP, UDP, ICMP, and other IPv4 payload protocols.
-- Multiple non-overlapping host LANs.
-- Automatic DHCP lease acquisition for phone aliases.
+- One operator-selected host LAN per phone.
+- Automatic DHCP lease acquisition for the phone alias.
 - Manual address fallback.
 - Proxy ARP and host routing.
-- Explicit selection of permitted host interfaces.
-- One selected primary interface for default Internet traffic and DNS.
+- Explicit selection of the single permitted host interface, which also carries default Internet traffic and DNS.
 - Clean restoration after normal shutdown and deny-safe cleanup by a supervising privileged helper if the controller crashes.
 
 ### Later Versions
 
 - IPv6 addressing and NDP proxying or routed-prefix support.
-- Router-configured dedicated phone subnets.
+- Router-configured dedicated phone subnets (Model A), which is also the only sound path to multi-LAN outbound identity.
+- Multiple selected interfaces with inbound-only reachability on secondary LANs, if there is demand.
 - Public-address and VPS/WireGuard integrations.
 - Non-Linux hosts.
 - Optional discovery relays such as mDNS and SSDP.
@@ -49,7 +51,7 @@ The primary mode therefore gives the phone one DHCP-assigned, local-looking IPv4
 
 ## 3. Network Model
 
-Example with two host interfaces:
+Example with one selected host interface (the second LAN below is shown only to make clear that it is *not* selected and is unreachable from the phone):
 
 ```text
 Office LAN                        Lab LAN
@@ -70,19 +72,18 @@ eth0: 192.168.10.20              eth1: 172.16.20.20
                        |
               Android applications
 
-Phone aliases:
-  192.168.10.74/<selected-prefix>, obtained through DHCP on eth0
-  172.16.20.113/<selected-prefix>, obtained through DHCP on eth1
+Phone alias:
+  192.168.10.74/32, obtained through DHCP on eth0 (selected)
+  eth1 / 172.16.20.0/24 is not selected: no alias, no forwarding
 ```
 
-Linux owns neither phone alias as a local host address. It installs host routes:
+Linux does not own the phone alias as a local host address. It installs one host route:
 
 ```text
 192.168.10.74/32  dev phone0  src 192.168.10.20
-172.16.20.113/32  dev phone0  src 172.16.20.20
 ```
 
-Proxy ARP on `eth0` and `eth1` makes the PC answer neighbor requests for the matching phone alias. Packets keep the phone address while Linux forwards them between the physical interface and `phone0`.
+Proxy ARP on `eth0` makes the PC answer neighbor requests for the phone alias. Packets keep the phone address while Linux forwards them between the physical interface and `phone0`.
 
 ## 4. Components
 
@@ -126,13 +127,13 @@ Initial commands:
 ```text
 routedroid devices
 routedroid interfaces
-routedroid start --device SERIAL --interfaces eth0,eth1 --primary eth0
+routedroid start --device SERIAL --interface eth0
 routedroid status --device SERIAL
 routedroid stop --device SERIAL
 routedroid doctor
 ```
 
-The default is no selected physical interfaces. This avoids unintentionally forwarding a phone into management, container, VPN, or sensitive networks.
+The default is no selected physical interface. This avoids unintentionally forwarding a phone into management, container, VPN, or sensitive networks.
 
 ### 4.3 Privileged Network Operations
 
@@ -170,10 +171,10 @@ Any state -> Failed -> Stopping -> Disconnected
 
 Startup sequence:
 
-1. Validate the ADB device, host privileges, selected interfaces, and non-overlapping subnets.
+1. Validate the ADB device, host privileges, and the selected interface.
 2. Allocate a unique `phoneN` TUN interface and bring it up with a conservative MTU.
-3. Acquire or restore one valid DHCP lease per selected interface.
-4. Probe each offered address for an existing ARP owner and decline conflicts.
+3. Acquire or restore one valid DHCP lease on the selected interface.
+4. Probe the offered address for an existing ARP owner and decline a conflict.
 5. Install session-scoped prerouting, forwarding, input, and postrouting rules in a not-ready deny state.
 6. Install host `/32` routes toward `phoneN` without adding aliases locally.
 7. Enable per-interface proxy ARP and the minimum required forwarding sysctls.
@@ -183,7 +184,7 @@ Startup sequence:
 11. Mutually authenticate and negotiate the transport protocol before VPN consent or service start.
 12. Send the complete VPN configuration to Android.
 13. Android obtains VPN consent if necessary, establishes the VPN, and reports readiness.
-14. Send ARP announcements for each alias and atomically replace the not-ready rules with active forwarding rules.
+14. Send ARP announcements for the alias and atomically replace the not-ready rules with active forwarding rules.
 
 Shutdown reverses session-owned operations. Lease release is configurable because retaining a still-valid lease across a short reconnect is safer and faster than repeatedly acquiring new addresses.
 
@@ -191,7 +192,7 @@ Shutdown reverses session-owned operations. Lease release is configurable becaus
 
 ### 6.1 Behavior
 
-Routedroid behaves as an additional DHCP client on each selected physical interface. It does not start a DHCP server and does not modify the PC's existing DHCP lease.
+Routedroid behaves as an additional DHCP client on the selected physical interface. It does not start a DHCP server and does not modify the PC's existing DHCP lease.
 
 Each identity uses:
 
@@ -262,37 +263,20 @@ Normal DHCP renewal should retain the same address and avoid this operation. The
 
 ## 7. Android VPN Configuration
 
-The host sends a complete, validated configuration. For each selected LAN, Android receives:
+The host sends a complete, validated configuration:
 
-- the address representation selected by the Phase 0 gate, plus the actual LAN prefix separately for route construction;
-- a route for that LAN prefix;
-- whether it is the primary/default egress; and
-- DNS settings selected by policy.
-
-Two address-prefix representations must be compared during Phase 0 because Android behavior is central to the design:
-
-- each alias as `/32` plus an explicit route for its LAN prefix; and
-- each alias with its actual LAN prefix plus the same explicit route.
-
-Example candidate configuration, where address prefixes remain undecided until the gate passes:
+- the alias as `/32` (adopted by decision record 0001: Android's source selection ignores the prefix, and `/32` never implies on-link semantics);
+- the selected LAN prefix as a route;
+- a default route; and
+- DNS servers selected by policy.
 
 ```text
-Addresses:
-  192.168.10.74/<selected-prefix>
-  172.16.20.113/<selected-prefix>
-
-Routes:
-  192.168.10.0/24
-  172.16.20.0/24
-  0.0.0.0/0
-
-Primary egress:
-  eth0 / 192.168.10.74
+Address:  192.168.10.74/32
+Routes:   192.168.10.0/24, 0.0.0.0/0
+DNS:      192.168.10.1
 ```
 
-The primary address is added first and is expected to be selected for default-route traffic. Destination-specific LAN routes should cause Android's IPv4 source selection to use the address in the matching prefix. Phase 0 records Android `LinkProperties`, observable route state, packet captures, and selected sources for both prefix representations. One representation is adopted consistently only after this mandatory hardware test across supported Android versions.
-
-If source selection is not reliable, the release must not claim transparent multi-subnet outbound identity. Acceptable responses are to restrict that Android version to one active LAN alias, require an application to bind a specific source address, or defer multi-alias support. Silent source NAT is not an acceptable fallback because it changes the promised architecture.
+A single address makes source selection trivial. Phase 0 recorded that `VpnService.Builder.addRoute()` installs routes without a preferred source, so a second alias would never be used for phone-initiated traffic; version 1 therefore never configures more than one IPv4 address.
 
 The VPN transport socket is protected with `VpnService.protect()` before the default route becomes active. The service does not call `allowBypass()`. Per-application VPN exclusions are outside version 1.
 
@@ -390,18 +374,13 @@ The preferred source ensures that connections initiated by the PC toward a phone
 
 Packets arriving from `phoneN` are accepted only when their source address is one of that session's active aliases. This prevents the Android side from spoofing arbitrary LAN addresses.
 
-Forwarding rules bind each alias to its selected physical interface:
+Forwarding rules bind the alias to the selected physical interface:
 
 ```text
-192.168.10.74 may enter or leave through eth0
-172.16.20.113 may enter or leave through eth1
+192.168.10.74 may enter or leave through eth0 only
 ```
 
-Multi-interface mode always installs deterministic source-policy routing. Each alias has an owned rule and table with fixed Routedroid priority ranges. Its table contains the selected interface's connected route, validated required routes, and either the primary default route or an unreachable default. The primary alias table uses the primary interface's gateway; secondary alias tables default to unreachable unless the operator explicitly enables Internet egress from them. No rule falls through to an unrelated host default after an owning interface fails.
-
-Routedroid validates policy with `ip route get DEST from ALIAS` equivalents before enabling traffic and whenever netlink reports route changes. Rule and table identifiers are allocated from a documented reserved range, journaled, and removed by exact identity during cleanup.
-
-Overlapping selected subnets are rejected in version 1 because destination-only routing and Android source selection become ambiguous. VRF or network-namespace support is deferred.
+Phone traffic toward the Internet follows the host's main routing table through the selected interface. If the host's default route does not leave through the selected interface, Routedroid installs a source-policy rule for the alias with a table containing the selected interface's connected route and its DHCP-learned gateway, so phone traffic never egresses through an unselected interface. Rule and table identifiers come from a documented reserved range, are journaled, and are removed by exact identity during cleanup. Routedroid validates the result with `ip route get DEST from ALIAS` before enabling traffic and whenever netlink reports route changes.
 
 ## 10. Proxy ARP
 
@@ -425,8 +404,7 @@ Forward rules are directional:
 
 - phone to network: `iif phoneN`, source equals the alias owned on the selected `oif`, and destination belongs to that interface's permitted destination set;
 - network to phone: `iif` equals the alias's owning interface, destination equals that alias, `oif phoneN`, and source belongs to that interface's permitted source set;
-- the primary interface may use `0.0.0.0/0` permitted sets so Internet requests and replies can traverse the upstream router;
-- secondary interfaces default to only their connected prefixes unless explicit Internet egress is enabled; and
+- the selected interface uses `0.0.0.0/0` permitted sets so Internet requests and replies can traverse the upstream router; and
 - terminal `iif phoneN drop` and `oif phoneN drop` rules discard every unmatched path.
 
 Not-ready rules drop all traffic entering or leaving `phoneN`. Established and related accepts repeat the same directional interfaces, alias, and permitted-prefix constraints and cannot precede spoof checks. No `reject` action is used in prerouting or postrouting.
@@ -442,7 +420,7 @@ Required behavior:
 - permit traffic to an active alias only from its selected interface;
 - drop packets with source addresses not assigned to the session;
 - prevent phone-to-phone forwarding by default;
-- prevent forwarding into unselected host interfaces; and
+- prevent forwarding into unselected host interfaces;
 - prevent valid-alias traffic from reaching host-local addresses on unselected interfaces;
 - remove session rules atomically during teardown.
 - validate spoofing attempts aimed at both forwarded destinations and host-local services.
@@ -472,7 +450,7 @@ The host state manager stores baseline values and active references. It never wr
 Each phone receives:
 
 - a unique TUN interface such as `phone0` or `phone1`;
-- a unique DHCP client identity per physical interface;
+- a unique DHCP client identity on the selected interface;
 - distinct DHCP leases;
 - a unique ADB reverse port and session secret; and
 - isolated route and firewall entries.
@@ -481,9 +459,7 @@ Addresses must not be shared. Packet dispatch is based on the TUN interface, not
 
 ## 14. DNS
 
-Version 1 uses DNS servers learned on the selected primary interface unless explicitly overridden. Android sends DNS packets through the VPN like other traffic.
-
-If split DNS is required across several LANs, a host-side DNS forwarder with domain-specific upstream policy is a later feature. Version 1 does not claim simultaneous native split-DNS behavior from multiple DHCP leases.
+Version 1 uses DNS servers learned on the selected interface unless explicitly overridden. Android sends DNS packets through the VPN like other traffic.
 
 ## 15. MTU and Packet Correctness
 
@@ -498,8 +474,7 @@ ICMP errors needed for Path MTU Discovery must be forwarded. The firewall must n
 - ADB loss makes the supervising helper immediately return the session firewall to not-ready deny state, pauses forwarding, bounds queued packets, and enters `Reconnecting`.
 - A short reconnect reuses valid leases and reconstructs the authenticated transport.
 - Lease expiration removes the alias and route before another host can receive that address.
-- Physical interface loss disables forwarding for its alias while preserving other active interfaces.
-- Primary-interface loss does not silently move Internet traffic to another interface with the wrong source address; policy must select or confirm a replacement.
+- Selected-interface loss disables forwarding and reports it; Routedroid never moves the phone to another interface on its own because that would change the phone's address.
 - VPN revocation tears down forwarding and reports a user-actionable error.
 - Controller crashes close the bounded packet/control channel, causing the helper to stop and systemd to run the independent cleanup program. If the helper is killed, its exclusively owned non-persistent TUN and dependent routes disappear immediately; `ExecStopPost` reconciles pending and completed journal entries. The unit uses `Restart=no`, cleanup failure leaves it failed, and `ExecStartPre` blocks a later explicit start until reconciliation succeeds. A session TUN name cannot be reused while any unresolved ownership record remains. Tests kill the controller and helper independently while the other process remains alive and at every write-ahead journal boundary.
 
@@ -511,7 +486,7 @@ Persisted data includes:
 
 - versioned schema number;
 - device identity hash;
-- selected interfaces and primary interface;
+- the selected interface;
 - active or retained DHCP lease metadata;
 - TUN and firewall resource names;
 - baseline sysctl values; and
@@ -552,7 +527,7 @@ Implementation must begin with experiments for the assumptions that cannot be pr
 
 1. Extra DHCP identities receive and renew independent leases on representative real Ethernet and Wi-Fi LANs without disturbing the PC lease or host network manager.
 2. Proxy ARP successfully delivers inbound traffic through common wired and Wi-Fi access points.
-3. Android selects the matching local source address for destination-specific routes when one VPN interface has multiple IPv4 addresses.
+3. ~~Android selects the matching local source address among multiple aliases~~ — tested in Phase 0 and failed on every Android version (decision record 0001); version 1 configures one address.
 4. Incoming TCP, UDP, and ICMP packets written to `VpnService` reach Android applications as expected on supported versions.
 5. ADB transport remains stable while the VPN owns the Android default route.
 
@@ -563,7 +538,7 @@ Decision rules are:
 | Gate failure | Required scope change |
 |---|---|
 | Static bidirectional routing or incoming Android delivery fails | Stop the project architecture; do not proceed |
-| Multi-address source selection fails on an Android version | Support one active alias on that version unless a non-NAT correction is proven |
+| Multi-address source selection fails (it did, platform-wide) | One selected interface and one alias per phone; multi-LAN deferred to Model A |
 | Real Ethernet DHCP or proxy ARP fails | Do not claim generic Ethernet automatic mode; document only passing environments |
 | Real Wi-Fi DHCP or proxy ARP fails | Remove generic Wi-Fi support from version 1 |
 | ADB stability fails under default-route VPN | Redesign transport bootstrap before proceeding |

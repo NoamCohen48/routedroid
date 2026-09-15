@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["phase0-tunnel"]
+members = ["phase0-tunnel", "phase0-dhcp"]
 
 [workspace.package]
 edition = "2021"

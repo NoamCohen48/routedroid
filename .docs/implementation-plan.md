@@ -210,7 +210,7 @@ The supervising privileged helper introduced in Phase 0 is retained for all non-
 - Set interface state and MTU.
 - Install `/32` alias routes with matching preferred host source addresses.
 - Monitor physical link and address changes through netlink.
-- Reject overlapping selected LAN subnets in version 1.
+- Exactly one selected interface per phone in version 1.
 
 ### Sysctls
 
@@ -229,7 +229,7 @@ The supervising privileged helper introduced in Phase 0 is retained for all non-
 - Install a forward chain at priority `-10` with policy `accept` and explicit directional paths.
 - For phone-to-network paths, require `iif phoneN`, the alias owned by the selected `oif`, and a destination in that interface's permitted set.
 - For network-to-phone paths, require the owning `iif`, exact destination alias, `oif phoneN`, and a source in that interface's permitted set.
-- Use `0.0.0.0/0` sets only for an interface explicitly permitted to carry Internet traffic; default secondary sets to their connected prefixes.
+- Use `0.0.0.0/0` permitted sets on the selected interface so Internet traffic and replies pass.
 - Constrain established and related rules to the same exact session path.
 - Install priority `-10` postrouting/output validation with terminal drops so only active destination aliases leave through a phone TUN.
 - Add terminal forward drops for every unmatched `iif phoneN` or `oif phoneN` path.
@@ -314,16 +314,19 @@ Acceptance:
 - a conflict detected after activation immediately withdraws reachability; and
 - unsupported LANs fail with a clear fallback recommendation.
 
-## 7. Phase 4: Multiple Interfaces
+## 7. Phase 4: Interface Selection and Egress Policy
+
+Multiple selected interfaces were removed from version 1 after the Phase 0
+§3.2 gate failed on every tested Android version (decision record 0001):
+Android installs VPN routes without a preferred source, so a phone with several
+aliases always initiates traffic from the first one, and the operator cannot add
+router routes to compensate. Version 1 supports one operator-selected interface.
 
 ### Configuration
 
-Add CLI and config support for:
-
 ```text
-interfaces = [eth0, eth1]
-primary = eth0
-dns_policy = primary
+interface = eth0
+dns_policy = interface
 ```
 
 Eligibility rules exclude by default:
@@ -331,40 +334,33 @@ Eligibility rules exclude by default:
 - loopback;
 - TUN/TAP and Routedroid interfaces;
 - container and bridge interfaces;
-- interfaces without usable IPv4 configuration;
-- duplicate or overlapping subnets; and
+- interfaces without usable IPv4 configuration; and
 - interfaces explicitly denied by policy.
 
-The user must explicitly select interfaces. A future opt-in policy may select all eligible interfaces.
+The user must explicitly select the interface; `routedroid interfaces` lists
+candidates with eligibility and rejection reasons.
 
-### Android Configuration
+### Host Egress Policy
 
-- Use the address-prefix representation selected by the Phase 0 Android source-selection gate and retain the actual LAN prefix separately for destination-route construction.
-- Add one destination-specific route per selected LAN.
-- Add the primary alias first.
-- Add one default route.
-- Use primary-interface DNS.
-- Re-establish the VPN transactionally when the active alias set changes.
-
-### Host Routing Policy
-
-- Bind each alias to its owning physical interface.
-- Allocate a deterministic source-policy rule and table for every alias from a reserved priority/table range.
-- Add each owning connected route and validated required route to that alias table.
-- Route default traffic for the primary alias through the selected primary interface.
-- Install an unreachable default for secondary aliases unless their Internet egress is explicitly enabled.
-- Prevent fallback to an unrelated host main-table default.
-- Handle physical-interface loss without leaking traffic through another interface with the wrong source.
-- Require explicit primary replacement when failover would change identity.
-- Verify every policy using `ip route get DEST from ALIAS` equivalents before readiness and after netlink changes.
+- Bind the alias to the selected interface in the firewall.
+- If the host's default route does not leave through the selected interface,
+  install a source-policy rule and table for the alias (connected route plus
+  the DHCP-learned gateway) from a reserved range, journaled.
+- Never fall through to an unrelated host default.
+- Handle selected-interface loss by disabling forwarding and reporting; no
+  automatic move to another interface.
+- Verify with `ip route get DEST from ALIAS` before readiness and after netlink changes.
 
 Acceptance:
 
-- hosts on every selected LAN initiate TCP, UDP, and ICMP traffic to their phone alias;
-- phone traffic to every selected LAN has the corresponding source alias;
-- default Internet traffic uses the primary alias and interface;
-- disabling one physical interface leaves unrelated aliases active; and
-- overlapping subnets are rejected with an actionable message.
+- hosts on the selected LAN initiate TCP, UDP, and ICMP traffic to the phone alias;
+- phone traffic to the LAN and the Internet carries the alias;
+- Internet egress uses the selected interface even when the host default route points elsewhere;
+- unselected interfaces are unreachable from the phone; and
+- selecting an ineligible interface fails with an actionable message.
+
+Later: multi-interface mode with inbound-only secondary LANs, or Model A
+(routed phone subnet) where routers can be configured.
 
 ## 8. Phase 5: Privilege Helper Hardening and Recovery
 
@@ -469,7 +465,7 @@ Tests cover:
 - proxy ARP neighbor resolution;
 - inbound and outbound TCP, UDP, and ICMP;
 - unchanged packet addresses;
-- multiple physical subnets;
+- a second, unselected physical subnet that must remain unreachable;
 - firewall isolation;
 - link loss;
 - lease renewal and replacement; and
@@ -483,7 +479,7 @@ Namespace tests do not replace physical Wi-Fi testing because access points may 
 
 - VPN authorization and lifecycle instrumentation tests.
 - Protocol compatibility tests using golden fixtures.
-- Reconfiguration tests for one and multiple addresses.
+- Reconfiguration tests for address changes.
 - Foreground-service and process-restart behavior.
 - Packet-path tests on emulator where supported.
 
@@ -499,7 +495,7 @@ At minimum:
 - USB ADB and Android TLS wireless debugging;
 - wired Ethernet host LAN;
 - ordinary Wi-Fi host LAN;
-- two simultaneous non-overlapping host LANs; and
+- a second host LAN present but unselected; and
 - one intentionally incompatible managed LAN to verify safe failure.
 
 ## 11. End-to-End Acceptance Criteria
@@ -510,8 +506,8 @@ Version 1 is ready only when all applicable criteria pass:
 2. The PC's own lease and connectivity remain unchanged.
 3. Packet capture shows the phone alias end to end with no PC-side NAT or replacement sockets.
 4. LAN hosts initiate TCP, UDP, and ICMP traffic to the phone.
-5. The phone initiates traffic using the correct alias for each selected LAN.
-6. Primary-interface Internet traffic behaves like another host on that LAN and is subject only to the upstream router's NAT.
+5. The phone initiates traffic to the selected LAN and the Internet with its alias, subject only to the upstream router's NAT.
+6. Traffic never leaves through an unselected interface.
 7. Multiple phones receive isolated addresses and packet paths.
 8. Spoofed phone source addresses and unselected interfaces are blocked.
 9. DHCP renewal, ADB reconnect, interface loss, VPN revocation, and lease expiration fail safely.
@@ -524,7 +520,7 @@ Version 1 is ready only when all applicable criteria pass:
 
 - Static bidirectional raw packet tunnel.
 - Inbound Android sessions.
-- Multiple-address source-selection report.
+- Multiple-address source-selection report (done: failed; single alias adopted).
 - DHCP alias compatibility report.
 
 ### M1: Single-LAN Developer Prototype
@@ -539,10 +535,10 @@ Version 1 is ready only when all applicable criteria pass:
 - Transactional activation and cleanup.
 - Basic CLI and Android status UI.
 
-### M3: Multi-LAN Beta
+### M3: Egress and Isolation Beta
 
-- Multiple DHCP aliases.
-- Correct source and egress selection.
+- Interface eligibility and selection UX.
+- Egress policy when the host default route is elsewhere.
 - Link-change handling and isolation tests.
 
 ### M4: Hardened Version 1
@@ -557,13 +553,12 @@ Version 1 is ready only when all applicable criteria pass:
 |---|---|---|
 | DHCP server permits only one identity per station | No automatic alias | Detect and offer documented manual fallback; do not guess silently |
 | DHCP snooping or ARP inspection rejects proxy identity | No inbound reachability | Compatibility diagnosis; mark interface unsupported |
-| Android chooses wrong source among aliases | Secondary LAN replies fail | Phase 0 gate; destination routes; restrict affected platforms to one alias |
+| Android chooses wrong source among aliases | Secondary LAN replies fail | Confirmed in Phase 0 on all versions; version 1 uses one alias |
 | Existing host firewall drops forwarding | Tunnel appears partially broken | Doctor diagnostics and narrowly documented integration rules |
 | ADB disconnect causes head-of-line stalls | Temporary packet loss | Bounded queues, reconnect state, metrics, no unbounded buffering |
 | VPN re-establishment changes addresses | Existing sessions drop | Preserve leases; transactional reconfiguration; report disruption |
 | Host process crashes after network mutation | Stale forwarding state | Supervising helper cleanup, deny-safe residual rules, and journaled reconciliation |
-| Multiple default routes leak identity | Wrong egress/source pair | Explicit primary interface and source-based policy routing |
-| Overlapping LANs are selected | Ambiguous destination | Reject in version 1 |
+| Host default route not on the selected interface | Wrong egress | Alias source-policy rule to the selected interface's gateway |
 | Wildcard PC services claim phone address | Inbound reaches PC | Route alias through TUN; never add it as a local host address |
 | Global forwarding enables unrelated paths | Host network exposure | Prefer per-interface forwarding; require operator-managed global forwarding only when necessary; install deny rules first |
 | DHCP lease is cached with an old MAC | Temporary inbound failure | Send ARP announcements after safe activation and monitor conflicts |
@@ -575,7 +570,7 @@ Before version 1:
 - architecture and protocol specifications;
 - supported and unsupported network behavior;
 - installation and privilege model;
-- single-interface and multi-interface operation;
+- single-interface operation and the multi-LAN limitation;
 - DHCP/manual fallback procedure;
 - firewall coexistence guide;
 - troubleshooting and packet-capture guide;
