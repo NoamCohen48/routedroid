@@ -47,9 +47,10 @@ struct RunArgs {
     /// TUN interface name to create (non-persistent).
     #[arg(long, default_value = "phone0")]
     tun: String,
-    /// Phone address as A.B.C.D/32 (the CONFIGURE_VPN address).
-    #[arg(long, value_parser = parse_prefix)]
-    address: Prefix,
+    /// Phone address(es) as A.B.C.D/N, first one is the primary (repeatable).
+    /// §3.2 compares /32 aliases against actual-LAN-prefix aliases.
+    #[arg(long = "address", value_parser = parse_prefix, required = true)]
+    addresses: Vec<Prefix>,
     #[arg(long, default_value_t = frame::DEFAULT_MTU)]
     mtu: u32,
     /// Route(s) pushed to Android, e.g. 0.0.0.0/0 (repeatable; default 0.0.0.0/0).
@@ -136,8 +137,8 @@ impl Cleanup {
 }
 
 async fn run(args: RunArgs) -> Result<()> {
-    if args.address.prefix != 32 {
-        bail!("--address must be a /32 in Phase 0");
+    if args.addresses.iter().any(|a| a.prefix == 0 || a.prefix > 32) {
+        bail!("--address prefix must be 1..=32");
     }
     if args.mtu < 576 || args.mtu > 65535 {
         bail!("--mtu must be within 576..=65535");
@@ -217,7 +218,7 @@ async fn run_inner(
 
     let cfg = SessionConfig {
         mtu: args.mtu,
-        addresses: vec![args.address.clone()],
+        addresses: args.addresses.clone(),
         routes,
         dns: args.dns.clone(),
         session_name: args.session_name.clone(),
