@@ -32,6 +32,7 @@ SPOOF_IP=192.168.10.99
 MGMT_IP=10.99.0.1
 MTU=1400
 SESSION="lab-$$-$RANDOM"
+SECRET_FILE=$(mktemp); head -c32 /dev/urandom | xxd -p -c64 > "$SECRET_FILE"; chmod 600 "$SECRET_FILE"
 
 TMP=$(mktemp -d /tmp/rd0-lab.XXXXXX)
 FAILS=0
@@ -100,7 +101,7 @@ on_exit() {
     local rc=$?
     teardown
     if [[ $rc -ne 0 && $FAILS -eq 0 ]]; then fail "script aborted (rc=$rc)"; fi
-    rm -rf "$TMP"
+    rm -rf "$TMP" "$SECRET_FILE"
     if [[ $FAILS -eq 0 ]]; then log "ALL $PASSES CHECKS PASSED"; exit 0; else log "$FAILS FAILED, $PASSES passed"; exit 1; fi
 }
 trap on_exit EXIT
@@ -183,14 +184,14 @@ start_tunnel() { # start_tunnel <logfile>; sets TUNNEL_PID and HOST_PORT
     # Background processes are started via `ip netns exec` directly (not the
     # in_* helpers) so that $! is the real PID and signals reach it.
     ip netns exec $NS_HOST "$BIN" run --no-adb --tun $HOST_TUN --address $PHONE_IP/32 --mtu $MTU --route 0.0.0.0/0 \
-        --dns $HOST_IP --session "$SESSION" >"$1" 2>&1 &
+        --dns $HOST_IP --session "$SESSION" --secret-file "$SECRET_FILE" >"$1" 2>&1 &
     TUNNEL_PID=$!
     HOST_PORT=""
     for _ in $(seq 1 50); do grep -q '^HOST_PORT=' "$1" 2>/dev/null && break; sleep 0.1; done
     HOST_PORT=$(sed -n 's/^HOST_PORT=//p' "$1" | head -1)
 }
 start_fake() { # start_fake <logfile> <readyfile>; sets FAKE_PID
-    python3 "$FAKE" --port "$HOST_PORT" --session "$SESSION" --device-port 9000 \
+    python3 "$FAKE" --port "$HOST_PORT" --session "$SESSION" --device-port 9000 --secret-file "$SECRET_FILE" \
         --tun-name $PHONE_TUN --tun-netns $NS_PHONE --connect-netns $NS_HOST \
         --ready-file "$2" >"$1" 2>&1 &
     FAKE_PID=$!

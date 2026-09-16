@@ -36,6 +36,18 @@
             android:theme="@style/Theme.Phase0.Bootstrap" />
 
         <!--
+            §3.4 bootstrap record sink for `adb shell content write` (uri content://dev.routedroid.phase0.bootstrap/record).
+            Exported (the shell must reach it) but gated by DUMP, which only shell/system hold; the
+            provider additionally checks the caller UID is the shell UID. No URI permission grants.
+        -->
+        <provider
+            android:name=".BootstrapProvider"
+            android:authorities="dev.routedroid.phase0.bootstrap"
+            android:exported="true"
+            android:grantUriPermissions="false"
+            android:permission="android.permission.DUMP" />
+
+        <!--
             Foreground VpnService. android:permission=BIND_VPN_SERVICE ensures only the system
             can bind it. Not exported for third parties beyond the system VPN binding, which is
             what the intent-filter is for.

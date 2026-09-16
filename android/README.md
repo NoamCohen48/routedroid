@@ -66,17 +66,23 @@ The host side is expected to:
 
 1. bind a loopback listener on `127.0.0.1:HOST_PORT`;
 2. `adb -s SERIAL reverse tcp:DEVICE_PORT tcp:HOST_PORT`;
-3. launch the bootstrap activity (line from the draft):
+3. stream the 80-byte bootstrap record (session + secret) to the provider's stdin;
+4. launch the bootstrap activity with non-secret extras:
 
 ```
+phase0-tunnel bootstrap-record --session <id> --secret-file <hex> \
+  | adb -s SERIAL shell content write --uri content://dev.routedroid.phase0.bootstrap/record
 adb -s SERIAL shell am start -n dev.routedroid.phase0/.BootstrapActivity \
     --es session <id> --ei device_port <DEVICE_PORT>
 ```
 
-`BootstrapActivity` requests `POST_NOTIFICATIONS` (API 33+) and VPN consent
-(`VpnService.prepare`), then starts `Phase0VpnService` as a foreground service and opens
-`MainActivity`. The first launch on a device shows the system VPN consent dialog, which must be
-accepted by hand. If the extras are missing the activity shows an error and does nothing else.
+`BootstrapActivity` takes the pending record (fail closed if missing, expired after 60 s, for
+another session, or lost to process death), connects and completes the mutual HMAC handshake
+(`HostHandshake`), and only then requests `POST_NOTIFICATIONS` (API 33+) and VPN consent
+(`VpnService.prepare`), starts `Phase0VpnService` as a foreground service (which takes the
+authenticated channel from `PendingConnection`) and opens `MainActivity`. The first launch on a
+device shows the system VPN consent dialog, which must be accepted by hand. A launch without a
+valid record does nothing visible.
 
 `Phase0VpnService` then connects to `127.0.0.1:DEVICE_PORT`, `protect()`s the socket, sends
 `HELLO`, waits for `HELLO_ACK` and `CONFIGURE_VPN`, establishes the VPN, answers `VPN_READY`
@@ -97,7 +103,10 @@ adb -s SERIAL shell am startservice -n dev.routedroid.phase0/.Phase0VpnService -
 |---|---|
 | `FrameCodec.kt` | `FrameCodec`: 8-byte header encode/decode, per-type limits, IPv4 check. Pure Kotlin. |
 | `Phase0VpnService.kt` | `RoutedroidVpnService` + `HostTransport` + `VpnConfigurator` + `PacketPump` collapsed into one class for the probe. |
-| `BootstrapActivity.kt` | Exported, non-browsable entry point started by `am start`. |
+| `BootstrapActivity.kt` | Exported, non-browsable entry point started by `am start`; refuses without a record. |
+| `BootstrapProvider.kt` | Exported, `DUMP`-guarded, shell-UID-checked `content write` sink; returns a socketpair end (see §3.4 notes in the decision record for why not a pipe). |
+| `BootstrapStore.kt` / `PendingConnection.kt` | In-memory single-slot holders for the record (60 s TTL) and the authenticated channel. |
+| `Auth.kt` / `HostHandshake.kt` | Transcript/HMAC-SHA256 proofs (vector shared with `auth.rs`) and the client half of HELLO/HELLO_ACK/AUTH. |
 | `MainActivity.kt` | Status text and Stop button. |
 | `StatusStore.kt` | `StatusStore`: StateFlow for low-rate state, atomics for packet counters. |
 
@@ -123,11 +132,8 @@ Packet path details:
 
 This is the §3.1 probe only. Compared with the production design it has:
 
-- **no authentication** (architecture §8.2): no session secret, no HMAC handshake. Anyone who
-  can start the exported activity can trigger a VPN prompt. Added in Phase 0 §3.4.
-- **no `BootstrapProvider`** (§8.1): no `adb shell content write` secret delivery, no shell-UID
-  or `DUMP` permission checks.
-- **no rate limiting** of bootstrap attempts.
+- **no rate limiting** of bootstrap attempts (authentication and the bootstrap provider are
+  present since §3.4; `hostile/` is a throwaway third-party app that exercises the denials).
 - **no `LEASE_UPDATE` / reconfiguration**: one `CONFIGURE_VPN`, one VPN, no re-establish.
 - **no persistence, no reconnect**, no notification Stop action, no diagnostics export
   (queue depth, RTT) beyond the on-screen counters.

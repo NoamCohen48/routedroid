@@ -32,6 +32,7 @@ object FrameCodec {
         const val CONFIGURE_VPN = 0x03
         const val VPN_READY = 0x04
         const val VPN_ERROR = 0x05
+        const val AUTH = 0x06
         const val IP_PACKET = 0x10
         const val PING = 0x20
         const val PONG = 0x21
@@ -44,6 +45,7 @@ object FrameCodec {
             CONFIGURE_VPN -> "CONFIGURE_VPN"
             VPN_READY -> "VPN_READY"
             VPN_ERROR -> "VPN_ERROR"
+            AUTH -> "AUTH"
             IP_PACKET -> "IP_PACKET"
             PING -> "PING"
             PONG -> "PONG"
@@ -53,7 +55,7 @@ object FrameCodec {
         }
 
         fun isJsonControl(type: Int): Boolean = when (type) {
-            HELLO, HELLO_ACK, CONFIGURE_VPN, VPN_READY, VPN_ERROR, ERROR -> true
+            HELLO, HELLO_ACK, CONFIGURE_VPN, VPN_READY, VPN_ERROR, AUTH, ERROR -> true
             else -> false
         }
 

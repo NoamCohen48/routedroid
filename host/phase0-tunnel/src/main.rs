@@ -2,6 +2,7 @@
 //! session, packets framed per protocol/phase0-draft.md. Throwaway quality.
 
 mod adb;
+mod auth;
 mod fake_client;
 mod frame;
 mod ipv4;
@@ -10,6 +11,8 @@ mod session;
 mod stats;
 mod tun;
 
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -37,6 +40,17 @@ enum Cmd {
     Run(RunArgs),
     /// Exercise framing + state machine against an in-process fake Android over loopback.
     Selftest,
+    /// Print the 80-byte bootstrap record (for `adb shell content write` in --no-adb setups).
+    BootstrapRecord(BootstrapRecordArgs),
+}
+
+#[derive(Parser, Debug, Clone)]
+struct BootstrapRecordArgs {
+    #[arg(long)]
+    session: String,
+    /// File holding the 32-byte secret as 64 hex characters.
+    #[arg(long)]
+    secret_file: PathBuf,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -72,6 +86,11 @@ struct RunArgs {
     /// Session name shown in Android's VPN dialog.
     #[arg(long, default_value = "Routedroid Phase 0")]
     session_name: String,
+    /// File holding the session secret as 64 hex characters. Required with
+    /// --no-adb (the operator delivers the record); otherwise random and
+    /// delivered by this process over `adb shell content write` stdin.
+    #[arg(long, required_if_eq("no_adb", "true"))]
+    secret_file: Option<PathBuf>,
 }
 
 fn parse_prefix(s: &str) -> std::result::Result<Prefix, String> {
@@ -112,7 +131,18 @@ fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Run(args) => rt.block_on(run(args)),
         Cmd::Selftest => rt.block_on(selftest()),
+        Cmd::BootstrapRecord(a) => {
+            let secret = load_secret(&a.secret_file)?;
+            let record = auth::bootstrap_record(&a.session, &secret)?;
+            std::io::stdout().write_all(&record[..])?;
+            Ok(())
+        }
     }
+}
+
+fn load_secret(path: &Path) -> Result<auth::Secret> {
+    let text = std::fs::read_to_string(path).with_context(|| format!("read secret file {}", path.display()))?;
+    auth::secret_from_hex(&text)
 }
 
 /// Everything that must be undone on exit, in the order it was set up.
@@ -191,7 +221,13 @@ async fn run_inner(
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.context("bind 127.0.0.1:0")?;
     let host_port = listener.local_addr()?.port();
 
-    // 3. adb reverse + launch, or tell the operator what to connect to.
+    // 3. Secret: operator-provided file, or fresh random for adb delivery.
+    let secret = match &args.secret_file {
+        Some(p) => load_secret(p)?,
+        None => auth::random_secret()?,
+    };
+
+    // 4. adb reverse + record + launch, or tell the operator what to connect to.
     if args.no_adb {
         info!(host_port, session = %session_id, "--no-adb: waiting for a client on 127.0.0.1:{host_port}");
         println!("HOST_PORT={host_port}");
@@ -201,10 +237,14 @@ async fn run_inner(
         adb::reverse_add(serial, args.device_port, host_port).context("adb reverse")?;
         cleanup.adb = Some((serial.to_string(), args.device_port, host_port));
         info!(serial, device_port = args.device_port, host_port, "adb reverse installed");
+        // Record first (stdin, never an argument), then the activity that consumes it.
+        let record = auth::bootstrap_record(&session_id, &secret)?;
+        adb::write_bootstrap_record(serial, &record[..]).context("deliver bootstrap record")?;
+        drop(record);
         adb::launch_bootstrap(serial, &session_id, args.device_port).context("adb shell am start")?;
     }
 
-    // 4. Exactly one connection.
+    // 5. Exactly one connection.
     let (stream, peer) = tokio::select! {
         r = listener.accept() => r.context("accept")?,
         _ = tokio::signal::ctrl_c() => {
@@ -223,11 +263,12 @@ async fn run_inner(
         dns: args.dns.clone(),
         session_name: args.session_name.clone(),
         expected_session,
+        secret,
     };
-    let machine = Machine::new(cfg);
+    let machine = Machine::new(cfg, auth::random_bytes()?);
     let endpoints = tun::spawn_pumps(tun_dev.clone(), args.mtu, stats.clone());
 
-    // 5. Ctrl-C -> graceful STOP; periodic counters.
+    // 6. Ctrl-C -> graceful STOP; periodic counters.
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     tokio::spawn(async move {
         if tokio::signal::ctrl_c().await.is_ok() {
@@ -269,11 +310,12 @@ async fn selftest() -> Result<()> {
         dns: vec!["192.168.10.1".into()],
         session_name: "Routedroid Phase 0 selftest".into(),
         expected_session: Some(session.into()),
+        secret: auth::random_secret()?,
     };
 
     // --- Check 1: happy path with a packet round trip -------------------
     let probe = fake_client::icmp_echo([192, 168, 10, 74], [192, 168, 10, 1], 40);
-    let client = tokio::spawn(fake_client::run_fake_android(addr, session, 9000, probe.clone()));
+    let client = tokio::spawn(fake_client::run_fake_android(addr, session, 9000, cfg.secret.clone(), probe.clone()));
 
     let (stream, _) = listener.accept().await?;
     let stats = Arc::new(Stats::default());
@@ -294,7 +336,7 @@ async fn selftest() -> Result<()> {
     let (_shutdown_tx, shutdown_rx) = watch::channel(false);
     let summary = session::run_session(
         stream,
-        Machine::new(cfg.clone()),
+        Machine::new(cfg.clone(), auth::random_bytes()?),
         TunEndpoints { to_tun: to_tun_tx, from_tun: from_tun_rx },
         stats.clone(),
         shutdown_rx,
@@ -331,7 +373,7 @@ async fn selftest() -> Result<()> {
     let (_shutdown_tx, shutdown_rx) = watch::channel(false);
     let summary2 = session::run_session(
         stream,
-        Machine::new(cfg),
+        Machine::new(cfg, auth::random_bytes()?),
         TunEndpoints { to_tun: to_tun_tx, from_tun: from_tun_rx },
         stats2,
         shutdown_rx,

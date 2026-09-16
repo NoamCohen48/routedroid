@@ -11,19 +11,21 @@ import android.util.Log
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import kotlin.concurrent.thread
 
 /**
- * Entry point used by the host:
+ * Entry point used by the host, AFTER it streamed the bootstrap record to [BootstrapProvider]:
  *
  * ```
+ * adb -s SERIAL shell content write --uri content://dev.routedroid.phase0.bootstrap/record < record
  * adb -s SERIAL shell am start -n dev.routedroid.phase0/.BootstrapActivity \
  *     --es session <id> --ei device_port <DEVICE_PORT>
  * ```
  *
- * Exported so `am start` (shell) can launch it; deliberately carries no intent-filter so it is
- * not browsable and cannot be targeted implicitly. Phase 0 has no bootstrap secret and no host
- * authentication (implementation-plan §3.4 / architecture §8.1 add them); anyone who can start
- * this activity can trigger the VPN consent prompt. That is accepted for the throwaway probe.
+ * Exported so `am start` (shell) can launch it; no intent-filter, so not browsable. Order of
+ * operations (§3.4): take the pending record (fail closed if absent/expired/mismatched) ->
+ * connect and mutually authenticate the host -> only then notification permission, VPN consent
+ * and the foreground service. A launch without a shell-delivered record does nothing visible.
  */
 class BootstrapActivity : AppCompatActivity() {
 
@@ -35,6 +37,7 @@ class BootstrapActivity : AppCompatActivity() {
 
     private var session: String? = null
     private var devicePort: Int = -1
+    private var mtu: Int = -1
     private lateinit var message: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,15 +47,41 @@ class BootstrapActivity : AppCompatActivity() {
 
         session = intent?.getStringExtra(Phase0VpnService.EXTRA_SESSION)
         devicePort = intent?.getIntExtra(Phase0VpnService.EXTRA_DEVICE_PORT, -1) ?: -1
-        if (session.isNullOrEmpty() || devicePort !in 1..65535) {
+        val s = session
+        if (s.isNullOrEmpty() || devicePort !in 1..65535) {
             Log.e(TAG, "missing/invalid extras: session=$session device_port=$devicePort")
             message.text = getString(R.string.bootstrap_missing_extras)
             StatusStore.setError("bootstrap started without valid extras")
             return // show error, do nothing else
         }
-        message.text = "session=$session device_port=$devicePort\nrequesting permissions..."
+        if (savedInstanceState != null) return // re-created mid-flow: the flow already ran
 
-        if (savedInstanceState == null) requestNotificationsThenVpn()
+        val record = BootstrapStore.take(s)
+        if (record == null) {
+            // Fail closed: no prompt, no service, no state.
+            Log.w(TAG, "refusing launch: no valid bootstrap record for session=$s")
+            StatusStore.setError("bootstrap refused: no record from adb shell")
+            message.text = getString(R.string.bootstrap_no_record)
+            finish()
+            return
+        }
+        message.text = "session=$s device_port=$devicePort\nauthenticating host..."
+        thread(name = "bootstrap-auth") {
+            val result = try {
+                HostHandshake.run(record, devicePort)
+            } catch (e: Exception) {
+                Log.w(TAG, "host authentication failed: $e")
+                StatusStore.setError("host authentication failed: ${e.message}")
+                runOnUiThread { message.text = getString(R.string.bootstrap_auth_failed); finish() }
+                return@thread
+            }
+            PendingConnection.put(s, result.channel)
+            mtu = result.mtu
+            runOnUiThread {
+                message.text = "session=$s device_port=$devicePort\nhost authenticated; requesting permissions..."
+                requestNotificationsThenVpn()
+            }
+        }
     }
 
     private fun requestNotificationsThenVpn() {
@@ -90,6 +119,7 @@ class BootstrapActivity : AppCompatActivity() {
             startTunnel()
         } else {
             Log.w(TAG, "VPN consent denied")
+            PendingConnection.discard()
             StatusStore.setError("VPN consent denied")
             message.text = getString(R.string.bootstrap_vpn_denied)
         }
@@ -100,6 +130,7 @@ class BootstrapActivity : AppCompatActivity() {
             .setAction(Phase0VpnService.ACTION_START)
             .putExtra(Phase0VpnService.EXTRA_SESSION, session)
             .putExtra(Phase0VpnService.EXTRA_DEVICE_PORT, devicePort)
+            .putExtra(Phase0VpnService.EXTRA_MTU, mtu)
         ContextCompat.startForegroundService(this, svc)
         startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         finish()

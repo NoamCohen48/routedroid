@@ -8,12 +8,25 @@ pub struct Hello {
     pub protocol: u8,
     pub session: String,
     pub device_port: u16,
+    /// 32 random bytes, lowercase hex.
+    pub client_nonce: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HelloAck {
     pub protocol: u8,
     pub mtu: u32,
+    /// 32 random bytes, lowercase hex.
+    pub host_nonce: String,
+    /// HMAC-SHA256(secret, "host" || transcript), lowercase hex.
+    pub host_proof: String,
+}
+
+/// AUTH, Android -> Host: proves the phone holds the shell-delivered secret.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Auth {
+    /// HMAC-SHA256(secret, "android" || transcript), lowercase hex.
+    pub android_proof: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,8 +69,13 @@ mod tests {
 
     #[test]
     fn bodies_serialize_in_draft_field_order() {
-        let ack = HelloAck { protocol: 0, mtu: 1400 };
-        assert_eq!(serde_json::to_string(&ack).unwrap(), r#"{"protocol":0,"mtu":1400}"#);
+        let ack = HelloAck { protocol: 0, mtu: 1400, host_nonce: "bb".into(), host_proof: "cc".into() };
+        assert_eq!(
+            serde_json::to_string(&ack).unwrap(),
+            r#"{"protocol":0,"mtu":1400,"host_nonce":"bb","host_proof":"cc"}"#
+        );
+        let auth: Auth = serde_json::from_str(r#"{"android_proof":"dd"}"#).unwrap();
+        assert_eq!(auth.android_proof, "dd");
 
         let cfg = ConfigureVpn {
             mtu: 1400,
@@ -72,8 +90,8 @@ mod tests {
         );
 
         let hello: Hello =
-            serde_json::from_str(r#"{"protocol":0,"session":"abc","device_port":9000}"#).unwrap();
-        assert_eq!(hello, Hello { protocol: 0, session: "abc".into(), device_port: 9000 });
+            serde_json::from_str(r#"{"protocol":0,"session":"abc","device_port":9000,"client_nonce":"aa"}"#).unwrap();
+        assert_eq!(hello, Hello { protocol: 0, session: "abc".into(), device_port: 9000, client_nonce: "aa".into() });
 
         let ready: VpnReady =
             serde_json::from_str(r#"{"addresses":["192.168.10.74/32"],"mtu":1400}"#).unwrap();

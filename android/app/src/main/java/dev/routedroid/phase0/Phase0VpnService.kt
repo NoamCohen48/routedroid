@@ -18,7 +18,6 @@ import java.io.FileDescriptor
 import java.io.IOException
 import java.io.OutputStream
 import java.net.InetAddress
-import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.nio.channels.SocketChannel
 import kotlinx.coroutines.delay
@@ -53,6 +52,8 @@ class Phase0VpnService : VpnService() {
         const val ACTION_STOP = "dev.routedroid.phase0.STOP"
         const val EXTRA_SESSION = "session"
         const val EXTRA_DEVICE_PORT = "device_port"
+        /** Negotiated frame MTU from HELLO_ACK (handshake done by BootstrapActivity). */
+        const val EXTRA_MTU = "mtu"
 
         private const val CHANNEL_ID = "phase0_tunnel"
         private const val NOTIFICATION_ID = 1
@@ -61,7 +62,6 @@ class Phase0VpnService : VpnService() {
         private const val QUEUE_DEPTH = 256
         /** Slots must cover the queue plus one being filled and one being written. */
         private const val POOL_SIZE = QUEUE_DEPTH + 2
-        private const val CONNECT_TIMEOUT_MS = 5_000
         private const val HANDSHAKE_TIMEOUT_MS = 15_000
         private const val VPN_POLL_TIMEOUT_MS = 500
     }
@@ -128,8 +128,9 @@ class Phase0VpnService : VpnService() {
             ACTION_START -> {
                 val session = intent.getStringExtra(EXTRA_SESSION)
                 val port = intent.getIntExtra(EXTRA_DEVICE_PORT, -1)
+                val mtu = intent.getIntExtra(EXTRA_MTU, -1)
                 startForegroundCompat()
-                if (session.isNullOrEmpty() || port !in 1..65535) {
+                if (session.isNullOrEmpty() || port !in 1..65535 || mtu !in 68..FrameCodec.IPV4_ABSOLUTE_MAX) {
                     Log.e(TAG, "START without valid extras; stopping")
                     StatusStore.setError("service started without session/device_port")
                     finishService()
@@ -142,7 +143,7 @@ class Phase0VpnService : VpnService() {
                 stopRequested.set(false)
                 cleanStop = false
                 StatusStore.reset(session, port)
-                sessionJob = scope.launch { runSession(session, port) }
+                sessionJob = scope.launch { runSession(session, port, mtu) }
             }
             ACTION_STOP -> { cleanStop = true; requestStop("stop requested from UI", sendStop = true) }
             else -> {
@@ -169,21 +170,17 @@ class Phase0VpnService : VpnService() {
 
     // ---------------------------------------------------------------- session
 
-    private suspend fun runSession(session: String, devicePort: Int) {
+    private suspend fun runSession(session: String, devicePort: Int, negotiatedMtu: Int) {
         var failure: String? = null
         try {
-            // SocketChannel.open() creates the fd eagerly (java.net.Socket() does not), so
-            // protect() can be applied BEFORE connect and, crucially, BEFORE establish():
-            // once the default route points into the VPN this socket must still reach
-            // loopback/adb directly.
-            val ch = SocketChannel.open()
+            // The connection was opened and mutually authenticated by BootstrapActivity before
+            // consent (§3.4). Without it there is nothing to run: no fallback connect.
+            val ch = PendingConnection.take(session)
+                ?: throw ProtocolError("no authenticated host connection for session")
             channel = ch
-            val sock = ch.socket()
-            if (!protect(sock)) throw VpnFailure("protect_failed", "VpnService.protect() returned false")
-            sock.tcpNoDelay = true
-            // Explicit 127.0.0.1: getLoopbackAddress() is ::1 on some Android versions (seen on
-            // Android 10) and adbd's reverse listener is IPv4-only.
-            sock.connect(InetSocketAddress(InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)), devicePort), CONNECT_TIMEOUT_MS)
+            // protect() BEFORE establish(): once the default route points into the VPN this
+            // socket must still reach loopback/adb directly. Works on a connected socket.
+            if (!protect(ch.socket())) throw VpnFailure("protect_failed", "VpnService.protect() returned false")
             running = true
 
             // Direct channel I/O, NOT ch.socket().getInputStream()/getOutputStream():
@@ -194,9 +191,11 @@ class Phase0VpnService : VpnService() {
             val input = ChannelInput(ch)
             val output = ChannelOutput(ch)
             txOutput = output
+            StatusStore.setMtu(negotiatedMtu)
+            StatusStore.setState(StatusStore.State.NEGOTIATED)
 
-            // Blocking reads: bound the handshake with a watchdog that closes the channel
-            // (there is no suspension point to cancel at, and no soTimeout on a channel).
+            // Blocking reads: bound the wait for CONFIGURE_VPN with a watchdog that closes the
+            // channel (there is no suspension point to cancel at, and no soTimeout on a channel).
             var handshakeTimedOut = false
             val watchdog = scope.launch {
                 delay(HANDSHAKE_TIMEOUT_MS.toLong())
@@ -204,9 +203,9 @@ class Phase0VpnService : VpnService() {
                 runCatching { ch.close() }
             }
             val (mtu, config) = try {
-                handshake(input, output, session, devicePort)
+                handshake(input, output, negotiatedMtu)
             } catch (e: IOException) {
-                if (handshakeTimedOut) throw ProtocolError("handshake timed out") else throw e
+                if (handshakeTimedOut) throw ProtocolError("CONFIGURE_VPN timed out") else throw e
             } finally {
                 watchdog.cancel()
             }
@@ -260,23 +259,8 @@ class Phase0VpnService : VpnService() {
     }
 
     /** Returns (negotiated packet mtu, vpn config). Throws on any protocol violation. */
-    private fun handshake(input: ChannelInput, output: OutputStream, session: String, devicePort: Int): Pair<Int, VpnConfig> {
-        sendControl(output, FrameCodec.Type.HELLO, JSONObject().apply {
-            put("protocol", FrameCodec.PROTOCOL_VERSION)
-            put("session", session)
-            put("device_port", devicePort)
-        }.toString().toByteArray(Charsets.UTF_8))
-
-        // Expect HELLO_ACK.
-        val ack = readControl(input, output, FrameCodec.DEFAULT_MTU, FrameCodec.Type.HELLO_ACK)
-        val ackProtocol = ack.optInt("protocol", -1)
-        if (ackProtocol != FrameCodec.PROTOCOL_VERSION) throw ProtocolError("HELLO_ACK protocol $ackProtocol")
-        val mtu = ack.optInt("mtu", -1)
-        if (mtu !in 68..FrameCodec.IPV4_ABSOLUTE_MAX) throw ProtocolError("HELLO_ACK mtu $mtu out of range")
-        StatusStore.setMtu(mtu)
-        StatusStore.setState(StatusStore.State.NEGOTIATED)
-
-        // Expect CONFIGURE_VPN.
+    private fun handshake(input: ChannelInput, output: OutputStream, mtu: Int): Pair<Int, VpnConfig> {
+        // HELLO/HELLO_ACK/AUTH already happened in HostHandshake; expect CONFIGURE_VPN.
         val cfgJson = readControl(input, output, mtu, FrameCodec.Type.CONFIGURE_VPN)
         StatusStore.setState(StatusStore.State.CONFIGURING)
         val config = try {

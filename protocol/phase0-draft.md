@@ -33,32 +33,65 @@ Limits: control bodies <= 65536 bytes; IP_PACKET bodies <= negotiated `mtu`
 | 0x03  | CONFIGURE_VPN | Host -> Android  | JSON |
 | 0x04  | VPN_READY     | Android -> Host  | JSON |
 | 0x05  | VPN_ERROR     | Android -> Host  | JSON |
+| 0x06  | AUTH          | Android -> Host  | JSON |
 | 0x10  | IP_PACKET     | both             | exactly one raw IPv4 packet, no PI header |
 | 0x20  | PING          | both             | empty |
 | 0x21  | PONG          | both             | empty |
 | 0x30  | STOP          | both             | empty |
 | 0x7F  | ERROR         | both             | JSON |
 
-Phase 0 has NO authentication (Phase 0 §3.4 adds it later). State machine:
+State machine (§3.4 mutual authentication included):
 
 ```
-Connected --HELLO/HELLO_ACK--> Negotiated --CONFIGURE_VPN--> Configuring
+Connected --HELLO/HELLO_ACK--> Authenticating --AUTH(ok)--> Negotiated
+Negotiated --CONFIGURE_VPN--> Configuring
 Configuring --VPN_READY--> Active (IP_PACKET allowed both ways)
 Configuring --VPN_ERROR--> Closed
 any --STOP--> Closed
 ```
 
-IP_PACKET before Active -> close.
+IP_PACKET before Active -> close. AUTH failure -> host sends ERROR `auth_failed`, closes.
+The host emits CONFIGURE_VPN immediately after a verified AUTH.
+
+## Bootstrap record and authentication (§3.4)
+
+The host generates a random 32-byte session secret and streams an 80-byte record
+to the exported, `android.permission.DUMP`-guarded, shell-UID-checked provider:
+
+```
+adb -s SERIAL shell content write --uri content://dev.routedroid.phase0.bootstrap/record < record
+record = "RDB0"[4] | version u8 = 0 | reserved[3] | session[40] NUL-padded | secret[32]
+```
+
+The record lives only in app-process memory for 60 s and is consumed once by
+BootstrapActivity. Then:
+
+```
+transcript    = "rd-p0-auth" 0x00 | protocol u8 | session utf8 | 0x00 | device_port u16be
+              | "android" | client_nonce[32] | "host" | host_nonce[32]
+host_proof    = HMAC-SHA256(secret, "host"    || transcript)
+android_proof = HMAC-SHA256(secret, "android" || transcript)
+```
+
+Android verifies `host_proof` before sending AUTH, and completes AUTH before any
+VPN consent prompt or service start. Both sides wipe the secret after AUTH is
+decided. Test vector (secret = 00..1f, client_nonce = aa*32, host_nonce = bb*32,
+session "s1", port 9000): host_proof `9869086f…8029c7`, android_proof `4d01e785…4b938f`
+(full values pinned in `auth.rs` and `AuthTest.kt`).
 
 ## JSON bodies
 
 HELLO:
 ```json
-{"protocol":0,"session":"<opaque string from am start extra>","device_port":9000}
+{"protocol":0,"session":"<opaque string from am start extra>","device_port":9000,"client_nonce":"<64 hex>"}
 ```
 HELLO_ACK:
 ```json
-{"protocol":0,"mtu":1400}
+{"protocol":0,"mtu":1400,"host_nonce":"<64 hex>","host_proof":"<64 hex>"}
+```
+AUTH:
+```json
+{"android_proof":"<64 hex>"}
 ```
 CONFIGURE_VPN:
 ```json
@@ -79,12 +112,15 @@ VPN_ERROR / ERROR:
 {"code":"vpn_permission_denied","message":"human readable"}
 ```
 
-## Android launch (Phase 0 only; no secret yet)
+## Android launch (after the record was delivered; no secret on the command line)
 
 ```
 adb -s SERIAL shell am start -n dev.routedroid.phase0/.BootstrapActivity \
     --es session <id> --ei device_port <DEVICE_PORT>
 ```
+
+A launch without a matching, unexpired record does nothing (no connection, no
+VPN prompt, no service).
 
 ## IPv4 validation on both ends before injection
 

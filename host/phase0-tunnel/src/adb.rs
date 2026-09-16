@@ -2,10 +2,12 @@
 //! cautious reverse-mapping removal.
 
 use anyhow::{bail, Context, Result};
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 use tracing::{info, warn};
 
 pub const BOOTSTRAP_COMPONENT: &str = "dev.routedroid.phase0/.BootstrapActivity";
+pub const BOOTSTRAP_RECORD_URI: &str = "content://dev.routedroid.phase0.bootstrap/record";
 
 fn adb(serial: &str) -> Command {
     let mut c = Command::new("adb");
@@ -80,6 +82,30 @@ pub fn reverse_remove_if_ours(serial: &str, device_port: u16, host_port: u16) {
         Ok(_) => info!(device_port, host_port, "removed adb reverse mapping"),
         Err(e) => warn!(error = %e, "failed to remove adb reverse mapping"),
     }
+}
+
+/// `adb shell content write --uri content://dev.routedroid.phase0.bootstrap/record`
+/// with the bootstrap record on stdin. The record (and so the secret) is never
+/// an argument; `content` runs as the shell UID, which the provider requires.
+pub fn write_bootstrap_record(serial: &str, record: &[u8]) -> Result<()> {
+    let mut c = adb(serial);
+    c.args(["shell", "content", "write", "--uri", BOOTSTRAP_RECORD_URI]);
+    c.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = c.spawn().context("spawn adb shell content write")?;
+    {
+        let mut stdin = child.stdin.take().expect("piped stdin");
+        stdin.write_all(record).context("write bootstrap record to adb stdin")?;
+        // Dropping closes stdin: EOF tells `content write` the record is complete.
+    }
+    let out = child.wait_with_output().context("wait for adb shell content write")?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // `content` exits 0 even on provider errors; it prints them instead.
+    if !out.status.success() || stdout.contains("Error") || stderr.contains("Error") || stdout.contains("Exception") {
+        bail!("content write failed ({}): {}{}", out.status, stdout.trim(), stderr.trim());
+    }
+    info!(uri = BOOTSTRAP_RECORD_URI, bytes = record.len(), "bootstrap record delivered over adb stdin");
+    Ok(())
 }
 
 /// `adb shell am start -n dev.routedroid.phase0/.BootstrapActivity --es session S --ei device_port N`

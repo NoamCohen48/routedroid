@@ -16,6 +16,8 @@ Must run as root (TUN creation, setns, ip commands).
 """
 
 import argparse
+import hashlib
+import hmac
 import ctypes
 import fcntl
 import json
@@ -28,7 +30,7 @@ import subprocess
 import sys
 
 HEADER = struct.Struct("!IBBH")
-HELLO, HELLO_ACK, CONFIGURE_VPN, VPN_READY, VPN_ERROR = 0x01, 0x02, 0x03, 0x04, 0x05
+HELLO, HELLO_ACK, CONFIGURE_VPN, VPN_READY, VPN_ERROR, AUTH = 0x01, 0x02, 0x03, 0x04, 0x05, 0x06
 IP_PACKET, PING, PONG, STOP, ERROR = 0x10, 0x20, 0x21, 0x30, 0x7F
 MAX_CONTROL = 65536
 EMPTY_TYPES = {PING, PONG, STOP}
@@ -96,7 +98,7 @@ def validate_header(length, version, mtype, flags, mtu):
     elif mtype in EMPTY_TYPES:
         if length != 0:
             raise ProtocolError(f"type 0x{mtype:02x} with body")
-    elif mtype in (HELLO, HELLO_ACK, CONFIGURE_VPN, VPN_READY, VPN_ERROR, ERROR):
+    elif mtype in (HELLO, HELLO_ACK, CONFIGURE_VPN, VPN_READY, VPN_ERROR, AUTH, ERROR):
         if length == 0 or length > MAX_CONTROL:
             raise ProtocolError(f"control length {length}")
     else:
@@ -169,8 +171,16 @@ class FakeAndroid:
         sock.settimeout(None)
         log(f"connected to 127.0.0.1:{a.port} in netns {a.connect_netns or 'current'}")
 
-        hello = {"protocol": 0, "session": a.session, "device_port": a.device_port}
+        # §3.4 mutual auth (mirrors host/phase0-tunnel/src/auth.rs).
+        secret = bytes.fromhex(open(a.secret_file).read().strip())
+        client_nonce = os.urandom(32)
+        hello = {"protocol": 0, "session": a.session, "device_port": a.device_port,
+                 "client_nonce": client_nonce.hex()}
         sock.sendall(encode(HELLO, json.dumps(hello, separators=(",", ":")).encode()))
+
+        def transcript(host_nonce):
+            return (b"rd-p0-auth\0" + bytes([0]) + a.session.encode() + b"\0"
+                    + a.device_port.to_bytes(2, "big") + b"android" + client_nonce + b"host" + host_nonce)
 
         reader = FrameReader(self.mtu)
         sock.setblocking(False)
@@ -201,8 +211,15 @@ class FakeAndroid:
                         if ack["protocol"] != 0:
                             raise ProtocolError("HELLO_ACK protocol")
                         self.mtu = reader.mtu = ack["mtu"]
+                        host_nonce = bytes.fromhex(ack["host_nonce"])
+                        t = transcript(host_nonce)
+                        want = hmac.new(secret, b"host" + t, hashlib.sha256).hexdigest()
+                        if not hmac.compare_digest(want, ack["host_proof"]):
+                            raise ProtocolError("host_proof does not verify")
+                        proof = hmac.new(secret, b"android" + t, hashlib.sha256).hexdigest()
+                        pending_out.extend(encode(AUTH, json.dumps({"android_proof": proof}).encode()))
                         self.state = "negotiated"
-                        log(f"HELLO_ACK mtu={self.mtu}")
+                        log(f"HELLO_ACK mtu={self.mtu}; host authenticated, AUTH queued")
                     elif mtype == CONFIGURE_VPN:
                         if self.state != "negotiated":
                             raise ProtocolError("CONFIGURE_VPN out of state")
@@ -344,6 +361,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--port", type=int, required=True, help="host loopback port")
     p.add_argument("--session", required=True)
+    p.add_argument("--secret-file", required=True, help="64 hex chars, same file the host was given")
     p.add_argument("--device-port", type=int, default=9000)
     p.add_argument("--tun-name", default="phonetun0")
     p.add_argument("--tun-netns", help="named netns (under /run/netns) in which to create the TUN")

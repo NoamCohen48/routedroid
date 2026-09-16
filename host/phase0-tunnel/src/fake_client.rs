@@ -7,9 +7,10 @@ use anyhow::{bail, Context, Result};
 use tokio::net::TcpStream;
 use tokio::io::AsyncWriteExt;
 
+use crate::auth;
 use crate::frame::{read_frame, Frame, MessageType};
 use crate::ipv4;
-use crate::messages::{ConfigureVpn, Hello, HelloAck, VpnReady};
+use crate::messages::{Auth, ConfigureVpn, Hello, HelloAck, VpnReady};
 
 #[derive(Debug)]
 pub struct FakeReport {
@@ -64,12 +65,17 @@ pub async fn run_fake_android(
     addr: SocketAddr,
     session: &str,
     device_port: u16,
+    secret: auth::Secret,
     probe: Vec<u8>,
 ) -> Result<FakeReport> {
     let mut stream = TcpStream::connect(addr).await.context("connect to host port")?;
     let mtu_guess = crate::frame::DEFAULT_MTU;
 
-    let hello = Frame::json(MessageType::Hello, &Hello { protocol: 0, session: session.into(), device_port });
+    let client_nonce = auth::random_bytes::<{ auth::NONCE_LEN }>()?;
+    let hello = Frame::json(
+        MessageType::Hello,
+        &Hello { protocol: 0, session: session.into(), device_port, client_nonce: hex::encode(client_nonce) },
+    );
     stream.write_all(&hello.encode()).await?;
 
     let f = read_frame(&mut stream, mtu_guess).await.context("read HELLO_ACK")?;
@@ -81,6 +87,16 @@ pub async fn run_fake_android(
         bail!("HELLO_ACK protocol {}", hello_ack.protocol);
     }
     let mtu = hello_ack.mtu;
+
+    // Mutual auth: verify the host before revealing our own proof.
+    let host_nonce = auth::nonce_from_hex(&hello_ack.host_nonce).context("HELLO_ACK host_nonce")?;
+    let transcript = auth::transcript(0, session, device_port, &client_nonce, &host_nonce);
+    if !auth::verify(&secret, "host", &transcript, &hello_ack.host_proof) {
+        bail!("host_proof does not verify");
+    }
+    let android_proof = hex::encode(auth::proof(&secret, "android", &transcript));
+    drop(secret);
+    stream.write_all(&Frame::json(MessageType::Auth, &Auth { android_proof }).encode()).await?;
 
     let f = read_frame(&mut stream, mtu).await.context("read CONFIGURE_VPN")?;
     if f.message_type != MessageType::ConfigureVpn {

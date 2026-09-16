@@ -1,14 +1,16 @@
 //! Host-side session state machine (pure) and its async driver.
 //!
 //! ```text
-//! Connected --HELLO/HELLO_ACK--> Negotiated --CONFIGURE_VPN--> Configuring
+//! Connected --HELLO/HELLO_ACK(host_proof)--> Authenticating
+//! Authenticating --AUTH(android_proof ok)--> Negotiated --CONFIGURE_VPN--> Configuring
 //! Configuring --VPN_READY--> Active (IP_PACKET allowed both ways)
 //! Configuring --VPN_ERROR--> Closed
 //! any --STOP--> Closed
 //! ```
 //!
-//! The host sends HELLO_ACK and CONFIGURE_VPN back-to-back, so `Negotiated` is
-//! only ever observed between the two outbound frames.
+//! The host sends CONFIGURE_VPN as soon as AUTH verifies, so `Negotiated` is
+//! only ever observed between verifying AUTH and emitting CONFIGURE_VPN. The
+//! session secret is zeroized the moment AUTH is decided either way.
 
 use std::fmt;
 use std::sync::Arc;
@@ -19,9 +21,10 @@ use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, info, trace, warn};
 
+use crate::auth::{self, Secret, NONCE_LEN};
 use crate::frame::{self, Frame, FrameError, MessageType};
 use crate::ipv4;
-use crate::messages::{ConfigureVpn, ErrorBody, Hello, HelloAck, Prefix, VpnReady};
+use crate::messages::{Auth, ConfigureVpn, ErrorBody, Hello, HelloAck, Prefix, VpnReady};
 use crate::stats::Stats;
 
 /// Bounded queue depth for every packet/frame channel.
@@ -36,6 +39,8 @@ pub struct SessionConfig {
     pub session_name: String,
     /// When set, the HELLO `session` string must match exactly.
     pub expected_session: Option<String>,
+    /// Single-use session secret delivered to the phone out of band (§3.4).
+    pub secret: Secret,
 }
 
 impl SessionConfig {
@@ -53,6 +58,7 @@ impl SessionConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum State {
     Connected,
+    Authenticating,
     Negotiated,
     Configuring,
     Active,
@@ -94,11 +100,24 @@ pub struct Machine {
     state: State,
     cfg: SessionConfig,
     hello: Option<Hello>,
+    host_nonce: [u8; NONCE_LEN],
+    /// Transcript fixed by HELLO/HELLO_ACK; verified against AUTH.
+    transcript: Option<Vec<u8>>,
+    /// `Some` until AUTH is decided, then zeroized (single use).
+    secret: Option<Secret>,
 }
 
 impl Machine {
-    pub fn new(cfg: SessionConfig) -> Self {
-        Self { state: State::Connected, cfg, hello: None }
+    pub fn new(mut cfg: SessionConfig, host_nonce: [u8; NONCE_LEN]) -> Self {
+        // Move the secret out of the config so exactly one copy lives here.
+        let secret = Some(std::mem::replace(&mut cfg.secret, Secret::new([0; auth::SECRET_LEN])));
+        Self { state: State::Connected, cfg, hello: None, host_nonce, transcript: None, secret }
+    }
+
+    /// Whether the secret has been consumed (AUTH decided, either way).
+    #[cfg(test)]
+    pub fn secret_consumed(&self) -> bool {
+        self.secret.is_none()
     }
 
     pub fn state(&self) -> State {
@@ -115,6 +134,7 @@ impl Machine {
 
     fn violation(&mut self, code: &str, message: impl Into<String>) -> Close {
         self.state = State::Closed;
+        self.secret = None;
         Close::Protocol(ErrorBody::new(code, message))
     }
 
@@ -155,12 +175,40 @@ impl Machine {
                         return Err(self.violation("bad_session", "HELLO session does not match launch extra"));
                     }
                 }
+                let Some(client_nonce) = auth::nonce_from_hex(&hello.client_nonce) else {
+                    return Err(self.violation("bad_nonce", "HELLO client_nonce must be 32 bytes hex"));
+                };
+                let transcript =
+                    auth::transcript(hello.protocol, &hello.session, hello.device_port, &client_nonce, &self.host_nonce);
+                let Some(secret) = self.secret.as_ref() else {
+                    return Err(self.violation("secret_consumed", "session secret already used"));
+                };
+                let host_proof = hex::encode(auth::proof(secret, "host", &transcript));
+                self.transcript = Some(transcript);
                 self.hello = Some(hello);
+                self.state = State::Authenticating;
+                let ack = Frame::json(
+                    MessageType::HelloAck,
+                    &HelloAck { protocol: 0, mtu: self.cfg.mtu, host_nonce: hex::encode(self.host_nonce), host_proof },
+                );
+                Ok(vec![Outbound::ToPeer(ack)])
+            }
+            MessageType::Auth => {
+                if self.state != State::Authenticating {
+                    return Err(self.violation("out_of_state", format!("AUTH in {:?}", self.state)));
+                }
+                let auth_msg: Auth = self.parse_json("AUTH", &frame.body)?;
+                // Single use: the secret is dropped (zeroized) whatever the outcome.
+                let secret = self.secret.take().expect("secret present while Authenticating");
+                let transcript = self.transcript.take().expect("transcript fixed by HELLO");
+                if !auth::verify(&secret, "android", &transcript, &auth_msg.android_proof) {
+                    return Err(self.violation("auth_failed", "android_proof does not verify"));
+                }
+                drop(secret);
                 self.state = State::Negotiated;
-                let ack = Frame::json(MessageType::HelloAck, &HelloAck { protocol: 0, mtu: self.cfg.mtu });
                 let cfg = Frame::json(MessageType::ConfigureVpn, &self.cfg.configure_vpn());
                 self.state = State::Configuring;
-                Ok(vec![Outbound::ToPeer(ack), Outbound::ToPeer(cfg)])
+                Ok(vec![Outbound::ToPeer(cfg)])
             }
             MessageType::VpnReady => {
                 if self.state != State::Configuring {
@@ -409,11 +457,36 @@ mod tests {
             dns: vec!["192.168.10.1".into()],
             session_name: "Routedroid Phase 0".into(),
             expected_session: Some("s1".into()),
+            secret: Secret::new(TV_SECRET),
         }
     }
 
+    const TV_SECRET: [u8; 32] = [7u8; 32];
+    const CLIENT_NONCE: [u8; 32] = [0xaa; 32];
+    const HOST_NONCE: [u8; 32] = [0xbb; 32];
+
+    fn machine() -> Machine {
+        Machine::new(cfg(), HOST_NONCE)
+    }
+
     fn hello(session: &str) -> Frame {
-        Frame::json(MessageType::Hello, &Hello { protocol: 0, session: session.into(), device_port: 9000 })
+        Frame::json(
+            MessageType::Hello,
+            &Hello { protocol: 0, session: session.into(), device_port: 9000, client_nonce: hex::encode(CLIENT_NONCE) },
+        )
+    }
+
+    fn auth_frame(secret: &[u8; 32], role: &str, session: &str, port: u16) -> Frame {
+        let t = auth::transcript(0, session, port, &CLIENT_NONCE, &HOST_NONCE);
+        Frame::json(MessageType::Auth, &Auth { android_proof: hex::encode(auth::proof(secret, role, &t)) })
+    }
+
+    /// HELLO + valid AUTH; returns the CONFIGURE_VPN outbound.
+    fn authenticate(m: &mut Machine) -> Vec<Outbound> {
+        let out = m.handle(hello("s1")).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(m.state(), State::Authenticating);
+        m.handle(auth_frame(&TV_SECRET, "android", "s1", 9000)).unwrap()
     }
 
     fn ready() -> Frame {
@@ -429,18 +502,26 @@ mod tests {
 
     #[test]
     fn happy_path_reaches_active_and_forwards_packets() {
-        let mut m = Machine::new(cfg());
+        let mut m = machine();
         assert_eq!(m.state(), State::Connected);
         let out = m.handle(hello("s1")).unwrap();
-        assert_eq!(out.len(), 2);
+        assert_eq!(out.len(), 1);
         match &out[0] {
             Outbound::ToPeer(f) => {
                 assert_eq!(f.message_type, MessageType::HelloAck);
-                assert_eq!(f.body, br#"{"protocol":0,"mtu":1400}"#);
+                let ack: HelloAck = serde_json::from_slice(&f.body).unwrap();
+                assert_eq!(ack.mtu, 1400);
+                assert_eq!(ack.host_nonce, hex::encode(HOST_NONCE));
+                let t = auth::transcript(0, "s1", 9000, &CLIENT_NONCE, &HOST_NONCE);
+                assert!(auth::verify(&TV_SECRET, "host", &t, &ack.host_proof));
             }
             o => panic!("{o:?}"),
         }
-        match &out[1] {
+        assert!(!m.secret_consumed());
+        let out = m.handle(auth_frame(&TV_SECRET, "android", "s1", 9000)).unwrap();
+        assert!(m.secret_consumed());
+        assert_eq!(out.len(), 1);
+        match &out[0] {
             Outbound::ToPeer(f) => {
                 assert_eq!(f.message_type, MessageType::ConfigureVpn);
                 let c: ConfigureVpn = serde_json::from_slice(&f.body).unwrap();
@@ -463,21 +544,76 @@ mod tests {
 
     #[test]
     fn ip_packet_before_active_closes() {
-        let mut m = Machine::new(cfg());
+        let mut m = machine();
         let err = m.handle(Frame::ip_packet(packet())).unwrap_err();
         assert!(matches!(err, Close::Protocol(ref e) if e.code == "out_of_state"), "{err:?}");
         assert_eq!(m.state(), State::Closed);
 
-        let mut m = Machine::new(cfg());
+        let mut m = machine();
         m.handle(hello("s1")).unwrap();
+        let err = m.handle(Frame::ip_packet(packet())).unwrap_err();
+        assert!(matches!(err, Close::Protocol(ref e) if e.code == "out_of_state"), "{err:?}");
+
+        let mut m = machine();
+        authenticate(&mut m);
         let err = m.handle(Frame::ip_packet(packet())).unwrap_err();
         assert!(matches!(err, Close::Protocol(ref e) if e.code == "out_of_state"), "{err:?}");
     }
 
     #[test]
-    fn invalid_ipv4_in_active_closes() {
-        let mut m = Machine::new(cfg());
+    fn auth_rejects_wrong_secret_reflection_replay_and_out_of_order() {
+        // Wrong secret.
+        let mut m = machine();
         m.handle(hello("s1")).unwrap();
+        let err = m.handle(auth_frame(&[9u8; 32], "android", "s1", 9000)).unwrap_err();
+        assert!(matches!(err, Close::Protocol(ref e) if e.code == "auth_failed"), "{err:?}");
+        assert_eq!(m.state(), State::Closed);
+        assert!(m.secret_consumed());
+
+        // Reflection: the host's own proof sent back.
+        let mut m = machine();
+        m.handle(hello("s1")).unwrap();
+        let err = m.handle(auth_frame(&TV_SECRET, "host", "s1", 9000)).unwrap_err();
+        assert!(matches!(err, Close::Protocol(ref e) if e.code == "auth_failed"));
+
+        // Transcript bound to the reverse port: proof for another port fails.
+        let mut m = machine();
+        m.handle(hello("s1")).unwrap();
+        let err = m.handle(auth_frame(&TV_SECRET, "android", "s1", 9001)).unwrap_err();
+        assert!(matches!(err, Close::Protocol(ref e) if e.code == "auth_failed"));
+
+        // AUTH before HELLO, and a second AUTH after success.
+        let mut m = machine();
+        let err = m.handle(auth_frame(&TV_SECRET, "android", "s1", 9000)).unwrap_err();
+        assert!(matches!(err, Close::Protocol(ref e) if e.code == "out_of_state"));
+        let mut m = machine();
+        authenticate(&mut m);
+        let err = m.handle(auth_frame(&TV_SECRET, "android", "s1", 9000)).unwrap_err();
+        assert!(matches!(err, Close::Protocol(ref e) if e.code == "out_of_state"));
+
+        // Malformed nonce and malformed proof.
+        let mut m = machine();
+        let bad = Frame::json(
+            MessageType::Hello,
+            &Hello { protocol: 0, session: "s1".into(), device_port: 9000, client_nonce: "zz".into() },
+        );
+        let err = m.handle(bad).unwrap_err();
+        assert!(matches!(err, Close::Protocol(ref e) if e.code == "bad_nonce"));
+        let mut m = machine();
+        m.handle(hello("s1")).unwrap();
+        let err = m.handle(Frame::json(MessageType::Auth, &Auth { android_proof: "nothex".into() })).unwrap_err();
+        assert!(matches!(err, Close::Protocol(ref e) if e.code == "auth_failed"));
+
+        // Any violation before AUTH also discards the secret.
+        let mut m = machine();
+        let _ = m.handle(hello("other")).unwrap_err();
+        assert!(m.secret_consumed());
+    }
+
+    #[test]
+    fn invalid_ipv4_in_active_closes() {
+        let mut m = machine();
+        authenticate(&mut m);
         m.handle(ready()).unwrap();
         let mut p = packet();
         p[3] = 29; // total_length mismatch
@@ -487,45 +623,49 @@ mod tests {
 
     #[test]
     fn hello_checks_protocol_and_session() {
-        let mut m = Machine::new(cfg());
+        let mut m = machine();
         let err = m.handle(hello("other")).unwrap_err();
         assert!(matches!(err, Close::Protocol(ref e) if e.code == "bad_session"));
 
-        let mut m = Machine::new(cfg());
-        let bad = Frame::json(MessageType::Hello, &Hello { protocol: 1, session: "s1".into(), device_port: 1 });
+        let mut m = machine();
+        let bad = Frame::json(
+            MessageType::Hello,
+            &Hello { protocol: 1, session: "s1".into(), device_port: 1, client_nonce: hex::encode(CLIENT_NONCE) },
+        );
         let err = m.handle(bad).unwrap_err();
         assert!(matches!(err, Close::Protocol(ref e) if e.code == "unsupported_protocol"));
 
-        let mut m = Machine::new(SessionConfig { expected_session: None, ..cfg() });
+        let mut m = Machine::new(SessionConfig { expected_session: None, ..cfg() }, HOST_NONCE);
         assert!(m.handle(hello("anything")).is_ok());
     }
 
     #[test]
     fn duplicate_hello_and_wrong_direction_close() {
-        let mut m = Machine::new(cfg());
+        let mut m = machine();
         m.handle(hello("s1")).unwrap();
         let err = m.handle(hello("s1")).unwrap_err();
         assert!(matches!(err, Close::Protocol(ref e) if e.code == "out_of_state"));
 
-        let mut m = Machine::new(cfg());
-        let err = m.handle(Frame::json(MessageType::HelloAck, &HelloAck { protocol: 0, mtu: 1 })).unwrap_err();
+        let mut m = machine();
+        let ack = HelloAck { protocol: 0, mtu: 1, host_nonce: String::new(), host_proof: String::new() };
+        let err = m.handle(Frame::json(MessageType::HelloAck, &ack)).unwrap_err();
         assert!(matches!(err, Close::Protocol(ref e) if e.code == "wrong_direction"));
     }
 
     #[test]
     fn vpn_ready_validates_mtu_and_addresses() {
-        let mut m = Machine::new(cfg());
-        m.handle(hello("s1")).unwrap();
+        let mut m = machine();
+        authenticate(&mut m);
         let bad = Frame::json(MessageType::VpnReady, &VpnReady { addresses: vec!["192.168.10.74/32".into()], mtu: 1500 });
         assert!(matches!(m.handle(bad).unwrap_err(), Close::Protocol(ref e) if e.code == "mtu_mismatch"));
 
-        let mut m = Machine::new(cfg());
-        m.handle(hello("s1")).unwrap();
+        let mut m = machine();
+        authenticate(&mut m);
         let bad = Frame::json(MessageType::VpnReady, &VpnReady { addresses: vec!["10.0.0.1/32".into()], mtu: 1400 });
         assert!(matches!(m.handle(bad).unwrap_err(), Close::Protocol(ref e) if e.code == "address_mismatch"));
 
-        let mut m = Machine::new(cfg());
-        m.handle(hello("s1")).unwrap();
+        let mut m = machine();
+        authenticate(&mut m);
         let err = m.handle(Frame::json(MessageType::VpnError, &ErrorBody::new("vpn_permission_denied", "no"))).unwrap_err();
         assert_eq!(err, Close::VpnError(ErrorBody::new("vpn_permission_denied", "no")));
         assert_eq!(m.state(), State::Closed);

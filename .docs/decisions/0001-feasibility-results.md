@@ -1,6 +1,6 @@
 # 0001: Phase 0 Feasibility Results
 
-Status: in progress (gate 5-wireless and §3.4 still open). Dates: 2026-09-14..16.
+Status: in progress (gate 5-wireless and the helper gate still open). Dates: 2026-09-14..16.
 
 Test assets: `host/phase0-tunnel`, `android/` (`dev.routedroid.phase0`),
 `integration-tests/phase0/{netns-tunnel.sh,lan-proxyarp.sh,phone-multialias.sh,emulator-userns.md}`.
@@ -20,7 +20,7 @@ ISP home router; second LAN host: laptop on the same router's Wi-Fi.
 | 3 | Android selects matching source among multiple aliases | Android 10 Samsung and Android 14 emulator, `/32`+routes and `/24`+routes | ICMP and TCP toward every destination used the first alias; `ip route show table N` on the phone shows `dev tun0` routes with no `src`; inbound to both aliases works, incl. listener bound to the secondary | **FAIL (platform-wide)** | See below |
 | 5 | ADB stable while VPN owns default route | USB (Samsung), emulator | ~25 000 packets, `adb shell`/`install`/`logcat` unaffected | **PASS for USB**; wireless untested (device lacks TLS debugging) | Wireless ADB remains open |
 | 1 | Extra DHCP identity gets an independent lease | dnsmasq namespace lab (41 checks); ISP home router on `eno1` (Ethernet) | Router offered/ACKed `10.100.102.15` for client-id `routedroid:phase0:test1` on the PC's MAC while NetworkManager kept `10.100.102.18` (client-id `01:<mac>`); unicast RENEW with `ciaddr` ACKed (router returned remaining lease 86370 s, not a fresh 86400); unicast RELEASE on exit; `eno1` never carried the alias | **PASS** (Ethernet, one router model) | Automatic mode allowed on Ethernet; Wi-Fi-attached PC still to test |
-| — | Protected ADB-stdin bootstrap | — | not yet run | **OPEN** | §3.4 |
+| §3.4 | Protected ADB-stdin bootstrap + mutual HMAC | Samsung Android 10 (kernel 3.18), emulator Android 14 (kernel 6.1); `phone-bootstrap.sh`, 28 checks each | record via `content write` stdin accepted only from shell UID; hostile app denied at the framework (DUMP) for write and read; launches without/with expired/after-force-stop record cause no connection, prompt, or service; wrong secret rejected by Android before AUTH; replay refused; secret absent from host log, logcat, and device cmdlines; happy path reaches Active and forwards ICMP | **PASS** (both) | Mechanism adopted for Phase 1; see note on `splice` |
 | §12 | Per-interface forwarding sufficient without global `ip_forward` | netns lab, kernel 6.18 | forwarding worked with `ip_forward=0` and only `conf.{phone0,lan}.forwarding=1` | **PASS** | Keep global forwarding as operator prerequisite only where needed |
 
 ## Gate 3: what was observed
@@ -117,6 +117,30 @@ Decision (per the architecture's rule "restrict, never silently NAT"):
   recomputed from the ACK each time, never from the original lease.
 - No VLAN tags were seen on `eno1`; PACKET_AUXDATA path verified in the lab.
 
+## §3.4 notes
+
+- `adb shell content write` exists on Android 10 and 14 and forwards stdin
+  untouched over the shell v2 socket (80-byte binary record delivered intact).
+- **Provider must hand back a socket, not a pipe.** `content write` copies stdin
+  with `FileUtils.copy()`, which takes a `splice()` fast path when either fd is
+  a FIFO. adb's stdin is an AF_UNIX socket; on the Samsung's 3.18 kernel
+  `splice(socket -> pipe)` fails with `EINVAL`, `content` prints a stack trace,
+  exits 0, and the provider sees 0 bytes. Returning one end of
+  `ParcelFileDescriptor.createReliableSocketPair()` makes `copy()` fall back to
+  a read/write loop on every kernel. Emulator (6.1) worked either way.
+- Permission gate is enforced by the framework before the provider runs:
+  a third-party app with `<uses-permission DUMP>` gets "Permission Denial:
+  opening provider … requires android.permission.DUMP"; the shell-UID check is
+  the second layer.
+- Handshake ordering verified on device: HELLO/HELLO_ACK/AUTH complete on the
+  activity thread before `VpnService.prepare()`; the authenticated channel is
+  handed to the service in-process. Consent denied -> channel closed, host sees
+  peer close.
+- Not covered: rate limiting of repeated launches (Phase 1), the adb-mode host
+  delivery path was exercised via the identical `bootstrap-record | adb shell
+  content write` pipe rather than the in-process `Command` (no host netns
+  without sudo).
+
 ## Host firewall coexistence (found on the real LAN)
 
 - Docker: `iptables -P FORWARD DROP` in the `ip filter` base chain (priority 0)
@@ -142,6 +166,5 @@ steps.
 ## Still required before Phase 1 is declared
 
 - Gate 1 on a Wi-Fi-attached PC (Ethernet done).
-- §3.4 bootstrap provider on Android 10 and 14.
 - Wireless ADB (Android 11+ TLS) under the VPN default route.
 - Supervising helper with journal and `SIGKILL` boundaries (§3.1 helper gate).

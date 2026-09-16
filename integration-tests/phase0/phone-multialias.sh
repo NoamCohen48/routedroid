@@ -16,6 +16,7 @@ BIN=${BIN:-$HERE/../../host/target/release/phase0-tunnel}
 S=$(mktemp -d /tmp/rd-ma.XXXXXX)
 OFFICE=10.77.0; LAB=10.78.0; INET=10.99.0
 SESSION=p0-ma-$(head -c4 /dev/urandom | xxd -p)
+SECRET=$S/secret; head -c32 /dev/urandom | xxd -p -c64 > "$SECRET"
 log() { printf '\n== %s\n' "$*"; }
 pass=0; fail=0
 check() { local name=$1; shift; if "$@"; then echo "PASS  $name"; pass=$((pass+1)); else echo "FAIL  $name"; fail=$((fail+1)); fi; }
@@ -38,7 +39,7 @@ NS="nsenter -t $NSPID -U -n --preserve-credentials"
 if [[ $PFX == 32 ]]; then ADDRS="--address $OFFICE.2/32 --address $LAB.2/32"
 else ADDRS="--address $OFFICE.2/24 --address $LAB.2/24"; fi
 # shellcheck disable=SC2086
-$NS "$BIN" run --no-adb --session "$SESSION" --tun phone0 $ADDRS \
+$NS "$BIN" run --no-adb --session "$SESSION" --secret-file "$SECRET" --tun phone0 $ADDRS \
     --route $OFFICE.0/24 --route $LAB.0/24 --route 0.0.0.0/0 --dns $OFFICE.1 > "$S/tunnel.log" 2>&1 &
 TPID=$!
 for _ in $(seq 1 50); do grep -q "waiting for a client" "$S/tunnel.log" 2>/dev/null && break; sleep 0.1; done
@@ -49,6 +50,7 @@ sleep 0.3; socat TCP4-LISTEN:"$HP",bind=127.0.0.1,fork,reuseaddr UNIX:"$S/tun.so
 sleep 0.3
 adb -s "$SERIAL" reverse --remove-all >/dev/null 2>&1 || true
 adb -s "$SERIAL" reverse tcp:9000 tcp:"$HP" >/dev/null
+"$BIN" bootstrap-record --session "$SESSION" --secret-file "$SECRET" | adb -s "$SERIAL" shell content write --uri content://dev.routedroid.phase0.bootstrap/record
 adb -s "$SERIAL" shell am start -n dev.routedroid.phase0/.BootstrapActivity --es session "$SESSION" --ei device_port 9000 >/dev/null
 for _ in $(seq 1 300); do grep -q "session Active" "$S/tunnel.log" && break; sleep 0.1; done
 grep -q "session Active" "$S/tunnel.log" || { echo "session did not become Active (accept the VPN prompt?)"; tail -3 "$S/tunnel.log"; exit 3; }

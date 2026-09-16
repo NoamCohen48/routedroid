@@ -63,13 +63,19 @@ bridge the *tunnel listener* into the host namespace instead of adbd into the
 inner one. `--no-adb` prints the port; do `reverse` and `am start` by hand:
 
 ```bash
-$NS phase0-tunnel run --no-adb --session $SESSION --tun phone0 --address 10.77.0.2/32 &
+head -c32 /dev/urandom | xxd -p -c64 > $S/secret
+$NS phase0-tunnel run --no-adb --session $SESSION --secret-file $S/secret --tun phone0 --address 10.77.0.2/32 &
 HP=<port from the log>
 $NS socat UNIX-LISTEN:$S/tun.sock,fork,unlink-early TCP4:127.0.0.1:$HP &   # TCP4: getaddrinfo fails in the bare netns
 socat TCP4-LISTEN:$HP,bind=127.0.0.1,fork,reuseaddr UNIX:$S/tun.sock &
 adb -s SERIAL reverse tcp:9000 tcp:$HP
+phase0-tunnel bootstrap-record --session $SESSION --secret-file $S/secret \
+  | adb -s SERIAL shell content write --uri content://dev.routedroid.phase0.bootstrap/record
 adb -s SERIAL shell am start -n dev.routedroid.phase0/.BootstrapActivity --es session $SESSION --ei device_port 9000
 ```
+
+`phone-bootstrap.sh SERIAL [case|all]` automates this plus the §3.4 negative cases
+(no record, hostile app, wrong secret, force-stop, replay, expiry).
 
 Do not poke the listener with `nc` to "test the chain": the tunnel accepts one
 connection and exits on a mid-frame close.
