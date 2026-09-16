@@ -1,0 +1,35 @@
+# Phase 0 helper gate spike (architecture §5.3): one session per start, no
+# restart, independent root-owned cleanup after any exit, and a start guard
+# that refuses to run while an unresolved journal exists.
+[Unit]
+Description=Routedroid Phase 0 privileged helper (one session)
+Requires=routedroid-phase0-helper.socket
+After=network.target
+
+[Service]
+Type=simple
+Restart=no
+# LISTEN_FDS from the socket unit (Accept=no): the helper accepts one client itself.
+NonBlocking=yes
+ExecStartPre=/usr/local/libexec/routedroid/phase0-helper check
+ExecStart=/usr/local/libexec/routedroid/phase0-helper serve
+# Runs after ExecStart exits for ANY reason, including SIGKILL. Failure -> unit failed.
+ExecStopPost=/usr/local/libexec/routedroid/phase0-helper cleanup
+# journal in /var/lib/routedroid, socket/crash hook in /run/routedroid
+StateDirectory=routedroid
+RuntimeDirectory=routedroid
+RuntimeDirectoryPreserve=yes
+# Least privilege: root uid (for /proc/sys, nft, ip) but only network capabilities.
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET
+DeviceAllow=/dev/net/tun rw
+ReadWritePaths=/proc/sys/net/ipv4
+KillMode=process
+TimeoutStopSec=10
+Environment=RUST_LOG=info

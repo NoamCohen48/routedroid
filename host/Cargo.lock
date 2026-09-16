@@ -346,6 +346,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "phase0-helper"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "libc",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "phase0-tunnel"
 version = "0.0.1"
 dependencies = [
