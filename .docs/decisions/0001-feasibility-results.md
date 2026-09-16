@@ -1,6 +1,6 @@
 # 0001: Phase 0 Feasibility Results
 
-Status: in progress (gates 1 and 5-wireless still open). Dates: 2026-09-14/15.
+Status: in progress (gate 5-wireless and §3.4 still open). Dates: 2026-09-14..16.
 
 Test assets: `host/phase0-tunnel`, `android/` (`dev.routedroid.phase0`),
 `integration-tests/phase0/{netns-tunnel.sh,lan-proxyarp.sh,phone-multialias.sh,emulator-userns.md}`.
@@ -19,7 +19,7 @@ ISP home router; second LAN host: laptop on the same router's Wi-Fi.
 | 2 | Proxy ARP delivers inbound through real Ethernet/Wi-Fi | PC on Ethernet, laptop on ISP router Wi-Fi, manual alias 10.100.102.222 | laptop `ip neigh` resolves alias to PC MAC; laptop-initiated ICMP and 200 KB TCP to phone; phone reaches router, laptop, Internet, DNS | **PASS** (one AP model) | Wi-Fi client side proven; PC-on-Wi-Fi not yet tested |
 | 3 | Android selects matching source among multiple aliases | Android 10 Samsung and Android 14 emulator, `/32`+routes and `/24`+routes | ICMP and TCP toward every destination used the first alias; `ip route show table N` on the phone shows `dev tun0` routes with no `src`; inbound to both aliases works, incl. listener bound to the secondary | **FAIL (platform-wide)** | See below |
 | 5 | ADB stable while VPN owns default route | USB (Samsung), emulator | ~25 000 packets, `adb shell`/`install`/`logcat` unaffected | **PASS for USB**; wireless untested (device lacks TLS debugging) | Wireless ADB remains open |
-| 1 | Extra DHCP identity gets an independent lease | — | not yet run | **OPEN** | §3.3 next |
+| 1 | Extra DHCP identity gets an independent lease | dnsmasq namespace lab (41 checks); ISP home router on `eno1` (Ethernet) | Router offered/ACKed `10.100.102.15` for client-id `routedroid:phase0:test1` on the PC's MAC while NetworkManager kept `10.100.102.18` (client-id `01:<mac>`); unicast RENEW with `ciaddr` ACKed (router returned remaining lease 86370 s, not a fresh 86400); unicast RELEASE on exit; `eno1` never carried the alias | **PASS** (Ethernet, one router model) | Automatic mode allowed on Ethernet; Wi-Fi-attached PC still to test |
 | — | Protected ADB-stdin bootstrap | — | not yet run | **OPEN** | §3.4 |
 | §12 | Per-interface forwarding sufficient without global `ip_forward` | netns lab, kernel 6.18 | forwarding worked with `ip_forward=0` and only `conf.{phone0,lan}.forwarding=1` | **PASS** | Keep global forwarding as operator prerequisite only where needed |
 
@@ -105,6 +105,18 @@ Decision (per the architecture's rule "restrict, never silently NAT"):
 4. Re-test on each new Android major; if a future `VpnService` API allows
    per-route preferred sources, revisit.
 
+## Gate 1 notes
+
+- The ACK for a unicast RENEW is addressed to the alias IP; since the alias is
+  never configured on the PC, something must answer ARP for it or the router
+  cannot deliver the ACK. The probe answers ARP for the alias while it holds
+  the lease; in the product this is the same presence proxy ARP provides.
+  Renewal must therefore never be attempted before proxy ARP/route state is
+  active, or must use REBIND (broadcast) as fallback.
+- The router refreshes by returning the *remaining* lease time; T1/T2 are
+  recomputed from the ACK each time, never from the original lease.
+- No VLAN tags were seen on `eno1`; PACKET_AUXDATA path verified in the lab.
+
 ## Host firewall coexistence (found on the real LAN)
 
 - Docker: `iptables -P FORWARD DROP` in the `ip filter` base chain (priority 0)
@@ -129,8 +141,7 @@ steps.
 
 ## Still required before Phase 1 is declared
 
-- Gate 1 on dnsmasq (namespace) and on the ISP router (Ethernet), then on a
-  Wi-Fi-attached PC.
+- Gate 1 on a Wi-Fi-attached PC (Ethernet done).
 - §3.4 bootstrap provider on Android 10 and 14.
 - Wireless ADB (Android 11+ TLS) under the VPN default route.
 - Supervising helper with journal and `SIGKILL` boundaries (§3.1 helper gate).
