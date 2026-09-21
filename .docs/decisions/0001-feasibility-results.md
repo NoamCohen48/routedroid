@@ -1,6 +1,6 @@
 # 0001: Phase 0 Feasibility Results
 
-Status: in progress (gate 5-wireless and the helper gate still open). Dates: 2026-09-14..16.
+Status: in progress (gate 5-wireless still open). Dates: 2026-09-14..21.
 
 Test assets: `host/phase0-tunnel`, `android/` (`dev.routedroid.phase0`),
 `integration-tests/phase0/{netns-tunnel.sh,lan-proxyarp.sh,phone-multialias.sh,emulator-userns.md}`.
@@ -21,6 +21,7 @@ ISP home router; second LAN host: laptop on the same router's Wi-Fi.
 | 5 | ADB stable while VPN owns default route | USB (Samsung), emulator | ~25 000 packets, `adb shell`/`install`/`logcat` unaffected | **PASS for USB**; wireless untested (device lacks TLS debugging) | Wireless ADB remains open |
 | 1 | Extra DHCP identity gets an independent lease | dnsmasq namespace lab (41 checks); ISP home router on `eno1` (Ethernet) | Router offered/ACKed `10.100.102.15` for client-id `routedroid:phase0:test1` on the PC's MAC while NetworkManager kept `10.100.102.18` (client-id `01:<mac>`); unicast RENEW with `ciaddr` ACKed (router returned remaining lease 86370 s, not a fresh 86400); unicast RELEASE on exit; `eno1` never carried the alias | **PASS** (Ethernet, one router model) | Automatic mode allowed on Ethernet; Wi-Fi-attached PC still to test |
 | §3.4 | Protected ADB-stdin bootstrap + mutual HMAC | Samsung Android 10 (kernel 3.18), emulator Android 14 (kernel 6.1); `phone-bootstrap.sh`, 28 checks each | record via `content write` stdin accepted only from shell UID; hostile app denied at the framework (DUMP) for write and read; launches without/with expired/after-force-stop record cause no connection, prompt, or service; wrong secret rejected by Android before AUTH; replay refused; secret absent from host log, logcat, and device cmdlines; happy path reaches Active and forwards ICMP | **PASS** (both) | Mechanism adopted for Phase 1; see note on `splice` |
+| §3.1 helper | Privileged helper survives `SIGKILL` at every journal boundary; root-owned cleanup restores baseline | userns lab (231 checks); real systemd 261 units on Arch, `eno1`, Docker + firewalld present (192 checks); `helper-kill.sh` | 2000/2000 ICMP echoes through the seqpacket relay (18 ms, avg RTT 9 µs); client crash at four points and helper `SIGKILL` at `pending`/`applied`/`done`/`undo_*` of all six mutations plus `active`: `ExecStopPost=cleanup` replayed the journal every time, `check` passed, route/nft/sysctl/link snapshot identical to baseline, TUN gone; `check` refuses to start while a journal is unresolved | **PASS** (both) | Architecture §5.3 helper adopted; see notes |
 | §12 | Per-interface forwarding sufficient without global `ip_forward` | netns lab, kernel 6.18 | forwarding worked with `ip_forward=0` and only `conf.{phone0,lan}.forwarding=1` | **PASS** | Keep global forwarding as operator prerequisite only where needed |
 
 ## Gate 3: what was observed
@@ -141,6 +142,23 @@ Decision (per the architecture's rule "restrict, never silently NAT"):
   content write` pipe rather than the in-process `Command` (no host netns
   without sudo).
 
+## §3.1 helper gate notes
+
+- Only the real units found the two harness races that userns could not:
+  the crash-injection file outlived the killed helper, so `ExecStopPost`
+  cleanup died at the same stage (hook now consumes its file); and
+  `systemctl is-active` is false during `deactivating`, so the script judged
+  cleanup before it had run (wait for `ActiveState` inactive/failed).
+- systemd's default 5-in-10 s start limit rejects a per-connection service
+  under rapid reconnects; the unit sets `StartLimitIntervalSec=0`. A crash
+  loop is bounded by the controller instead of by systemd.
+- A stuck journal after a SIGKILL never left kernel state behind in practice:
+  the non-persistent TUN vanishes with the process, and every other mutation
+  was undone by the replay. `check` failing closed until `cleanup` ran is the
+  intended behaviour.
+- Snapshot comparison must ignore `counter packets/bytes` in `nft list
+  ruleset`; Docker's chains tick on their own.
+
 ## Host firewall coexistence (found on the real LAN)
 
 - Docker: `iptables -P FORWARD DROP` in the `ip filter` base chain (priority 0)
@@ -167,4 +185,3 @@ steps.
 
 - Gate 1 on a Wi-Fi-attached PC (Ethernet done).
 - Wireless ADB (Android 11+ TLS) under the VPN default route.
-- Supervising helper with journal and `SIGKILL` boundaries (§3.1 helper gate).
