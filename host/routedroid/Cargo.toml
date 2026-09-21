@@ -1,0 +1,23 @@
+[package]
+name = "routedroid"
+version = "0.1.0"
+description = "Routedroid host controller: makes an unrooted Android phone a reachable IPv4 host on the PC's LAN over ADB"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "routedroid"
+path = "src/main.rs"
+
+[dependencies]
+routedroid-proto = { path = "../routedroid-proto" }
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "process", "time", "sync", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+hex = "0.4"

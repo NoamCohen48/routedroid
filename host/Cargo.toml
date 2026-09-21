@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["routedroid-proto", "phase0-tunnel", "phase0-dhcp", "phase0-helper"]
+members = ["routedroid", "routedroid-proto", "phase0-tunnel", "phase0-dhcp", "phase0-helper"]
 
 [workspace.package]
 edition = "2021"
