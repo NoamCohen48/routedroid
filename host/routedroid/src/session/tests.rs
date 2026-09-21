@@ -29,7 +29,13 @@ fn machine() -> Machine {
 fn hello(session: &str, port: u16, protocol: u32) -> Frame {
     Frame::json(
         MessageType::Hello,
-        &Hello { protocol, session: session.into(), device_port: port, client_nonce: hex::encode(CLIENT_NONCE), app: None },
+        &Hello {
+            protocol,
+            session: session.into(),
+            device_port: port,
+            client_nonce: hex::encode(CLIENT_NONCE),
+            app: None,
+        },
     )
 }
 
@@ -56,7 +62,8 @@ fn to_active(m: &mut Machine) {
     let c: ConfigureVpn = routedroid_proto::messages::parse(&cfgf.body).unwrap();
     assert_eq!(c.addresses[0].address, "10.0.0.2");
     assert_eq!(m.state(), State::Configuring);
-    m.handle(Frame::json(MessageType::VpnReady, &VpnReady { addresses: vec!["10.0.0.2/32".into()], mtu: 1400 })).unwrap();
+    m.handle(Frame::json(MessageType::VpnReady, &VpnReady { addresses: vec!["10.0.0.2/32".into()], mtu: 1400 }))
+        .unwrap();
     assert_eq!(m.state(), State::Active);
 }
 
@@ -70,7 +77,10 @@ fn happy_path_consumes_secret_and_forwards_packets() {
     let bad = vec![0x65; 21];
     assert!(m.handle(Frame::ip_packet(bad)).unwrap().is_empty());
     assert_eq!(m.bad_packets, 1);
-    assert_eq!(m.handle(Frame::empty(MessageType::Ping)).unwrap(), vec![Outbound::ToPeer(Frame::empty(MessageType::Pong))]);
+    assert_eq!(
+        m.handle(Frame::empty(MessageType::Ping)).unwrap(),
+        vec![Outbound::ToPeer(Frame::empty(MessageType::Pong))]
+    );
     assert_eq!(m.handle(Frame::empty(MessageType::Stop)), Err(Close::PeerStop));
     assert_eq!(m.state(), State::Closed);
 }
@@ -124,7 +134,10 @@ fn malformed_bodies_are_protocol_errors() {
     assert_eq!(refused(m.handle(Frame::new(MessageType::Hello, b"{".to_vec()))), ErrorCode::ProtocolError);
     let mut m = machine();
     assert_eq!(
-        refused(m.handle(Frame::new(MessageType::Hello, br#"{"protocol":1,"session":"bad id","device_port":1,"client_nonce":"aa"}"#.to_vec()))),
+        refused(m.handle(Frame::new(
+            MessageType::Hello,
+            br#"{"protocol":1,"session":"bad id","device_port":1,"client_nonce":"aa"}"#.to_vec()
+        ))),
         ErrorCode::ProtocolError
     );
 }

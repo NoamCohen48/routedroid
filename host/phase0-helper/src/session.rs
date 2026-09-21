@@ -205,14 +205,24 @@ pub fn cleanup(journal_dir: &Path, hook: &CrashHook) -> Result<()> {
                     match ops::present(&op) {
                         Ok(true) => {
                             info!(op = %label, "pending entry is present; undoing");
-                            if undo_one(&mut journal, seq, &op, hook).is_err() { ok = false; }
+                            if undo_one(&mut journal, seq, &op, hook).is_err() {
+                                ok = false;
+                            }
                         }
-                        Ok(false) => { journal.undone(seq, &op)?; info!(op = %label, "pending entry absent; closed"); }
-                        Err(e) => { warn!(op = %label, error = %e, "cannot inspect"); ok = false; }
+                        Ok(false) => {
+                            journal.undone(seq, &op)?;
+                            info!(op = %label, "pending entry absent; closed");
+                        }
+                        Err(e) => {
+                            warn!(op = %label, error = %e, "cannot inspect");
+                            ok = false;
+                        }
                     }
                 }
                 Phase::Done | Phase::UndoPending => {
-                    if undo_one(&mut journal, seq, &op, hook).is_err() { ok = false; }
+                    if undo_one(&mut journal, seq, &op, hook).is_err() {
+                        ok = false;
+                    }
                 }
                 Phase::Undone => {}
             }
@@ -225,7 +235,11 @@ pub fn cleanup(journal_dir: &Path, hook: &CrashHook) -> Result<()> {
             warn!(journal = %path.display(), "left unresolved");
         }
     }
-    if all_ok { Ok(()) } else { bail!("cleanup incomplete") }
+    if all_ok {
+        Ok(())
+    } else {
+        bail!("cleanup incomplete")
+    }
 }
 
 /// `check` (ExecStartPre): refuse to start while any unresolved journal exists.

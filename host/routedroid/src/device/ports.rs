@@ -49,7 +49,12 @@ impl DevicePorts {
             }
         };
         if !is_exactly_ours(&list, port) {
-            warn!(device_port = port.device_port, host_port = port.host_port, ?list, "reverse mapping is not ours any more; not removing");
+            warn!(
+                device_port = port.device_port,
+                host_port = port.host_port,
+                ?list,
+                "reverse mapping is not ours any more; not removing"
+            );
             return;
         }
         match self.adb.reverse_remove(port.device_port).await {
@@ -71,4 +76,3 @@ pub(super) fn is_exactly_ours(list: &[ReverseMapping], port: ReservedPort) -> bo
     let ours: Vec<_> = list.iter().filter(|m| m.device_port() == Some(port.device_port)).collect();
     ours.len() == 1 && ours[0].local == format!("tcp:{}", port.host_port)
 }
-

@@ -115,7 +115,12 @@ impl Machine {
         let host_proof = hex::encode(auth::proof(secret, auth::Role::Host, &transcript));
         self.transcript = Some(transcript);
         self.state = State::Authenticating;
-        let ack = HelloAck { protocol: PROTOCOL_VERSION, mtu: self.cfg.mtu, host_nonce: hex::encode(self.host_nonce), host_proof };
+        let ack = HelloAck {
+            protocol: PROTOCOL_VERSION,
+            mtu: self.cfg.mtu,
+            host_nonce: hex::encode(self.host_nonce),
+            host_proof,
+        };
         Ok(vec![Outbound::ToPeer(Frame::json(MessageType::HelloAck, &ack))])
     }
 
@@ -136,7 +141,9 @@ impl Machine {
     fn on_vpn_ready(&mut self, bytes: &[u8]) -> Result<Vec<Outbound>, Close> {
         let ready: VpnReady = self.body("VPN_READY", bytes)?;
         if ready.mtu != self.cfg.mtu {
-            return Err(self.refuse(ErrorCode::ProtocolError, format!("VPN_READY mtu {} != {}", ready.mtu, self.cfg.mtu)));
+            return Err(
+                self.refuse(ErrorCode::ProtocolError, format!("VPN_READY mtu {} != {}", ready.mtu, self.cfg.mtu))
+            );
         }
         for want in &self.cfg.addresses {
             let want_s = format!("{}/{}", want.address, want.prefix);

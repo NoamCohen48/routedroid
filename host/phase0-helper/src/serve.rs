@@ -31,7 +31,10 @@ pub async fn serve(cfg: ServeConfig) -> Result<()> {
     session::check(&cfg.journal_dir).context("refusing to start")?;
 
     let listener = match Listener::from_systemd()? {
-        Some(l) => { info!("listening on socket from systemd"); l }
+        Some(l) => {
+            info!("listening on socket from systemd");
+            l
+        }
         None => {
             let p = cfg.socket.as_deref().context("--socket required without systemd activation")?;
             let l = Listener::bind(p)?;
@@ -54,18 +57,29 @@ pub async fn serve(cfg: ServeConfig) -> Result<()> {
     // Wait for Start.
     let plan = loop {
         let n = conn.recv(&mut buf).await?;
-        if n == 0 { info!("controller left before Start"); return Ok(()); }
+        if n == 0 {
+            info!("controller left before Start");
+            return Ok(());
+        }
         match parse_control(&buf[..n]) {
             Some(Request::Ping) => send_reply(&conn, &Reply::Pong).await?,
             Some(Request::Start { lan_if, phone_ip, tun, mtu }) => {
                 let session = format!("s{}-{}", std::process::id(), nanos());
                 match Plan::build(&session, &lan_if, phone_ip, &tun, mtu) {
                     Ok(p) => break p,
-                    Err(e) => send_reply(&conn, &Reply::Error { code: "invalid".into(), message: e.to_string() }).await?,
+                    Err(e) => {
+                        send_reply(&conn, &Reply::Error { code: "invalid".into(), message: e.to_string() }).await?
+                    }
                 }
             }
-            Some(Request::Stop) => { send_reply(&conn, &Reply::Stopped).await?; return Ok(()); }
-            None => send_reply(&conn, &Reply::Error { code: "bad_request".into(), message: "expected control JSON".into() }).await?,
+            Some(Request::Stop) => {
+                send_reply(&conn, &Reply::Stopped).await?;
+                return Ok(());
+            }
+            None => {
+                send_reply(&conn, &Reply::Error { code: "bad_request".into(), message: "expected control JSON".into() })
+                    .await?
+            }
         }
     };
 
@@ -76,7 +90,16 @@ pub async fn serve(cfg: ServeConfig) -> Result<()> {
             bail!("start failed: {e:#}");
         }
     };
-    send_reply(&conn, &Reply::Started { session: plan.session.clone(), tun: plan.tun.clone(), host_ip: plan.host_ip, lan_prefix: plan.lan_prefix }).await?;
+    send_reply(
+        &conn,
+        &Reply::Started {
+            session: plan.session.clone(),
+            tun: plan.tun.clone(),
+            host_ip: plan.host_ip,
+            lan_prefix: plan.lan_prefix,
+        },
+    )
+    .await?;
     info!(session = %plan.session, tun = %plan.tun, phone = %plan.phone_ip, "session active");
     hook.at("active");
 
@@ -118,17 +141,25 @@ pub async fn serve(cfg: ServeConfig) -> Result<()> {
     info!(tun_to_controller = relayed.0, controller_to_tun = relayed.1, "relay ended");
     let r = active.stop(&hook);
     if stop_requested {
-        let _ = send_reply(&conn, &match &r { Ok(()) => Reply::Stopped, Err(e) => Reply::Error { code: "stop_failed".into(), message: e.to_string() } }).await;
+        let _ = send_reply(
+            &conn,
+            &match &r {
+                Ok(()) => Reply::Stopped,
+                Err(e) => Reply::Error { code: "stop_failed".into(), message: e.to_string() },
+            },
+        )
+        .await;
     }
     r
 }
 
 fn parse_control(d: &[u8]) -> Option<Request> {
-    if d.first() != Some(&KIND_CONTROL) { return None; }
+    if d.first() != Some(&KIND_CONTROL) {
+        return None;
+    }
     serde_json::from_slice(&d[1..]).ok()
 }
 
 fn nanos() -> u128 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
 }
-

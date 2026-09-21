@@ -5,15 +5,15 @@
 mod close;
 mod config;
 mod driver;
-mod tasks;
-mod machine;
-#[cfg(test)]
-mod tests;
 #[cfg(test)]
 mod driver_tests;
+mod machine;
+mod tasks;
+#[cfg(test)]
+mod tests;
 
 pub use close::{Close, SessionEnd};
 pub use config::SessionConfig;
 pub use driver::{run_session, PacketEndpoints};
-pub use tasks::QUEUE_DEPTH;
 pub use machine::{Machine, Outbound};
+pub use tasks::QUEUE_DEPTH;

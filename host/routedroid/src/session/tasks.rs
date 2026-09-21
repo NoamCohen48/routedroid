@@ -18,7 +18,6 @@ pub const HANDSHAKE_DEADLINE: Duration = Duration::from_secs(15);
 /// Configuring → Active includes the user answering the VPN consent dialog.
 pub const CONSENT_DEADLINE: Duration = Duration::from_secs(120);
 
-
 /// Reads frames on its own task so the main loop's `select!` never drops a
 /// half-read frame (`read_frame` is not cancellation-safe).
 pub async fn reader_task<R: AsyncRead + Unpin>(mut rd: R, mtu: u32, tx: mpsc::Sender<Result<Frame, FrameError>>) {
@@ -50,4 +49,3 @@ pub async fn writer_task<W: AsyncWrite + Unpin>(mut wr: W, mut rx: mpsc::Receive
     wr.shutdown().await.ok();
     Ok(())
 }
-

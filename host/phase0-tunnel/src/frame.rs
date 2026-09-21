@@ -79,10 +79,7 @@ impl Frame {
     }
 
     pub fn json<T: serde::Serialize>(message_type: MessageType, value: &T) -> Self {
-        Self::new(
-            message_type,
-            serde_json::to_vec(value).expect("control bodies are plain structs"),
-        )
+        Self::new(message_type, serde_json::to_vec(value).expect("control bodies are plain structs"))
     }
 
     pub fn ip_packet(packet: Vec<u8>) -> Self {
@@ -131,16 +128,27 @@ pub enum FrameError {
     NonZeroFlags(u16),
     UnknownMessageType(u8),
     /// Control body larger than [`MAX_CONTROL_BODY`].
-    ControlBodyTooLarge { message_type: MessageType, body_length: u32 },
+    ControlBodyTooLarge {
+        message_type: MessageType,
+        body_length: u32,
+    },
     /// PING/PONG/STOP carrying a body.
-    UnexpectedBody { message_type: MessageType, body_length: u32 },
+    UnexpectedBody {
+        message_type: MessageType,
+        body_length: u32,
+    },
     /// Zero-length body on a message that requires one (JSON or IP_PACKET).
     EmptyBody(MessageType),
     /// IP_PACKET body outside `(20, mtu]`.
-    PacketBodyOutOfRange { body_length: u32, mtu: u32 },
+    PacketBodyOutOfRange {
+        body_length: u32,
+        mtu: u32,
+    },
     /// Stream ended in the middle of a frame (or cleanly, `clean == true`,
     /// exactly at a frame boundary).
-    Truncated { clean: bool },
+    Truncated {
+        clean: bool,
+    },
     Io(String),
 }
 
@@ -150,19 +158,16 @@ impl fmt::Display for FrameError {
             Self::UnsupportedVersion(v) => write!(f, "unsupported protocol version {v}"),
             Self::NonZeroFlags(x) => write!(f, "nonzero flags 0x{x:04x}"),
             Self::UnknownMessageType(t) => write!(f, "unknown message type 0x{t:02x}"),
-            Self::ControlBodyTooLarge { message_type, body_length } => write!(
-                f,
-                "{message_type:?} body of {body_length} bytes exceeds control limit {MAX_CONTROL_BODY}"
-            ),
+            Self::ControlBodyTooLarge { message_type, body_length } => {
+                write!(f, "{message_type:?} body of {body_length} bytes exceeds control limit {MAX_CONTROL_BODY}")
+            }
             Self::UnexpectedBody { message_type, body_length } => {
                 write!(f, "{message_type:?} must be empty, got {body_length} bytes")
             }
             Self::EmptyBody(t) => write!(f, "{t:?} must carry a body"),
-            Self::PacketBodyOutOfRange { body_length, mtu } => write!(
-                f,
-                "IP_PACKET body of {body_length} bytes outside ({}, {mtu}]",
-                MIN_PACKET_BODY - 1
-            ),
+            Self::PacketBodyOutOfRange { body_length, mtu } => {
+                write!(f, "IP_PACKET body of {body_length} bytes outside ({}, {mtu}]", MIN_PACKET_BODY - 1)
+            }
             Self::Truncated { clean: true } => write!(f, "peer closed the stream"),
             Self::Truncated { clean: false } => write!(f, "stream ended mid-frame"),
             Self::Io(e) => write!(f, "i/o error: {e}"),
@@ -187,8 +192,7 @@ pub fn validate_header(h: &RawHeader, mtu: u32) -> Result<MessageType, FrameErro
     if h.flags != 0 {
         return Err(FrameError::NonZeroFlags(h.flags));
     }
-    let message_type =
-        MessageType::from_u8(h.message_type).ok_or(FrameError::UnknownMessageType(h.message_type))?;
+    let message_type = MessageType::from_u8(h.message_type).ok_or(FrameError::UnknownMessageType(h.message_type))?;
     let len = h.body_length;
     match message_type {
         MessageType::IpPacket => {
@@ -248,13 +252,10 @@ pub async fn read_frame<R: AsyncRead + Unpin>(reader: &mut R, mtu: u32) -> Resul
     let message_type = validate_header(&raw, mtu)?;
     let mut body = vec![0u8; raw.body_length as usize];
     if !body.is_empty() {
-        reader
-            .read_exact(&mut body)
-            .await
-            .map_err(|e| match e.kind() {
-                std::io::ErrorKind::UnexpectedEof => FrameError::Truncated { clean: false },
-                _ => FrameError::Io(e.to_string()),
-            })?;
+        reader.read_exact(&mut body).await.map_err(|e| match e.kind() {
+            std::io::ErrorKind::UnexpectedEof => FrameError::Truncated { clean: false },
+            _ => FrameError::Io(e.to_string()),
+        })?;
     }
     Ok(Frame::new(message_type, body))
 }
@@ -270,24 +271,23 @@ mod tests {
         0x00, // version 0
         0x01, // HELLO
         0x00, 0x00, // flags
-        b'{', b'"', b'p', b'r', b'o', b't', b'o', b'c', b'o', b'l', b'"', b':', b'0', b',', b'"',
-        b's', b'e', b's', b's', b'i', b'o', b'n', b'"', b':', b'"', b'a', b'b', b'c', b'"', b',',
-        b'"', b'd', b'e', b'v', b'i', b'c', b'e', b'_', b'p', b'o', b'r', b't', b'"', b':', b'9',
-        b'0', b'0', b'0', b'}',
+        b'{', b'"', b'p', b'r', b'o', b't', b'o', b'c', b'o', b'l', b'"', b':', b'0', b',', b'"', b's', b'e', b's',
+        b's', b'i', b'o', b'n', b'"', b':', b'"', b'a', b'b', b'c', b'"', b',', b'"', b'd', b'e', b'v', b'i', b'c',
+        b'e', b'_', b'p', b'o', b'r', b't', b'"', b':', b'9', b'0', b'0', b'0', b'}',
     ];
 
     /// IP_PACKET golden vector: 28-byte IPv4/ICMP echo request 10.0.0.2 -> 10.0.0.1.
     const PACKET_BODY: &[u8] = &[
-        0x45, 0x00, 0x00, 0x1c, 0x00, 0x01, 0x00, 0x00, 0x40, 0x01, 0x66, 0xde, 0x0a, 0x00, 0x00,
-        0x02, 0x0a, 0x00, 0x00, 0x01, 0x08, 0x00, 0xf7, 0xff, 0x00, 0x00, 0x00, 0x00,
+        0x45, 0x00, 0x00, 0x1c, 0x00, 0x01, 0x00, 0x00, 0x40, 0x01, 0x66, 0xde, 0x0a, 0x00, 0x00, 0x02, 0x0a, 0x00,
+        0x00, 0x01, 0x08, 0x00, 0xf7, 0xff, 0x00, 0x00, 0x00, 0x00,
     ];
     const PACKET_WIRE: &[u8] = &[
         0x00, 0x00, 0x00, 0x1c, // body_length = 28
         0x00, // version
         0x10, // IP_PACKET
         0x00, 0x00, // flags
-        0x45, 0x00, 0x00, 0x1c, 0x00, 0x01, 0x00, 0x00, 0x40, 0x01, 0x66, 0xde, 0x0a, 0x00, 0x00,
-        0x02, 0x0a, 0x00, 0x00, 0x01, 0x08, 0x00, 0xf7, 0xff, 0x00, 0x00, 0x00, 0x00,
+        0x45, 0x00, 0x00, 0x1c, 0x00, 0x01, 0x00, 0x00, 0x40, 0x01, 0x66, 0xde, 0x0a, 0x00, 0x00, 0x02, 0x0a, 0x00,
+        0x00, 0x01, 0x08, 0x00, 0xf7, 0xff, 0x00, 0x00, 0x00, 0x00,
     ];
 
     #[test]
@@ -443,14 +443,8 @@ mod tests {
         assert_eq!(a.message_type, MessageType::Hello);
         let b = read_frame(&mut cursor, DEFAULT_MTU).await.unwrap();
         assert_eq!(b.body, PACKET_BODY);
-        assert_eq!(
-            read_frame(&mut cursor, DEFAULT_MTU).await.unwrap_err(),
-            FrameError::Truncated { clean: true }
-        );
+        assert_eq!(read_frame(&mut cursor, DEFAULT_MTU).await.unwrap_err(), FrameError::Truncated { clean: true });
         let mut cut = std::io::Cursor::new(PACKET_WIRE[..20].to_vec());
-        assert_eq!(
-            read_frame(&mut cut, DEFAULT_MTU).await.unwrap_err(),
-            FrameError::Truncated { clean: false }
-        );
+        assert_eq!(read_frame(&mut cut, DEFAULT_MTU).await.unwrap_err(), FrameError::Truncated { clean: false });
     }
 }

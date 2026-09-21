@@ -10,9 +10,9 @@ mod reverse;
 mod serial;
 
 pub use devices::{parse_devices, Device, DeviceState};
-pub use reverse::ReverseMapping;
 #[cfg(test)]
 pub use reverse::parse_reverse_list;
+pub use reverse::ReverseMapping;
 pub use serial::Transport;
 
 use std::process::Stdio;
@@ -36,7 +36,9 @@ impl Adb {
     /// Refuses network serials (§1) before the first command runs.
     pub fn new(binary: &str, serial: &str, timeout: Duration) -> Result<Self> {
         match Transport::classify(serial) {
-            Transport::Usb | Transport::Emulator => Ok(Self { binary: binary.to_string(), serial: serial.to_string(), timeout }),
+            Transport::Usb | Transport::Emulator => {
+                Ok(Self { binary: binary.to_string(), serial: serial.to_string(), timeout })
+            }
             Transport::Network => Err(Fault::msg(
                 Kind::Transport,
                 format!("serial {serial:?} is a network transport; version 1 supports USB ADB only"),
@@ -76,7 +78,8 @@ impl Adb {
         }
         let desc = format!("adb -s {} {}", self.serial, args.join(" "));
         let fut = async {
-            let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().with_context(|| format!("spawn {desc}"))?;
+            let mut child =
+                cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().with_context(|| format!("spawn {desc}"))?;
             if let Some(bytes) = stdin {
                 use tokio::io::AsyncWriteExt;
                 let mut pipe = child.stdin.take().expect("piped stdin");
@@ -107,7 +110,10 @@ impl Adb {
             .context("spawn adb devices")
             .fault(Kind::Adb)?;
         if !out.status.success() {
-            return Err(Fault::msg(Kind::Adb, format!("adb devices failed: {}", String::from_utf8_lossy(&out.stderr).trim())));
+            return Err(Fault::msg(
+                Kind::Adb,
+                format!("adb devices failed: {}", String::from_utf8_lossy(&out.stderr).trim()),
+            ));
         }
         Ok(parse_devices(&String::from_utf8_lossy(&out.stdout)))
     }

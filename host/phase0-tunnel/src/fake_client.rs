@@ -4,8 +4,8 @@
 use std::net::SocketAddr;
 
 use anyhow::{bail, Context, Result};
-use tokio::net::TcpStream;
 use tokio::io::AsyncWriteExt;
+use tokio::net::TcpStream;
 
 use crate::auth;
 use crate::frame::{read_frame, Frame, MessageType};

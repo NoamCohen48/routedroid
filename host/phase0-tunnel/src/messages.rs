@@ -93,8 +93,7 @@ mod tests {
             serde_json::from_str(r#"{"protocol":0,"session":"abc","device_port":9000,"client_nonce":"aa"}"#).unwrap();
         assert_eq!(hello, Hello { protocol: 0, session: "abc".into(), device_port: 9000, client_nonce: "aa".into() });
 
-        let ready: VpnReady =
-            serde_json::from_str(r#"{"addresses":["192.168.10.74/32"],"mtu":1400}"#).unwrap();
+        let ready: VpnReady = serde_json::from_str(r#"{"addresses":["192.168.10.74/32"],"mtu":1400}"#).unwrap();
         assert_eq!(ready.mtu, 1400);
         assert_eq!(ready.addresses, vec!["192.168.10.74/32".to_string()]);
     }

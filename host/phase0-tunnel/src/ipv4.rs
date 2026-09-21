@@ -97,19 +97,10 @@ mod tests {
         let mut ihl = packet(28, 28);
         ihl[0] = 0x44;
         assert_eq!(validate(&ihl), Err(Ipv4Error::Ihl(4)));
-        assert_eq!(
-            validate(&packet(30, 28)),
-            Err(Ipv4Error::LengthMismatch { total_length: 30, body_length: 28 })
-        );
-        assert_eq!(
-            validate(&packet(27, 28)),
-            Err(Ipv4Error::LengthMismatch { total_length: 27, body_length: 28 })
-        );
+        assert_eq!(validate(&packet(30, 28)), Err(Ipv4Error::LengthMismatch { total_length: 30, body_length: 28 }));
+        assert_eq!(validate(&packet(27, 28)), Err(Ipv4Error::LengthMismatch { total_length: 27, body_length: 28 }));
         let mut big_ihl = packet(28, 28);
         big_ihl[0] = 0x4f; // IHL 15 -> 60 byte header > total 28
-        assert_eq!(
-            validate(&big_ihl),
-            Err(Ipv4Error::HeaderExceedsTotal { total_length: 28, header_length: 60 })
-        );
+        assert_eq!(validate(&big_ihl), Err(Ipv4Error::HeaderExceedsTotal { total_length: 28, header_length: 60 }));
     }
 }

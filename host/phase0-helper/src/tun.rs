@@ -28,9 +28,7 @@ impl Tun {
             bail!("TUN name must be 1..{} chars", libc::IFNAMSIZ - 1);
         }
         // SAFETY: plain libc open of a well-known device path.
-        let raw = unsafe {
-            libc::open(c"/dev/net/tun".as_ptr(), libc::O_RDWR | libc::O_NONBLOCK | libc::O_CLOEXEC)
-        };
+        let raw = unsafe { libc::open(c"/dev/net/tun".as_ptr(), libc::O_RDWR | libc::O_NONBLOCK | libc::O_CLOEXEC) };
         if raw < 0 {
             return Err(io::Error::last_os_error()).context("open /dev/net/tun");
         }

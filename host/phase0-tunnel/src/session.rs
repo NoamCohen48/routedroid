@@ -178,8 +178,13 @@ impl Machine {
                 let Some(client_nonce) = auth::nonce_from_hex(&hello.client_nonce) else {
                     return Err(self.violation("bad_nonce", "HELLO client_nonce must be 32 bytes hex"));
                 };
-                let transcript =
-                    auth::transcript(hello.protocol, &hello.session, hello.device_port, &client_nonce, &self.host_nonce);
+                let transcript = auth::transcript(
+                    hello.protocol,
+                    &hello.session,
+                    hello.device_port,
+                    &client_nonce,
+                    &self.host_nonce,
+                );
                 let Some(secret) = self.secret.as_ref() else {
                     return Err(self.violation("secret_consumed", "session secret already used"));
                 };
@@ -250,10 +255,9 @@ impl Machine {
                 }
                 Ok(vec![Outbound::ToTun(frame.body)])
             }
-            MessageType::HelloAck | MessageType::ConfigureVpn => Err(self.violation(
-                "wrong_direction",
-                format!("{:?} is host->android only", frame.message_type),
-            )),
+            MessageType::HelloAck | MessageType::ConfigureVpn => {
+                Err(self.violation("wrong_direction", format!("{:?} is host->android only", frame.message_type)))
+            }
         }
     }
 }
@@ -656,7 +660,8 @@ mod tests {
     fn vpn_ready_validates_mtu_and_addresses() {
         let mut m = machine();
         authenticate(&mut m);
-        let bad = Frame::json(MessageType::VpnReady, &VpnReady { addresses: vec!["192.168.10.74/32".into()], mtu: 1500 });
+        let bad =
+            Frame::json(MessageType::VpnReady, &VpnReady { addresses: vec!["192.168.10.74/32".into()], mtu: 1500 });
         assert!(matches!(m.handle(bad).unwrap_err(), Close::Protocol(ref e) if e.code == "mtu_mismatch"));
 
         let mut m = machine();
@@ -666,7 +671,8 @@ mod tests {
 
         let mut m = machine();
         authenticate(&mut m);
-        let err = m.handle(Frame::json(MessageType::VpnError, &ErrorBody::new("vpn_permission_denied", "no"))).unwrap_err();
+        let err =
+            m.handle(Frame::json(MessageType::VpnError, &ErrorBody::new("vpn_permission_denied", "no"))).unwrap_err();
         assert_eq!(err, Close::VpnError(ErrorBody::new("vpn_permission_denied", "no")));
         assert_eq!(m.state(), State::Closed);
     }

@@ -21,10 +21,23 @@ use serde::{Deserialize, Serialize};
 pub enum Op {
     /// Non-persistent TUN; owned by the helper's fd, so it vanishes with the
     /// process. Recorded so cleanup can verify (and delete a leftover).
-    Tun { name: String },
-    Sysctl { key: String, prev: String, new: String },
-    Route { dst: Ipv4Addr, dev: String, src: Ipv4Addr },
-    NftTable { family: String, name: String },
+    Tun {
+        name: String,
+    },
+    Sysctl {
+        key: String,
+        prev: String,
+        new: String,
+    },
+    Route {
+        dst: Ipv4Addr,
+        dev: String,
+        src: Ipv4Addr,
+    },
+    NftTable {
+        family: String,
+        name: String,
+    },
 }
 
 impl Op {
@@ -54,8 +67,15 @@ pub enum Phase {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Line {
-    Entry { seq: u32, phase: Phase, #[serde(flatten)] op: Op },
-    Resolved { resolved: bool },
+    Entry {
+        seq: u32,
+        phase: Phase,
+        #[serde(flatten)]
+        op: Op,
+    },
+    Resolved {
+        resolved: bool,
+    },
 }
 
 pub struct Journal {
@@ -223,11 +243,18 @@ mod tests {
         let lines = read_lines(&path).unwrap();
         assert!(!is_resolved(&lines));
         let u = unresolved(&lines);
-        assert_eq!(u.iter().map(|(s, p, _)| (*s, p.clone())).collect::<Vec<_>>(), vec![(c, Phase::Pending), (b, Phase::Done)]);
+        assert_eq!(
+            u.iter().map(|(s, p, _)| (*s, p.clone())).collect::<Vec<_>>(),
+            vec![(c, Phase::Pending), (b, Phase::Done)]
+        );
         assert_eq!(open_sessions(&dir).unwrap(), vec![path.clone()]);
 
         // Torn last line is tolerated; garbage is not.
-        fs::write(&path, fs::read(&path).unwrap().into_iter().chain(b"{\"seq\":9,\"pha".iter().copied()).collect::<Vec<u8>>()).unwrap();
+        fs::write(
+            &path,
+            fs::read(&path).unwrap().into_iter().chain(b"{\"seq\":9,\"pha".iter().copied()).collect::<Vec<u8>>(),
+        )
+        .unwrap();
         assert!(read_lines(&path).is_err());
         let content = fs::read_to_string(&path).unwrap();
         fs::write(&path, content.rsplit_once('\n').map(|(a, _)| format!("{a}\n")).unwrap()).unwrap();

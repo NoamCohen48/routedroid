@@ -65,7 +65,8 @@ pub async fn run(adb_bin: &str, args: StartArgs) -> Result<()> {
         }
     });
 
-    let mut helper = HelperSession::start(&args.helper_socket, &args.lan_if, args.phone_ip, &args.tun, args.mtu).await?;
+    let mut helper =
+        HelperSession::start(&args.helper_socket, &args.lan_if, args.phone_ip, &args.tun, args.mtu).await?;
     info!(serial = adb.serial(), tun = %helper.tun, host_ip = %helper.host_ip, lan_prefix = helper.lan_prefix,
           phone_ip = %args.phone_ip, helper_session = %helper.session, "host network ready");
     let mut device = match DeviceSession::open(adb, host_port).await {
@@ -96,7 +97,12 @@ pub async fn run(adb_bin: &str, args: StartArgs) -> Result<()> {
             secret: device.take_secret(),
         };
         let summary = run_session(stream, Machine::new(cfg, device.host_nonce), helper.relay(), stop_rx).await;
-        info!(to_phone = summary.packets_to_phone, from_phone = summary.packets_from_phone, dropped = summary.bad_packets, "traffic");
+        info!(
+            to_phone = summary.packets_to_phone,
+            from_phone = summary.packets_from_phone,
+            dropped = summary.bad_packets,
+            "traffic"
+        );
         match summary.end {
             SessionEnd::LocalStop | SessionEnd::PeerStop | SessionEnd::PeerClosed if summary.reached_active => Ok(()),
             // Peer-supplied text: `{:?}` escapes control characters before it reaches a terminal.

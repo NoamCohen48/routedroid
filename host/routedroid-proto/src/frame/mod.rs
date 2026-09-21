@@ -97,8 +97,7 @@ pub fn validate_header(h: &RawHeader, mtu: u32) -> Result<MessageType, FrameErro
     if h.flags != 0 {
         return Err(FrameError::NonZeroFlags(h.flags));
     }
-    let message_type =
-        MessageType::from_u8(h.message_type).ok_or(FrameError::UnknownMessageType(h.message_type))?;
+    let message_type = MessageType::from_u8(h.message_type).ok_or(FrameError::UnknownMessageType(h.message_type))?;
     let len = h.body_length;
     match message_type {
         MessageType::IpPacket => {

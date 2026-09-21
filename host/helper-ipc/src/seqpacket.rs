@@ -70,7 +70,11 @@ impl SeqPacket {
             match g.try_io(|inner| {
                 // SAFETY: msg is a valid slice for the call.
                 let n = unsafe { libc::send(inner.as_raw_fd(), msg.as_ptr().cast(), msg.len(), libc::MSG_NOSIGNAL) };
-                if n < 0 { Err(io::Error::last_os_error()) } else { Ok(n as usize) }
+                if n < 0 {
+                    Err(io::Error::last_os_error())
+                } else {
+                    Ok(n as usize)
+                }
             }) {
                 Ok(Ok(n)) if n == msg.len() => return Ok(()),
                 Ok(Ok(n)) => return Err(io::Error::other(format!("short seqpacket send {n}/{}", msg.len()))),
@@ -88,7 +92,11 @@ impl SeqPacket {
             match g.try_io(|inner| {
                 // SAFETY: buf is a valid writable slice for the call.
                 let n = unsafe { libc::recv(inner.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len(), libc::MSG_TRUNC) };
-                if n < 0 { Err(io::Error::last_os_error()) } else { Ok(n as usize) }
+                if n < 0 {
+                    Err(io::Error::last_os_error())
+                } else {
+                    Ok(n as usize)
+                }
             }) {
                 Ok(Ok(n)) if n > buf.len() => return Err(io::Error::other(format!("datagram of {n} bytes truncated"))),
                 Ok(Ok(n)) => return Ok(n),
@@ -107,7 +115,10 @@ pub struct Listener {
 
 impl Listener {
     pub fn from_systemd() -> Result<Option<Self>> {
-        let pid: u32 = match std::env::var("LISTEN_PID") { Ok(p) => p.parse().unwrap_or(0), Err(_) => return Ok(None) };
+        let pid: u32 = match std::env::var("LISTEN_PID") {
+            Ok(p) => p.parse().unwrap_or(0),
+            Err(_) => return Ok(None),
+        };
         if pid != std::process::id() {
             return Ok(None);
         }
@@ -124,7 +135,8 @@ impl Listener {
     pub fn bind(path: &Path) -> Result<Self> {
         let _ = std::fs::remove_file(path);
         // SAFETY: plain socket creation.
-        let raw = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_SEQPACKET | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK, 0) };
+        let raw =
+            unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_SEQPACKET | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK, 0) };
         if raw < 0 {
             return Err(io::Error::last_os_error()).context("socket");
         }
@@ -146,8 +158,14 @@ impl Listener {
             let mut g = self.fd.readable().await?;
             match g.try_io(|inner| {
                 // SAFETY: accept4 with null address is valid.
-                let raw = unsafe { libc::accept4(inner.as_raw_fd(), std::ptr::null_mut(), std::ptr::null_mut(), libc::SOCK_CLOEXEC) };
-                if raw < 0 { Err(io::Error::last_os_error()) } else { Ok(raw) }
+                let raw = unsafe {
+                    libc::accept4(inner.as_raw_fd(), std::ptr::null_mut(), std::ptr::null_mut(), libc::SOCK_CLOEXEC)
+                };
+                if raw < 0 {
+                    Err(io::Error::last_os_error())
+                } else {
+                    Ok(raw)
+                }
             }) {
                 // SAFETY: fresh descriptor from accept4.
                 Ok(Ok(raw)) => return SeqPacket::from_owned(unsafe { OwnedFd::from_raw_fd(raw) }),
@@ -164,8 +182,18 @@ impl Listener {
         let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
         let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
         let rc = unsafe {
-            libc::getsockopt(sock.fd.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PEERCRED, &mut cred as *mut _ as *mut libc::c_void, &mut len)
+            libc::getsockopt(
+                sock.fd.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_PEERCRED,
+                &mut cred as *mut _ as *mut libc::c_void,
+                &mut len,
+            )
         };
-        if rc < 0 { Err(io::Error::last_os_error()) } else { Ok(cred.uid) }
+        if rc < 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(cred.uid)
+        }
     }
 }

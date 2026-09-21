@@ -59,7 +59,9 @@ impl HelperSession {
                 info!(%session, %tun, %host_ip, lan_prefix, "helper session started");
                 Ok(Self { conn: Arc::new(conn), control_rx: None, tun, host_ip, lan_prefix, session })
             }
-            Reply::Error { code, message } => Err(Fault::msg(Kind::Helper, format!("helper refused start: {code}: {message}"))),
+            Reply::Error { code, message } => {
+                Err(Fault::msg(Kind::Helper, format!("helper refused start: {code}: {message}")))
+            }
             other => Err(Fault::msg(Kind::Helper, format!("unexpected helper reply {other:?}"))),
         }
     }

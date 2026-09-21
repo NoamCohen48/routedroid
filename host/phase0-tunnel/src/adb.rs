@@ -20,12 +20,7 @@ fn run(mut cmd: Command) -> Result<String> {
     let out = cmd.output().with_context(|| format!("spawn {desc}"))?;
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     if !out.status.success() {
-        bail!(
-            "{desc} failed ({}): {}{}",
-            out.status,
-            stdout.trim(),
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
+        bail!("{desc} failed ({}): {}{}", out.status, stdout.trim(), String::from_utf8_lossy(&out.stderr).trim());
     }
     Ok(stdout)
 }

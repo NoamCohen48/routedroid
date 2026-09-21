@@ -12,8 +12,8 @@ mod stats;
 mod tun;
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
 use std::net::{Ipv4Addr, SocketAddr};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -104,10 +104,7 @@ fn parse_prefix(s: &str) -> std::result::Result<Prefix, String> {
 }
 
 fn random_session() -> String {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
     let pid = std::process::id();
     // FNV-1a over nanos+pid; not cryptographic, Phase 0 has no auth anyway.
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;

@@ -36,7 +36,9 @@ async fn start() -> (TcpStream, tokio::task::JoinHandle<SessionEnd>, watch::Send
     let (_from_tx, from_helper) = mpsc::channel(4);
     let (stop_tx, stop_rx) = watch::channel(false);
     let handle = tokio::spawn(async move {
-        run_session(stream, Machine::new(cfg(), [0xbb; 32]), PacketEndpoints { to_helper, from_helper }, stop_rx).await.end
+        run_session(stream, Machine::new(cfg(), [0xbb; 32]), PacketEndpoints { to_helper, from_helper }, stop_rx)
+            .await
+            .end
     });
     (peer, handle, stop_tx)
 }
@@ -60,7 +62,8 @@ async fn silent_peer_is_refused_after_handshake_deadline() {
 async fn consent_deadline_applies_after_hello_reset_the_clock() {
     let (mut peer, handle, _stop) = start().await;
     tokio::time::sleep(HANDSHAKE_DEADLINE - Duration::from_secs(1)).await;
-    let hello = Hello { protocol: 1, session: "s1".into(), device_port: 9000, client_nonce: "aa".repeat(32), app: None };
+    let hello =
+        Hello { protocol: 1, session: "s1".into(), device_port: 9000, client_nonce: "aa".repeat(32), app: None };
     peer.write_all(&Frame::json(MessageType::Hello, &hello).encode()).await.unwrap();
     let ack = frame::read_frame(&mut peer, 1400).await.unwrap();
     assert_eq!(ack.message_type, MessageType::HelloAck);

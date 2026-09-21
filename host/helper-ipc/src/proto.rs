@@ -16,7 +16,12 @@ pub const MAX_DATAGRAM: usize = 65536 + 1;
 pub enum Request {
     /// Bring up one phone session. The helper derives the host address and
     /// LAN prefix from `lan_if` itself; the client cannot pick them.
-    Start { lan_if: String, phone_ip: Ipv4Addr, tun: String, mtu: u32 },
+    Start {
+        lan_if: String,
+        phone_ip: Ipv4Addr,
+        tun: String,
+        mtu: u32,
+    },
     /// Undo everything, reply `Stopped`, then exit.
     Stop,
     Ping,
@@ -56,7 +61,12 @@ mod tests {
 
     #[test]
     fn json_shape() {
-        let r = Request::Start { lan_if: "eno1".into(), phone_ip: "10.0.0.5".parse().unwrap(), tun: "phone0".into(), mtu: 1400 };
+        let r = Request::Start {
+            lan_if: "eno1".into(),
+            phone_ip: "10.0.0.5".parse().unwrap(),
+            tun: "phone0".into(),
+            mtu: 1400,
+        };
         assert_eq!(
             serde_json::to_string(&r).unwrap(),
             r#"{"type":"start","lan_if":"eno1","phone_ip":"10.0.0.5","tun":"phone0","mtu":1400}"#

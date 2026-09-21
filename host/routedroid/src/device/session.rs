@@ -53,7 +53,8 @@ impl DeviceSession {
     pub async fn bootstrap(&self) -> Result<()> {
         let secret = self.secret.as_ref().expect("bootstrap before the secret is handed over");
         let record = bootstrap::encode(&self.session, secret).expect("session id is valid hex");
-        let (stdout, stderr) = self.adb.shell(&["content", "write", "--uri", PROVIDER_URI], Some(record.as_slice())).await?;
+        let (stdout, stderr) =
+            self.adb.shell(&["content", "write", "--uri", PROVIDER_URI], Some(record.as_slice())).await?;
         drop(record);
         // `content` exits 0 even on provider errors; it prints them (to either stream) instead.
         let out = format!("{stdout}{stderr}");
@@ -65,7 +66,21 @@ impl DeviceSession {
         let port = self.port.device_port.to_string();
         let (out, _) = self
             .adb
-            .shell(&["am", "start", "-n", BOOTSTRAP_COMPONENT, "--es", "session", &self.session, "--ei", "device_port", &port], None)
+            .shell(
+                &[
+                    "am",
+                    "start",
+                    "-n",
+                    BOOTSTRAP_COMPONENT,
+                    "--es",
+                    "session",
+                    &self.session,
+                    "--ei",
+                    "device_port",
+                    &port,
+                ],
+                None,
+            )
             .await?;
         // `am start` exits 0 even when the component is missing; surface that.
         if out.contains("Error") || out.contains("does not exist") {

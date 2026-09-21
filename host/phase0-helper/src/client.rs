@@ -40,7 +40,9 @@ async fn send_control(c: &SeqPacket, req: &Request) -> Result<()> {
 async fn recv_reply(c: &SeqPacket, buf: &mut [u8]) -> Result<Reply> {
     loop {
         let n = c.recv(buf).await?;
-        if n == 0 { bail!("helper closed the connection"); }
+        if n == 0 {
+            bail!("helper closed the connection");
+        }
         if buf[0] == KIND_CONTROL {
             return serde_json::from_slice(&buf[1..n]).context("parse reply");
         }
@@ -50,19 +52,33 @@ async fn recv_reply(c: &SeqPacket, buf: &mut [u8]) -> Result<Reply> {
 fn icmp_echo(src: Ipv4Addr, dst: Ipv4Addr, id: u16, seq: u16) -> Vec<u8> {
     let total = 20 + 8 + 32;
     let mut p = vec![0u8; total];
-    p[0] = 0x45; p[2..4].copy_from_slice(&(total as u16).to_be_bytes()); p[8] = 64; p[9] = 1;
-    p[12..16].copy_from_slice(&src.octets()); p[16..20].copy_from_slice(&dst.octets());
-    let c = checksum(&p[..20]); p[10..12].copy_from_slice(&c.to_be_bytes());
-    p[20] = 8; p[24..26].copy_from_slice(&id.to_be_bytes()); p[26..28].copy_from_slice(&seq.to_be_bytes());
-    for (i, b) in p[28..].iter_mut().enumerate() { *b = i as u8; }
-    let c = checksum(&p[20..]); p[22..24].copy_from_slice(&c.to_be_bytes());
+    p[0] = 0x45;
+    p[2..4].copy_from_slice(&(total as u16).to_be_bytes());
+    p[8] = 64;
+    p[9] = 1;
+    p[12..16].copy_from_slice(&src.octets());
+    p[16..20].copy_from_slice(&dst.octets());
+    let c = checksum(&p[..20]);
+    p[10..12].copy_from_slice(&c.to_be_bytes());
+    p[20] = 8;
+    p[24..26].copy_from_slice(&id.to_be_bytes());
+    p[26..28].copy_from_slice(&seq.to_be_bytes());
+    for (i, b) in p[28..].iter_mut().enumerate() {
+        *b = i as u8;
+    }
+    let c = checksum(&p[20..]);
+    p[22..24].copy_from_slice(&c.to_be_bytes());
     p
 }
 
 fn checksum(d: &[u8]) -> u16 {
     let mut s = 0u32;
-    for ch in d.chunks(2) { s += u32::from(if ch.len() == 2 { u16::from_be_bytes([ch[0], ch[1]]) } else { u16::from(ch[0]) << 8 }); }
-    while s >> 16 != 0 { s = (s & 0xffff) + (s >> 16); }
+    for ch in d.chunks(2) {
+        s += u32::from(if ch.len() == 2 { u16::from_be_bytes([ch[0], ch[1]]) } else { u16::from(ch[0]) << 8 });
+    }
+    while s >> 16 != 0 {
+        s = (s & 0xffff) + (s >> 16);
+    }
     !(s as u16)
 }
 
@@ -70,9 +86,15 @@ pub async fn run(socket: &Path, a: ClientArgs) -> Result<()> {
     let c = SeqPacket::connect(socket).await?;
     let mut buf = vec![0u8; MAX_DATAGRAM];
     send_control(&c, &Request::Ping).await?;
-    if recv_reply(&c, &mut buf).await? != Reply::Pong { bail!("no PONG"); }
+    if recv_reply(&c, &mut buf).await? != Reply::Pong {
+        bail!("no PONG");
+    }
     crash("before_start", &a.crash_at);
-    send_control(&c, &Request::Start { lan_if: a.lan_if.clone(), phone_ip: a.phone_ip, tun: a.tun.clone(), mtu: a.mtu }).await?;
+    send_control(
+        &c,
+        &Request::Start { lan_if: a.lan_if.clone(), phone_ip: a.phone_ip, tun: a.tun.clone(), mtu: a.mtu },
+    )
+    .await?;
     let (host_ip, tun) = match recv_reply(&c, &mut buf).await? {
         Reply::Started { session, tun, host_ip, lan_prefix } => {
             info!(session, tun, %host_ip, lan_prefix, "started");
@@ -98,10 +120,13 @@ pub async fn run(socket: &Path, a: ClientArgs) -> Result<()> {
         loop {
             if sent < a.bench {
                 let echo = icmp_echo(a.phone_ip, host_ip, id, sent as u16);
-                pkt[0] = KIND_PACKET; pkt[1..=echo.len()].copy_from_slice(&echo);
+                pkt[0] = KIND_PACKET;
+                pkt[1..=echo.len()].copy_from_slice(&echo);
                 c.send(&pkt[..=echo.len()]).await?;
                 sent += 1;
-                if sent == a.bench / 2 { crash("during_traffic", &a.crash_at); }
+                if sent == a.bench / 2 {
+                    crash("during_traffic", &a.crash_at);
+                }
             }
             tokio::select! {
                 biased;
@@ -113,11 +138,19 @@ pub async fn run(socket: &Path, a: ClientArgs) -> Result<()> {
                 _ = &mut deadline => break,
                 _ = std::future::ready(()), if sent < a.bench => {}
             }
-            if replies >= a.bench { break; }
+            if replies >= a.bench {
+                break;
+            }
         }
         let dt = t0.elapsed();
-        println!("BENCH sent={sent} replies={replies} elapsed_ms={} rtt_avg_us={}", dt.as_millis(), if replies > 0 { dt.as_micros() / replies as u128 } else { 0 });
-        if replies < a.bench { bail!("bench: {replies}/{} echo replies", a.bench); }
+        println!(
+            "BENCH sent={sent} replies={replies} elapsed_ms={} rtt_avg_us={}",
+            dt.as_millis(),
+            if replies > 0 { dt.as_micros() / replies as u128 } else { 0 }
+        );
+        if replies < a.bench {
+            bail!("bench: {replies}/{} echo replies", a.bench);
+        }
     }
 
     if !a.hold.is_zero() {
@@ -131,7 +164,10 @@ pub async fn run(socket: &Path, a: ClientArgs) -> Result<()> {
     }
     send_control(&c, &Request::Stop).await?;
     match recv_reply(&c, &mut buf).await? {
-        Reply::Stopped => { println!("STOPPED"); Ok(()) }
+        Reply::Stopped => {
+            println!("STOPPED");
+            Ok(())
+        }
         Reply::Error { code, message } => bail!("stop failed: {code}: {message}"),
         other => bail!("unexpected {other:?}"),
     }

@@ -5,10 +5,7 @@ use crate::frame::MessageType;
 fn body(name: &str) -> (MessageType, Vec<u8>) {
     let f: serde_json::Value = serde_json::from_str(FRAMES).unwrap();
     let v = f["valid"].as_array().unwrap().iter().find(|v| v["name"] == name).unwrap();
-    (
-        MessageType::from_u8(v["type"].as_u64().unwrap() as u8).unwrap(),
-        unhex(v["body_hex"].as_str().unwrap()),
-    )
+    (MessageType::from_u8(v["type"].as_u64().unwrap() as u8).unwrap(), unhex(v["body_hex"].as_str().unwrap()))
 }
 
 /// Every JSON fixture parses, validates, and re-serializes to the exact

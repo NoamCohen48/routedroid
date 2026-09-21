@@ -155,5 +155,11 @@ pub async fn run_session(
         Err(_) => warn!("TCP writer did not flush within 500ms"),
     }
     info!(end = %end, "session ended");
-    SessionSummary { end, reached_active, packets_to_phone: to_phone, packets_from_phone: from_phone, bad_packets: machine.bad_packets }
+    SessionSummary {
+        end,
+        reached_active,
+        packets_to_phone: to_phone,
+        packets_from_phone: from_phone,
+        bad_packets: machine.bad_packets,
+    }
 }

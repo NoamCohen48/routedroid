@@ -24,7 +24,9 @@ fn sysctl_path(key: &str) -> Result<String> {
         || key
             .strip_prefix("net.ipv4.conf.")
             .and_then(|rest| rest.rsplit_once('.'))
-            .map(|(ifname, leaf)| crate::proto::valid_ifname(ifname) && matches!(leaf, "forwarding" | "proxy_arp" | "rp_filter"))
+            .map(|(ifname, leaf)| {
+                crate::proto::valid_ifname(ifname) && matches!(leaf, "forwarding" | "proxy_arp" | "rp_filter")
+            })
             .unwrap_or(false);
     if !ok {
         bail!("sysctl key {key} not allowed");
@@ -73,7 +75,11 @@ pub fn primary_ipv4(ifname: &str) -> Result<(Ipv4Addr, u8)> {
 /// namespace, so the sysfs view would be wrong inside the userns lab.
 pub fn link_exists(name: &str) -> bool {
     crate::proto::valid_ifname(name)
-        && Command::new("ip").args(["-o", "link", "show", "dev", name]).output().map(|o| o.status.success()).unwrap_or(false)
+        && Command::new("ip")
+            .args(["-o", "link", "show", "dev", name])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
 }
 
 pub fn route_exists(dst: Ipv4Addr, dev: &str) -> bool {
@@ -125,7 +131,8 @@ pub fn apply(op: &Op, nft_ruleset: Option<&str>) -> Result<()> {
         Op::Tun { .. } => Ok(()), // created by the caller (owns the fd); journaled for inspection
         Op::Sysctl { key, new, .. } => sysctl_write(key, new),
         Op::Route { dst, dev, src } => {
-            run("ip", &["-4", "route", "replace", &format!("{dst}/32"), "dev", dev, "src", &src.to_string()]).map(|_| ())
+            run("ip", &["-4", "route", "replace", &format!("{dst}/32"), "dev", dev, "src", &src.to_string()])
+                .map(|_| ())
         }
         Op::NftTable { family, name } => {
             let rules = nft_ruleset.context("nft ruleset missing")?;
@@ -211,7 +218,10 @@ mod tests {
     fn sysctl_keys_are_whitelisted() {
         assert_eq!(sysctl_path("net.ipv4.ip_forward").unwrap(), "/proc/sys/net/ipv4/ip_forward");
         assert_eq!(sysctl_path("net.ipv4.conf.eno1.proxy_arp").unwrap(), "/proc/sys/net/ipv4/conf/eno1/proxy_arp");
-        assert_eq!(sysctl_path("net.ipv4.conf.eth0.100.forwarding").unwrap(), "/proc/sys/net/ipv4/conf/eth0/100/forwarding");
+        assert_eq!(
+            sysctl_path("net.ipv4.conf.eth0.100.forwarding").unwrap(),
+            "/proc/sys/net/ipv4/conf/eth0/100/forwarding"
+        );
         assert!(sysctl_path("net.ipv4.conf.all.forwarding").is_ok());
         assert!(sysctl_path("net.ipv4.conf.eno1.accept_redirects").is_err());
         assert!(sysctl_path("kernel.core_pattern").is_err());

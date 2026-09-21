@@ -76,7 +76,10 @@ enum Cmd {
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
         .with_target(false)
         .with_writer(std::io::stderr)
         .init();
@@ -85,7 +88,12 @@ fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Serve { socket, allow_uid } => {
             let rt = tokio::runtime::Runtime::new()?;
-            rt.block_on(serve::serve(serve::ServeConfig { socket, journal_dir: cli.journal_dir, crash_file: cli.crash_file, allow_uid }))
+            rt.block_on(serve::serve(serve::ServeConfig {
+                socket,
+                journal_dir: cli.journal_dir,
+                crash_file: cli.crash_file,
+                allow_uid,
+            }))
         }
         Cmd::Check => session::check(&cli.journal_dir),
         Cmd::Cleanup => session::cleanup(&cli.journal_dir, &hook),
@@ -93,7 +101,16 @@ fn main() -> Result<()> {
             let rt = tokio::runtime::Runtime::new()?;
             rt.block_on(client::run(
                 &socket,
-                client::ClientArgs { lan_if, phone_ip, tun, mtu, hold: Duration::from_secs(hold), bench, crash_at, no_stop },
+                client::ClientArgs {
+                    lan_if,
+                    phone_ip,
+                    tun,
+                    mtu,
+                    hold: Duration::from_secs(hold),
+                    bench,
+                    crash_at,
+                    no_stop,
+                },
             ))
         }
     }
