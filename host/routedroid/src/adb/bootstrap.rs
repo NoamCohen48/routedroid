@@ -7,7 +7,6 @@ use super::Adb;
 use crate::fault::{Fault, Kind, Result};
 use routedroid_proto::bootstrap::PROVIDER_URI;
 
-pub const PACKAGE: &str = "dev.routedroid";
 pub const BOOTSTRAP_COMPONENT: &str = "dev.routedroid/.BootstrapActivity";
 
 impl Adb {

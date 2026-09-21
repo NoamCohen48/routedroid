@@ -8,7 +8,11 @@ mod adb;
 mod cli;
 mod commands;
 mod fault;
+mod helper;
+mod listener;
+mod ports;
 mod logging;
+mod session;
 
 use clap::Parser;
 

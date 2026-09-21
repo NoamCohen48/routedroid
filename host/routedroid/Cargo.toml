@@ -11,6 +11,7 @@ name = "routedroid"
 path = "src/main.rs"
 
 [dependencies]
+routedroid-helper-ipc = { path = "../helper-ipc" }
 routedroid-proto = { path = "../routedroid-proto" }
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }

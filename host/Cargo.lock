@@ -436,6 +436,7 @@ dependencies = [
  "anyhow",
  "clap",
  "hex",
+ "routedroid-helper-ipc",
  "routedroid-proto",
  "serde",
  "serde_json",

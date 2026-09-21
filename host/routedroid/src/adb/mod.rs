@@ -8,9 +8,9 @@ mod devices;
 mod reverse;
 mod serial;
 
-pub use bootstrap::{BOOTSTRAP_COMPONENT, PACKAGE};
+
 pub use devices::{parse_devices, Device, DeviceState};
-pub use reverse::{list_has_exactly, parse_reverse_list};
+
 pub use serial::Transport;
 
 use std::process::Stdio;
