@@ -1,16 +1,18 @@
-//! ADB wrapper pinned to one serial, with a timeout on every command.
+//! Thin binding to the `adb` executable, pinned to one serial, with a timeout
+//! on every command. Knows adb's commands and output formats and nothing about
+//! Routedroid's protocol (that is `device::*`).
 //!
 //! Only the USB transport is accepted in version 1 (`protocol/version-1.md`
 //! §1); [`serial::Transport`] classifies serials before anything runs.
 
-mod bootstrap;
 mod devices;
 mod reverse;
 mod serial;
 
-
 pub use devices::{parse_devices, Device, DeviceState};
-
+pub use reverse::ReverseMapping;
+#[cfg(test)]
+pub use reverse::parse_reverse_list;
 pub use serial::Transport;
 
 use std::process::Stdio;
@@ -54,18 +56,20 @@ impl Adb {
     }
 
     /// Run `adb -s SERIAL <args>`; stdout on success, or an error carrying
-    /// both streams. Never passes secrets: callers use [`Self::run_with_stdin`].
+    /// both streams. Never passes secrets: those go through [`Self::shell`]'s stdin.
     pub async fn run(&self, args: &[&str]) -> Result<String> {
-        self.run_with_stdin(args, None).await
+        Ok(self.run_with_stdin(args, None).await?.0)
     }
 
-    pub async fn run_with_stdin(&self, args: &[&str], stdin: Option<&[u8]>) -> Result<String> {
-        Ok(self.run_both(args, stdin).await?.0)
+    /// `adb -s SERIAL shell <args>` with optional bytes on stdin. Returns
+    /// `(stdout, stderr)`: many shell tools exit 0 and print their errors.
+    pub async fn shell(&self, args: &[&str], stdin: Option<&[u8]>) -> Result<(String, String)> {
+        let mut full = vec!["shell"];
+        full.extend_from_slice(args);
+        self.run_with_stdin(&full, stdin).await
     }
 
-    /// Like `run_with_stdin` but returns `(stdout, stderr)` on success, for
-    /// commands that report failures on stderr with a zero exit status.
-    pub async fn run_both(&self, args: &[&str], stdin: Option<&[u8]>) -> Result<(String, String)> {
+    async fn run_with_stdin(&self, args: &[&str], stdin: Option<&[u8]>) -> Result<(String, String)> {
         let mut cmd = self.command(args);
         if stdin.is_some() {
             cmd.stdin(Stdio::piped());

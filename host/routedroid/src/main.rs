@@ -7,10 +7,10 @@
 mod adb;
 mod cli;
 mod commands;
+mod device;
 mod fault;
 mod helper;
 mod listener;
-mod ports;
 mod logging;
 mod session;
 

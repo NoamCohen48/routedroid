@@ -59,7 +59,7 @@ if grep -q 'session Active' "$S/host.log"; then
     head -c 2000000 /dev/urandom > "$S/big"; adb -s "$SERIAL" push "$S/big" /data/local/tmp/big >/dev/null
     adb -s "$SERIAL" shell 'toybox nc -l -p 7001 < /data/local/tmp/big' & sleep 1
     t0=$(date +%s%N)
-    $NS sh -c "sleep 60 | timeout 60 socat -u TCP4:$PHONE_IP:7001 - > '$S/from_phone'"
+    $NS sh -c "timeout 60 socat -u TCP4:$PHONE_IP:7001,readbytes=2000000 - > '$S/from_phone'"
     echo "phone -> PC 2 MB in $(( ($(date +%s%N) - t0) / 1000000 )) ms"
     check "TCP phone -> PC 2 MB" [ "$(md5sum < "$S/big" | cut -d' ' -f1)" = "$(md5sum < "$S/from_phone" | cut -d' ' -f1)" ]
     if [[ $STOP_MODE == app ]]; then
