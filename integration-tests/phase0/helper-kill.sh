@@ -45,12 +45,13 @@ else
     systemctl is-active --quiet $UNIT.socket || { echo "$UNIT.socket not active; run host/phase0-helper/install.sh"; exit 2; }
     HELPER="$BIN --journal-dir $JOURNAL --crash-file $CRASH"
     NS=""
-    start_helper() { systemctl reset-failed $UNIT.service 2>/dev/null || true; :; }   # socket activation starts it on connect
+    start_helper() { systemctl reset-failed $UNIT.service $UNIT.socket 2>/dev/null || true; :; }   # socket activation starts it on connect
     wait_helper_exit() { for _ in $(seq 1 100); do systemctl is-active --quiet $UNIT.service || break; sleep 0.1; done; ! systemctl is-active --quiet $UNIT.service; }
     run_cleanup() { :; }     # ExecStopPost already ran; journalctl shows it
     run_check() { $HELPER check >/dev/null 2>&1; }
     kill_helper() { systemctl kill -s KILL $UNIT.service 2>/dev/null || true; }
-    snapshot() { ip -4 route show > "$1/route"; nft list ruleset > "$1/nft" 2>/dev/null || true
+    # Live counters (Docker/firewalld chains) change on their own; compare structure only.
+    snapshot() { ip -4 route show > "$1/route"; nft list ruleset 2>/dev/null | sed -E 's/counter packets [0-9]+ bytes [0-9]+/counter/g' > "$1/nft" || true
                  for k in net.ipv4.conf.$LAN_IF.forwarding net.ipv4.conf.$LAN_IF.proxy_arp; do printf '%s=%s\n' "$k" "$(sysctl -n "$k")"; done > "$1/sysctl"
                  ip -br link | awk '{print $1}' | sort > "$1/links"; }
     cleanup_all() { rm -f "$CRASH"; }

@@ -38,4 +38,6 @@ units. Stages: client SIGKILL after start / mid-traffic / before stop /
 disconnect without Stop; helper SIGKILL at `pending`, `applied`, `done` of each
 of the six mutations, while `active`, and at `undo_pending`, `undo_applied`,
 `undone` of each — 231 checks. The crash hook is a root-owned file
-(`/run/routedroid/crash-at`) the helper compares stage names against.
+(`/run/routedroid/crash-at`) the helper compares stage names against; it is
+deleted the moment it fires, so only one process dies per injected stage and the
+`ExecStopPost` cleanup that follows runs unhooked.

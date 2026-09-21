@@ -23,6 +23,9 @@ impl CrashHook {
     pub fn at(&self, stage: &str) {
         if let Ok(s) = std::fs::read_to_string(&self.0) {
             if s.trim() == stage {
+                // Consume the hook first: exactly one process dies per injected
+                // stage, so the cleanup that systemd runs next is not hit as well.
+                let _ = std::fs::remove_file(&self.0);
                 warn!(stage, "crash hook: SIGKILL self");
                 // SAFETY: plain signal to our own pid.
                 unsafe { libc::kill(libc::getpid(), libc::SIGKILL) };
