@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use tracing::{info, warn};
 
-use crate::proto::{Reply, Request, KIND_CONTROL, KIND_PACKET, MAX_DATAGRAM};
+use crate::proto::{Reply, Request, KIND_CONTROL, KIND_PACKET, MAX_DATAGRAM, RECV_BUF};
 use crate::seqpacket::SeqPacket;
 
 pub struct ClientArgs {
@@ -84,7 +84,7 @@ fn checksum(d: &[u8]) -> u16 {
 
 pub async fn run(socket: &Path, a: ClientArgs) -> Result<()> {
     let c = SeqPacket::connect(socket).await?;
-    let mut buf = vec![0u8; MAX_DATAGRAM];
+    let mut buf = vec![0u8; RECV_BUF];
     send_control(&c, &Request::Ping).await?;
     if recv_reply(&c, &mut buf).await? != Reply::Pong {
         bail!("no PONG");

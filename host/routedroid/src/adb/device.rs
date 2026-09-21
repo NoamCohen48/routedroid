@@ -25,13 +25,13 @@ impl AdbDevice {
 
     /// Run `adb -s SERIAL <args>`; stdout on success, or an error carrying
     /// both streams. Never passes secrets: those go through [`Self::shell`]'s stdin.
-    pub async fn run(&self, args: &[&str]) -> Result<String> {
+    pub(super) async fn run(&self, args: &[&str]) -> Result<String> {
         Ok(self.run_with_stdin(args, None).await?.0)
     }
 
     /// `adb -s SERIAL shell <args>` with optional bytes on stdin. Returns
     /// `(stdout, stderr)`: many shell tools exit 0 and print their errors.
-    pub async fn shell(&self, args: &[&str], stdin: Option<&[u8]>) -> Result<(String, String)> {
+    pub(super) async fn shell(&self, args: &[&str], stdin: Option<&[u8]>) -> Result<(String, String)> {
         let mut full = vec!["shell"];
         full.extend_from_slice(args);
         self.run_with_stdin(&full, stdin).await

@@ -10,6 +10,9 @@ pub const KIND_CONTROL: u8 = 0x01;
 pub const KIND_PACKET: u8 = 0x10;
 /// Largest datagram either side sends (packet + kind byte).
 pub const MAX_DATAGRAM: usize = 65536 + 1;
+/// Receive-buffer size: one byte more than any legal datagram, so a datagram
+/// that fills the buffer is known to have been truncated (`SeqPacket::recv`).
+pub const RECV_BUF: usize = MAX_DATAGRAM + 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

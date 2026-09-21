@@ -7,8 +7,8 @@ use routedroid_proto::bootstrap::{self, PROVIDER_URI};
 use tracing::info;
 
 use super::{DevicePorts, ReservedPort};
-use crate::adb::AdbDevice;
-use crate::fault::{Fault, FaultExt, Kind, Result};
+use crate::adb::{AdbDevice, Extra};
+use crate::fault::{FaultExt, Kind, Result};
 
 pub const BOOTSTRAP_COMPONENT: &str = "dev.routedroid/.BootstrapActivity";
 
@@ -49,43 +49,29 @@ impl DeviceSession {
         self.secret.take().expect("secret taken once")
     }
 
-    /// Stream the record to the provider's stdin, then launch the activity.
+    /// Tell the app about this session (§7.1–7.2), in two adb steps:
+    ///
+    /// 1. Write the bootstrap record (session id + secret) into the app's
+    ///    content provider, streamed over adb's stdin so the secret is never
+    ///    part of a command line on either machine. The provider keeps it for
+    ///    60 s and only the host's own uid (shell) may write it.
+    /// 2. Launch `BootstrapActivity` with the session id and the reverse port.
+    ///    The app matches the id against the stored record, connects to
+    ///    `127.0.0.1:<device_port>` (which adb forwards to the host's
+    ///    listener) and proves the secret in the AUTH exchange.
+    ///
+    /// Nothing else happens on the phone before AUTH succeeds: no VPN prompt,
+    /// no service.
     pub async fn bootstrap(&self) -> Result<()> {
         let secret = self.secret.as_ref().expect("bootstrap before the secret is handed over");
         let record = bootstrap::encode(&self.session, secret).expect("session id is valid hex");
-        let (stdout, stderr) =
-            self.adb.shell(&["content", "write", "--uri", PROVIDER_URI], Some(record.as_slice())).await?;
+        self.adb.content_write(PROVIDER_URI, record.as_slice()).await?;
         drop(record);
-        // `content` exits 0 even on provider errors; it prints them (to either stream) instead.
-        let out = format!("{stdout}{stderr}");
-        if !out.trim().is_empty() {
-            return Err(Fault::msg(Kind::Adb, format!("content write reported: {}", out.trim())));
-        }
         info!(uri = PROVIDER_URI, "bootstrap record delivered over adb stdin");
 
-        let port = self.port.device_port.to_string();
-        let (out, _) = self
-            .adb
-            .shell(
-                &[
-                    "am",
-                    "start",
-                    "-n",
-                    BOOTSTRAP_COMPONENT,
-                    "--es",
-                    "session",
-                    &self.session,
-                    "--ei",
-                    "device_port",
-                    &port,
-                ],
-                None,
-            )
-            .await?;
-        // `am start` exits 0 even when the component is missing; surface that.
-        if out.contains("Error") || out.contains("does not exist") {
-            return Err(Fault::msg(Kind::Adb, format!("am start reported: {}", out.trim())));
-        }
+        let extras =
+            [Extra::Str("session", &self.session), Extra::Int("device_port", i64::from(self.port.device_port))];
+        self.adb.am_start(BOOTSTRAP_COMPONENT, &extras).await?;
         info!(component = BOOTSTRAP_COMPONENT, "launched bootstrap activity");
         Ok(())
     }

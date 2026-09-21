@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{bail, Context};
-use routedroid_helper_ipc::proto::{Reply, Request, KIND_CONTROL, KIND_PACKET, MAX_DATAGRAM};
+use routedroid_helper_ipc::proto::{Reply, Request, KIND_CONTROL, KIND_PACKET, MAX_DATAGRAM, RECV_BUF};
 use routedroid_helper_ipc::seqpacket::SeqPacket;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
@@ -14,8 +14,10 @@ use crate::session::{PacketEndpoints, QUEUE_DEPTH};
 pub const DEFAULT_SOCKET: &str = "/run/routedroid/phase0-helper.sock";
 const STOP_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
-/// A started helper session: the TUN exists and packets can flow.
-pub struct HelperSession {
+/// The host side of the data path, held for the session by the privileged
+/// helper process: the TUN device, the LAN alias for the phone and proxy
+/// ARP. Created by `start`, torn down by `stop`.
+pub struct HostNetwork {
     conn: Arc<SeqPacket>,
     /// Control replies seen by the relay's receive task (it owns the socket
     /// once `relay()` ran, so `stop()` must read the ack from here).
@@ -26,15 +28,15 @@ pub struct HelperSession {
     pub session: String,
 }
 
-async fn send_control(c: &SeqPacket, req: &Request) -> anyhow::Result<()> {
-    let mut b = vec![KIND_CONTROL];
-    b.extend_from_slice(&serde_json::to_vec(req)?);
-    c.send(&b).await.context("send to helper")
+async fn send_control(conn: &SeqPacket, req: &Request) -> anyhow::Result<()> {
+    let mut datagram = vec![KIND_CONTROL];
+    datagram.extend_from_slice(&serde_json::to_vec(req)?);
+    conn.send(&datagram).await.context("send to helper")
 }
 
-async fn recv_reply(c: &SeqPacket, buf: &mut [u8]) -> anyhow::Result<Reply> {
+async fn recv_reply(conn: &SeqPacket, buf: &mut [u8]) -> anyhow::Result<Reply> {
     loop {
-        let n = c.recv(buf).await.context("recv from helper")?;
+        let n = conn.recv(buf).await.context("recv from helper")?;
         if n == 0 {
             bail!("helper closed the connection");
         }
@@ -44,7 +46,7 @@ async fn recv_reply(c: &SeqPacket, buf: &mut [u8]) -> anyhow::Result<Reply> {
     }
 }
 
-impl HelperSession {
+impl HostNetwork {
     /// Connect and issue `Start`; the helper picks host address and prefix.
     pub async fn start(socket: &Path, lan_if: &str, phone_ip: Ipv4Addr, tun: &str, mtu: u32) -> Result<Self> {
         let conn = SeqPacket::connect(socket)
@@ -53,7 +55,7 @@ impl HelperSession {
             .fault(Kind::Helper)?;
         let req = Request::Start { lan_if: lan_if.to_string(), phone_ip, tun: tun.to_string(), mtu };
         send_control(&conn, &req).await.fault(Kind::Helper)?;
-        let mut buf = vec![0u8; MAX_DATAGRAM];
+        let mut buf = vec![0u8; RECV_BUF];
         match recv_reply(&conn, &mut buf).await.fault(Kind::Helper)? {
             Reply::Started { session, tun, host_ip, lan_prefix } => {
                 info!(%session, %tun, %host_ip, lan_prefix, "helper session started");
@@ -73,23 +75,23 @@ impl HelperSession {
         let (from_tx, from_helper) = mpsc::channel::<Vec<u8>>(QUEUE_DEPTH);
         let (control_tx, control_rx) = mpsc::channel::<Vec<u8>>(4);
         self.control_rx = Some(control_rx);
-        let c = self.conn.clone();
+        let conn = self.conn.clone();
         tokio::spawn(async move {
             let mut out = vec![0u8; MAX_DATAGRAM];
             while let Some(pkt) = inject_rx.recv().await {
                 out[0] = KIND_PACKET;
                 out[1..=pkt.len()].copy_from_slice(&pkt);
-                if let Err(e) = c.send(&out[..=pkt.len()]).await {
+                if let Err(e) = conn.send(&out[..=pkt.len()]).await {
                     warn!(error = %e, "send to helper failed");
                     break;
                 }
             }
         });
-        let c = self.conn.clone();
+        let conn = self.conn.clone();
         tokio::spawn(async move {
-            let mut buf = vec![0u8; MAX_DATAGRAM];
+            let mut buf = vec![0u8; RECV_BUF];
             loop {
-                let n = match c.recv(&mut buf).await {
+                let n = match conn.recv(&mut buf).await {
                     Ok(0) | Err(_) => break,
                     Ok(n) => n,
                 };
@@ -122,7 +124,7 @@ impl HelperSession {
                     Some(b) => serde_json::from_slice::<Reply>(&b).context("parse helper reply"),
                     None => Err(anyhow::anyhow!("helper closed the connection")),
                 },
-                None => recv_reply(&self.conn, &mut vec![0u8; MAX_DATAGRAM]).await,
+                None => recv_reply(&self.conn, &mut vec![0u8; RECV_BUF]).await,
             }
         };
         let reply = match tokio::time::timeout(STOP_ACK_TIMEOUT, reply).await {

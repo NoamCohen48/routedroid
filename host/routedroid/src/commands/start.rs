@@ -1,7 +1,7 @@
 //! `routedroid start`: one phone, one statically chosen address, until Ctrl-C.
 //!
-//! Order matters for safety: helper first (so a failure leaves nothing on the
-//! phone), then the reverse mapping, then the secret, then the launch.
+//! Order matters for safety: host network first (so a failure leaves nothing
+//! on the phone), then the reverse mapping, then the secret, then the launch.
 
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
@@ -14,10 +14,10 @@ use tokio::sync::watch;
 use tracing::{info, warn};
 
 use crate::adb::{Adb, DEFAULT_TIMEOUT};
+use crate::app_listener::AppListener;
 use crate::device::{DeviceSession, Transport};
 use crate::fault::{Fault, Kind, Result};
-use crate::helper::{HelperSession, DEFAULT_SOCKET};
-use crate::listener;
+use crate::host_network::{HostNetwork, DEFAULT_SOCKET};
 use crate::session::{run_session, Machine, SessionConfig, SessionEnd};
 
 #[derive(Debug, Args)]
@@ -59,7 +59,8 @@ fn humantime_secs(s: &str) -> std::result::Result<Duration, String> {
 pub async fn run(adb_bin: &str, args: StartArgs) -> Result<()> {
     Transport::check(&args.serial, args.allow_network_adb)?;
     let adb = Adb::new(adb_bin, DEFAULT_TIMEOUT).device(&args.serial);
-    let (listener, host_port) = listener::bind_loopback().await?;
+    let listener = AppListener::bind().await?;
+    let host_port = listener.port();
 
     // Ctrl-C from here on: everything below is undone at the bottom of `run`.
     let (stop_tx, mut stop_rx) = watch::channel(false);
@@ -70,26 +71,26 @@ pub async fn run(adb_bin: &str, args: StartArgs) -> Result<()> {
         }
     });
 
-    let mut helper =
-        HelperSession::start(&args.helper_socket, &args.lan_if, args.phone_ip, &args.tun, args.mtu).await?;
-    info!(serial = adb.serial(), tun = %helper.tun, host_ip = %helper.host_ip, lan_prefix = helper.lan_prefix,
-          phone_ip = %args.phone_ip, helper_session = %helper.session, "host network ready");
-    let mut device = match DeviceSession::open(adb, host_port).await {
-        Ok(d) => d,
+    let mut network = HostNetwork::start(&args.helper_socket, &args.lan_if, args.phone_ip, &args.tun, args.mtu).await?;
+    info!(serial = adb.serial(), tun = %network.tun, host_ip = %network.host_ip, lan_prefix = network.lan_prefix,
+          phone_ip = %args.phone_ip, helper_session = %network.session, "host network ready");
+    let mut device_session = match DeviceSession::open(adb, host_port).await {
+        Ok(device_session) => device_session,
         Err(e) => {
-            helper.stop().await;
+            network.stop().await;
             return Err(e);
         }
     };
 
     let outcome = async {
-        device.bootstrap().await?;
+        device_session.bootstrap().await?;
+        // The app dials in (over adb reverse, not over the VPN): the phone
+        // never listens, so nothing on it can be reached before AUTH.
         let stream = tokio::select! {
-            r = listener::accept_one(&listener, args.connect_timeout) => r?,
+            r = listener.accept(args.connect_timeout) => r?,
             _ = stop_rx.changed() => return Err(Fault::msg(Kind::Usage, "stopped before the app connected")),
         };
-        drop(listener); // one session per run: refuse anything else that connects
-        info!(host_port, device_port = device.device_port(), "app connected");
+        info!(host_port, device_port = device_session.device_port(), "app connected");
 
         let cfg = SessionConfig {
             mtu: args.mtu,
@@ -97,11 +98,14 @@ pub async fn run(adb_bin: &str, args: StartArgs) -> Result<()> {
             routes: vec![Prefix::new(Ipv4Addr::UNSPECIFIED, 0)],
             dns: args.dns.iter().map(ToString::to_string).collect(),
             session_name: "Routedroid".into(),
-            expected_session: device.session.clone(),
-            expected_device_port: device.device_port(),
-            secret: device.take_secret(),
+            expected_session: device_session.session.clone(),
+            expected_device_port: device_session.device_port(),
+            secret: device_session.take_secret(),
         };
-        let summary = run_session(stream, Machine::new(cfg, device.host_nonce), helper.relay(), stop_rx).await;
+        // Runs the protocol on that stream (HELLO/AUTH/CONFIGURE_VPN, then
+        // IP_PACKET both ways between the app and the TUN, with keepalive)
+        // until either side stops or something fails.
+        let summary = run_session(stream, Machine::new(cfg, device_session.host_nonce), network.relay(), stop_rx).await;
         info!(
             to_phone = summary.packets_to_phone,
             from_phone = summary.packets_from_phone,
@@ -119,8 +123,8 @@ pub async fn run(adb_bin: &str, args: StartArgs) -> Result<()> {
     }
     .await;
 
-    device.close().await;
-    helper.stop().await;
+    device_session.close().await;
+    network.stop().await;
     if outcome.is_err() {
         warn!("session did not complete cleanly");
     }

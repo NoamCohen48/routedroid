@@ -4,12 +4,16 @@
 //!
 //! [`Adb`] is the executable (server-level commands); [`AdbDevice`] is a
 //! handle to one serial, and every per-device command goes through it so
-//! `-s` can never be forgotten when several phones are attached.
+//! `-s` can never be forgotten when several phones are attached. The adb
+//! command lines stay inside this module: callers get one method per
+//! operation (`reverse_add`, `content_write`, `am_start`, ...).
 
+mod android;
 mod device;
 mod devices;
 mod reverse;
 
+pub use android::Extra;
 pub use device::AdbDevice;
 pub use devices::{parse_devices, Device, DeviceState};
 #[cfg(test)]

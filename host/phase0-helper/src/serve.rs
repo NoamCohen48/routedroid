@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use anyhow::{bail, Context, Result};
 use tracing::{info, warn};
 
-use crate::proto::{Reply, Request, KIND_CONTROL, KIND_PACKET, MAX_DATAGRAM};
+use crate::proto::{Reply, Request, KIND_CONTROL, KIND_PACKET, MAX_DATAGRAM, RECV_BUF};
 use crate::seqpacket::{Listener, SeqPacket};
 use crate::session::{self, CrashHook, Plan};
 
@@ -44,7 +44,7 @@ pub async fn serve(cfg: ServeConfig) -> Result<()> {
     };
     let conn = listener.accept().await?;
     drop(listener); // one session per process; systemd keeps the socket unit itself
-    let uid = Listener::peer_uid(&conn)?;
+    let uid = conn.peer_uid()?;
     if let Some(want) = cfg.allow_uid {
         if uid != want {
             warn!(uid, "rejecting controller: uid not allowed");
@@ -53,7 +53,7 @@ pub async fn serve(cfg: ServeConfig) -> Result<()> {
     }
     info!(uid, "controller connected");
 
-    let mut buf = vec![0u8; MAX_DATAGRAM];
+    let mut buf = vec![0u8; RECV_BUF];
     // Wait for Start.
     let plan = loop {
         let n = conn.recv(&mut buf).await?;
