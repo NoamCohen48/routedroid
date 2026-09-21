@@ -4,7 +4,9 @@
 //!
 //! One file per session: `<dir>/<session>.journal`, one JSON entry per line.
 //! A session is resolved when its last line is `{"resolved":true}`; resolved
-//! files are removed. Anything else on disk blocks a new start (`check`).
+//! files are removed. The serving process holds an `flock` on its journal
+//! for the session's life, so `check`/`cleanup` can tell a live session
+//! (locked: leave alone) from an orphan (unlocked: replay).
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
@@ -89,6 +91,11 @@ impl Journal {
         dir.join(format!("{session}.journal"))
     }
 
+    /// The session this journal belongs to (its file stem).
+    pub fn session(&self) -> &str {
+        self.path.file_stem().and_then(|stem| stem.to_str()).unwrap_or("")
+    }
+
     /// Create a fresh journal; fails if one for this session exists.
     pub fn create(dir: &Path, session: &str) -> Result<Self> {
         fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
@@ -98,6 +105,7 @@ impl Journal {
             .create_new(true)
             .open(&path)
             .with_context(|| format!("create journal {}", path.display()))?;
+        lock_live(&file).with_context(|| format!("lock journal {}", path.display()))?;
         fsync_dir(dir)?;
         Ok(Self { path, file, next_seq: 1 })
     }
@@ -112,6 +120,7 @@ impl Journal {
             .unwrap_or(0)
             + 1;
         let file = OpenOptions::new().append(true).open(path).with_context(|| format!("open {}", path.display()))?;
+        lock_live(&file).with_context(|| format!("{} belongs to a live session", path.display()))?;
         Ok((Self { path: path.to_path_buf(), file, next_seq }, lines))
     }
 
@@ -188,7 +197,7 @@ pub fn unresolved(lines: &[Line]) -> Vec<(u32, Phase, Op)> {
         }
     }
     latest.retain(|(_, phase, _)| *phase != Phase::Undone);
-    latest.sort_by(|a, b| b.0.cmp(&a.0));
+    latest.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     latest
 }
 
@@ -196,7 +205,26 @@ pub fn is_resolved(lines: &[Line]) -> bool {
     matches!(lines.last(), Some(Line::Resolved { resolved: true }))
 }
 
-/// All journal files in `dir` that are not resolved.
+/// Exclusive, non-blocking: fails if another process holds the journal.
+fn lock_live(file: &File) -> Result<()> {
+    rustix::fs::flock(file, rustix::fs::FlockOperation::NonBlockingLockExclusive)
+        .map_err(|e| anyhow::anyhow!("another process holds the lock ({e})"))
+}
+
+/// Whether some process currently serves this journal's session.
+pub fn is_live(path: &Path) -> bool {
+    match File::open(path) {
+        Ok(file) => lock_live(&file).is_err(),
+        Err(_) => false,
+    }
+}
+
+/// Unresolved journal files in `dir` with no live owner (orphans to clean up).
+pub fn orphaned_sessions(dir: &Path) -> Result<Vec<PathBuf>> {
+    Ok(open_sessions(dir)?.into_iter().filter(|p| !is_live(p)).collect())
+}
+
+/// All journal files in `dir` that are not resolved, live or not.
 pub fn open_sessions(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     let rd = match fs::read_dir(dir) {
@@ -248,6 +276,11 @@ mod tests {
             vec![(c, Phase::Pending), (b, Phase::Done)]
         );
         assert_eq!(open_sessions(&dir).unwrap(), vec![path.clone()]);
+        assert!(is_live(&path), "the writer's lock marks the session live");
+        assert!(Journal::open(&path).is_err(), "a live journal cannot be taken over");
+        drop(j); // the "crash"
+        assert!(!is_live(&path));
+        assert_eq!(orphaned_sessions(&dir).unwrap(), vec![path.clone()]);
 
         // Torn last line is tolerated; garbage is not.
         fs::write(

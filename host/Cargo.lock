@@ -1015,6 +1015,7 @@ dependencies = [
  "clap",
  "libc",
  "routedroid-helper-ipc",
+ "rustix",
  "serde",
  "serde_json",
  "tokio",

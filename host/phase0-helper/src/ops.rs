@@ -8,6 +8,7 @@ use std::process::Command;
 use anyhow::{bail, Context, Result};
 use tracing::{info, warn};
 
+use crate::claims;
 use crate::journal::Op;
 
 fn run(bin: &str, args: &[&str]) -> Result<String> {
@@ -82,8 +83,22 @@ pub fn link_exists(name: &str) -> bool {
             .unwrap_or(false)
 }
 
+/// Another session (ours or not) already routes this host address somewhere.
+pub fn host_route_exists(dst: Ipv4Addr) -> bool {
+    run("ip", &["-4", "route", "show", &format!("{dst}/32")]).map(|o| !o.trim().is_empty()).unwrap_or(false)
+}
+
 pub fn route_exists(dst: Ipv4Addr, dev: &str) -> bool {
     run("ip", &["-4", "route", "show", &format!("{dst}/32"), "dev", dev]).map(|o| !o.trim().is_empty()).unwrap_or(false)
+}
+
+/// Per-session table so sessions on the same LAN interface never share rules.
+pub fn nft_table_name(tun: &str) -> String {
+    format!("routedroid_{tun}")
+}
+
+fn valid_nft_table(family: &str, name: &str) -> bool {
+    family == "inet" && name.strip_prefix("routedroid_").is_some_and(crate::proto::valid_ifname)
 }
 
 pub fn nft_table_exists(family: &str, name: &str) -> bool {
@@ -125,18 +140,19 @@ pub fn nft_rules(table: &str, tun: &str, lan_if: &str, phone_ip: Ipv4Addr, host_
     )
 }
 
-/// Apply one op. `nft_ruleset` is needed only for `NftTable`.
-pub fn apply(op: &Op, nft_ruleset: Option<&str>) -> Result<()> {
+/// Apply one op on behalf of `session`. `nft_ruleset` is needed only for `NftTable`.
+pub fn apply(session: &str, op: &Op, nft_ruleset: Option<&str>) -> Result<()> {
     match op {
         Op::Tun { .. } => Ok(()), // created by the caller (owns the fd); journaled for inspection
-        Op::Sysctl { key, new, .. } => sysctl_write(key, new),
+        // Shared keys (the LAN interface's) are reference-counted across sessions.
+        Op::Sysctl { key, new, .. } => claims::acquire(session, key, new).map(|_| ()),
         Op::Route { dst, dev, src } => {
             run("ip", &["-4", "route", "replace", &format!("{dst}/32"), "dev", dev, "src", &src.to_string()])
                 .map(|_| ())
         }
         Op::NftTable { family, name } => {
             let rules = nft_ruleset.context("nft ruleset missing")?;
-            if family != "inet" || !crate::proto::valid_ifname(name) {
+            if !valid_nft_table(family, name) {
                 bail!("bad nft table id");
             }
             let mut child = Command::new("nft")
@@ -157,7 +173,7 @@ pub fn apply(op: &Op, nft_ruleset: Option<&str>) -> Result<()> {
 }
 
 /// Undo one op, idempotently: inspect first, act only if the effect is present.
-pub fn undo(op: &Op) -> Result<()> {
+pub fn undo(session: &str, op: &Op) -> Result<()> {
     match op {
         Op::Tun { name } => {
             if link_exists(name) {
@@ -167,15 +183,8 @@ pub fn undo(op: &Op) -> Result<()> {
                 Ok(())
             }
         }
-        Op::Sysctl { key, prev, .. } => {
-            // If the interface vanished (e.g. tun), there is nothing to restore.
-            match sysctl_read(key) {
-                Ok(cur) if cur == *prev => Ok(()),
-                Ok(_) => sysctl_write(key, prev),
-                Err(_) if !link_exists(key.split('.').nth(3).unwrap_or("")) => Ok(()),
-                Err(e) => Err(e),
-            }
-        }
+        // The last holder restores the baseline; a vanished interface needs nothing.
+        Op::Sysctl { key, .. } => claims::release(session, key),
         Op::Route { dst, dev, .. } => {
             if route_exists(*dst, dev) {
                 run("ip", &["-4", "route", "del", &format!("{dst}/32"), "dev", dev]).map(|_| ())
@@ -193,11 +202,12 @@ pub fn undo(op: &Op) -> Result<()> {
     }
 }
 
-/// Whether the op's effect is currently present in the kernel.
-pub fn present(op: &Op) -> Result<bool> {
+/// Whether the op's effect is currently present (in the kernel, or for a
+/// sysctl: whether this session still holds its claim on the key).
+pub fn present(session: &str, op: &Op) -> Result<bool> {
     Ok(match op {
         Op::Tun { name } => link_exists(name),
-        Op::Sysctl { key, prev, .. } => sysctl_read(key).map(|cur| cur != *prev).unwrap_or(false),
+        Op::Sysctl { key, .. } => claims::holds(session, key),
         Op::Route { dst, dev, .. } => route_exists(*dst, dev),
         Op::NftTable { family, name } => nft_table_exists(family, name),
     })
@@ -230,9 +240,18 @@ mod tests {
     }
 
     #[test]
+    fn nft_tables_are_ours_and_per_session() {
+        assert!(valid_nft_table("inet", "routedroid_phone0"));
+        assert!(!valid_nft_table("ip", "routedroid_phone0"));
+        assert!(!valid_nft_table("inet", "filter"));
+        assert!(!valid_nft_table("inet", "routedroid_"));
+    }
+
+    #[test]
     fn nft_rules_mention_only_the_session() {
-        let r = nft_rules("routedroid_p0", "phone0", "eno1", "10.0.0.5".parse().unwrap(), "10.0.0.2".parse().unwrap());
-        assert!(r.contains("table inet routedroid_p0"));
+        let table = nft_table_name("phone0");
+        let r = nft_rules(&table, "phone0", "eno1", "10.0.0.5".parse().unwrap(), "10.0.0.2".parse().unwrap());
+        assert!(r.contains("table inet routedroid_phone0"));
         assert_eq!(r.matches("10.0.0.5").count(), 6);
         assert!(r.contains("iifname \"phone0\" ip saddr != 10.0.0.5 counter drop"));
     }

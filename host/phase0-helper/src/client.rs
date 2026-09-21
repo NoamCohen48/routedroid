@@ -19,6 +19,8 @@ pub struct ClientArgs {
     pub mtu: u32,
     pub hold: Duration,
     pub bench: u32,
+    /// Echo target for `bench`; the host itself when unset.
+    pub bench_target: Option<Ipv4Addr>,
     pub crash_at: Option<String>,
     pub no_stop: bool,
 }
@@ -119,7 +121,7 @@ pub async fn run(socket: &Path, a: ClientArgs) -> Result<()> {
         let mut pkt = vec![0u8; MAX_DATAGRAM];
         loop {
             if sent < a.bench {
-                let echo = icmp_echo(a.phone_ip, host_ip, id, sent as u16);
+                let echo = icmp_echo(a.phone_ip, a.bench_target.unwrap_or(host_ip), id, sent as u16);
                 pkt[0] = KIND_PACKET;
                 pkt[1..=echo.len()].copy_from_slice(&echo);
                 c.send(&pkt[..=echo.len()]).await?;
@@ -154,8 +156,11 @@ pub async fn run(socket: &Path, a: ClientArgs) -> Result<()> {
     }
 
     if !a.hold.is_zero() {
-        info!(secs = a.hold.as_secs(), "holding session");
-        tokio::time::sleep(a.hold).await;
+        info!(secs = a.hold.as_secs(), "holding session (Ctrl-C stops early)");
+        tokio::select! {
+            _ = tokio::time::sleep(a.hold) => {}
+            _ = tokio::signal::ctrl_c() => info!("interrupted; stopping"),
+        }
     }
     crash("before_stop", &a.crash_at);
     if a.no_stop {

@@ -1,8 +1,9 @@
-# Phase 0 helper gate spike. Socket-activated: nothing privileged runs until a
-# controller connects; the service exits after one session and the socket
-# unit stays armed for the next one.
+# Socket-activated: nothing privileged runs until a controller connects, and
+# every connection gets its own routedroid-phase0-helper@<n>.service instance,
+# so several phones can be up at once and one session's crash leaves the
+# others alone.
 [Unit]
-Description=Routedroid Phase 0 helper (control socket)
+Description=Routedroid helper (control socket)
 
 [Socket]
 ListenSequentialPacket=/run/routedroid/phase0-helper.sock
@@ -11,8 +12,8 @@ SocketUser=root
 SocketGroup=routedroid
 DirectoryMode=0755
 RemoveOnStop=yes
-# One connection is served per service instance; further connectors queue.
-Backlog=4
+Accept=yes
+MaxConnections=16
 
 [Install]
 WantedBy=sockets.target

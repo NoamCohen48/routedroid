@@ -73,12 +73,15 @@ impl SeqPacket {
     }
 }
 
-/// Listening socket: from systemd (`LISTEN_FDS`) or bound here.
-pub struct Listener {
-    socket: AsyncFd<Socket>,
+/// What systemd socket activation handed over on fd 3.
+pub enum Activated {
+    /// `Accept=no`: the listening socket; we accept ourselves.
+    Listener(Listener),
+    /// `Accept=yes`: one already-accepted connection; one process per client.
+    Connection(SeqPacket),
 }
 
-impl Listener {
+impl Activated {
     pub fn from_systemd() -> Result<Option<Self>> {
         let pid: u32 = match std::env::var("LISTEN_PID") {
             Ok(p) => p.parse().unwrap_or(0),
@@ -95,9 +98,20 @@ impl Listener {
         // and is owned by this process; nothing else wraps it.
         let socket = Socket::from(unsafe { OwnedFd::from_raw_fd(3) });
         socket.set_nonblocking(true)?;
-        Ok(Some(Self { socket: AsyncFd::new(socket)? }))
+        if rustix::net::sockopt::socket_acceptconn(&socket)? {
+            Ok(Some(Self::Listener(Listener { socket: AsyncFd::new(socket)? })))
+        } else {
+            Ok(Some(Self::Connection(SeqPacket::from_socket(socket)?)))
+        }
     }
+}
 
+/// Listening socket: from systemd (`Activated`) or bound here.
+pub struct Listener {
+    socket: AsyncFd<Socket>,
+}
+
+impl Listener {
     pub fn bind(path: &Path) -> Result<Self> {
         let _ = std::fs::remove_file(path);
         let socket = new_socket().context("socket")?;

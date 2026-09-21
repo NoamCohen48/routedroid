@@ -1,9 +1,12 @@
 //! Routedroid Phase 0 helper-gate spike (architecture §5.3 / plan §3.1 helper gate).
 //! Throwaway quality; proves the journal + systemd cleanup + relay shape.
 
+mod claims;
 mod client;
+mod connection;
 mod journal;
 mod ops;
+mod recovery;
 use routedroid_helper_ipc::proto;
 use routedroid_helper_ipc::seqpacket;
 mod serve;
@@ -26,6 +29,9 @@ pub const DEFAULT_CRASH_FILE: &str = "/run/routedroid/crash-at";
 struct Cli {
     #[arg(long, default_value = DEFAULT_JOURNAL, global = true)]
     journal_dir: PathBuf,
+    /// Where sysctl baselines shared between sessions are reference-counted.
+    #[arg(long, default_value = claims::DEFAULT_DIR, global = true)]
+    claims_dir: PathBuf,
     /// Test hook file: if its content equals a stage name, the helper SIGKILLs itself there.
     #[arg(long, default_value = DEFAULT_CRASH_FILE, global = true)]
     crash_file: PathBuf,
@@ -35,10 +41,13 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Cmd {
-    /// Privileged: accept one controller (systemd socket or --socket), run one session, exit.
+    /// Privileged: serve controllers (systemd socket or --socket), one session each.
     Serve {
         #[arg(long)]
         socket: Option<PathBuf>,
+        /// Exit after the first session ends (systemd `Accept=yes` instances always do).
+        #[arg(long)]
+        once: bool,
         /// Only accept a controller with this uid (socket permissions are the primary gate).
         #[arg(long)]
         allow_uid: Option<u32>,
@@ -65,6 +74,9 @@ enum Cmd {
         /// Send N ICMP echo requests through the relay and count kernel replies.
         #[arg(long, default_value_t = 0)]
         bench: u32,
+        /// Address the bench echoes target (default: the host's LAN address).
+        #[arg(long)]
+        bench_target: Option<Ipv4Addr>,
         /// SIGKILL self at: before_start | after_start | during_traffic | before_stop
         #[arg(long)]
         crash_at: Option<String>,
@@ -84,20 +96,22 @@ fn main() -> Result<()> {
         .with_writer(std::io::stderr)
         .init();
     let cli = Cli::parse();
+    claims::init(cli.claims_dir.clone());
     let hook = session::CrashHook(cli.crash_file.clone());
     match cli.cmd {
-        Cmd::Serve { socket, allow_uid } => {
+        Cmd::Serve { socket, allow_uid, once } => {
             let rt = tokio::runtime::Runtime::new()?;
             rt.block_on(serve::serve(serve::ServeConfig {
                 socket,
                 journal_dir: cli.journal_dir,
                 crash_file: cli.crash_file,
                 allow_uid,
+                once,
             }))
         }
-        Cmd::Check => session::check(&cli.journal_dir),
-        Cmd::Cleanup => session::cleanup(&cli.journal_dir, &hook),
-        Cmd::Client { socket, lan_if, phone_ip, tun, mtu, hold, bench, crash_at, no_stop } => {
+        Cmd::Check => recovery::check(&cli.journal_dir),
+        Cmd::Cleanup => recovery::cleanup(&cli.journal_dir, &hook),
+        Cmd::Client { socket, lan_if, phone_ip, tun, mtu, hold, bench, bench_target, crash_at, no_stop } => {
             let rt = tokio::runtime::Runtime::new()?;
             rt.block_on(client::run(
                 &socket,
@@ -108,6 +122,7 @@ fn main() -> Result<()> {
                     mtu,
                     hold: Duration::from_secs(hold),
                     bench,
+                    bench_target,
                     crash_at,
                     no_stop,
                 },

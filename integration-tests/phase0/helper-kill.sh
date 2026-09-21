@@ -25,9 +25,9 @@ if [[ $MODE == userns ]]; then
     NS="nsenter -t $NSPID -U -n --preserve-credentials"
     $NS ip link add $LAN_IF type dummy; $NS ip addr add 10.90.0.1/24 dev $LAN_IF; $NS ip link set $LAN_IF up
     JOURNAL=$S/journal; SOCK=$S/helper.sock; CRASH=$S/crash-at
-    HELPER="$NS $BIN --journal-dir $JOURNAL --crash-file $CRASH"
+    HELPER="$NS $BIN --journal-dir $JOURNAL --claims-dir $S/claims --crash-file $CRASH"
     SUDO=""
-    start_helper() { $HELPER serve --socket "$SOCK" > "$S/helper-$1.log" 2>&1 & HPID=$!; for _ in $(seq 1 30); do [[ -S $SOCK ]] && break; sleep 0.1; done; }
+    start_helper() { $HELPER serve --once --socket "$SOCK" > "$S/helper-$1.log" 2>&1 & HPID=$!; for _ in $(seq 1 30); do [[ -S $SOCK ]] && break; sleep 0.1; done; }
     wait_helper_exit() { for _ in $(seq 1 100); do kill -0 "$HPID" 2>/dev/null || break; sleep 0.1; done; ! kill -0 "$HPID" 2>/dev/null; }
     run_cleanup() { $HELPER cleanup >> "$S/cleanup-$1.log" 2>&1; }
     run_check() { $HELPER check >/dev/null 2>&1; }
@@ -102,7 +102,7 @@ check "check passes"      run_check
 check "baseline restored" baseline_ok c-nostop
 
 # --------------------------------------------- helper dies at every boundary
-OPS=("tun:$TUN" "nft:inet:routedroid_p0" "sysctl:net.ipv4.conf.$TUN.forwarding" "sysctl:net.ipv4.conf.$LAN_IF.forwarding" "sysctl:net.ipv4.conf.$LAN_IF.proxy_arp" "route:$PHONE_IP/32@$TUN")
+OPS=("tun:$TUN" "nft:inet:routedroid_$TUN" "sysctl:net.ipv4.conf.$TUN.forwarding" "sysctl:net.ipv4.conf.$LAN_IF.forwarding" "sysctl:net.ipv4.conf.$LAN_IF.proxy_arp" "route:$PHONE_IP/32@$TUN")
 STAGES=()
 for op in "${OPS[@]}"; do STAGES+=("pending:$op" "applied:$op" "done:$op"); done
 STAGES+=("active")

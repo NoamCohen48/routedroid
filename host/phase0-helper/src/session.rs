@@ -8,12 +8,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use tracing::{info, warn};
 
-use crate::journal::{self, Journal, Op, Phase};
+use crate::journal::{Journal, Op};
 use crate::ops;
 use crate::proto::valid_ifname;
 use crate::tun::Tun;
-
-pub const NFT_TABLE: &str = "routedroid_p0";
 
 /// Test hook: if the crash file's content equals `stage`, SIGKILL ourselves.
 /// Root-owned file; absent in normal operation.
@@ -62,6 +60,9 @@ impl Plan {
         if ops::link_exists(tun) {
             bail!("{tun} already exists");
         }
+        if ops::host_route_exists(phone_ip) {
+            bail!("{phone_ip} is already served by another session");
+        }
         let (host_ip, lan_prefix) = ops::primary_ipv4(lan_if)?;
         let mask = if lan_prefix == 0 { 0 } else { u32::MAX << (32 - lan_prefix) };
         if u32::from(phone_ip) & mask != u32::from(host_ip) & mask {
@@ -74,12 +75,13 @@ impl Plan {
     }
 
     /// Mutations in application order. Deny-first: nft before anything that could forward.
-    /// Sysctl `prev` values are filled in at apply time (the TUN's do not exist yet).
+    /// Sysctl `prev` values are filled in at apply time (the TUN's do not exist yet);
+    /// they are informational — restoring goes through the shared claims.
     pub fn ops(&self) -> Vec<Op> {
         let sys = |key: String| Op::Sysctl { key, prev: String::new(), new: "1".into() };
         vec![
             Op::Tun { name: self.tun.clone() },
-            Op::NftTable { family: "inet".into(), name: NFT_TABLE.into() },
+            Op::NftTable { family: "inet".into(), name: ops::nft_table_name(&self.tun) },
             sys(format!("net.ipv4.conf.{}.forwarding", self.tun)),
             sys(format!("net.ipv4.conf.{}.forwarding", self.lan_if)),
             sys(format!("net.ipv4.conf.{}.proxy_arp", self.lan_if)),
@@ -99,7 +101,8 @@ pub fn start(plan: &Plan, journal_dir: &Path, hook: &CrashHook) -> Result<Active
     let mut journal = Journal::create(journal_dir, &plan.session)?;
     let mut applied: Vec<(u32, Op)> = Vec::new();
     let mut tun: Option<Tun> = None;
-    let rules = ops::nft_rules(NFT_TABLE, &plan.tun, &plan.lan_if, plan.phone_ip, plan.host_ip);
+    let table = ops::nft_table_name(&plan.tun);
+    let rules = ops::nft_rules(&table, &plan.tun, &plan.lan_if, plan.phone_ip, plan.host_ip);
 
     for mut op in plan.ops() {
         if let Op::Sysctl { key, prev, .. } = &mut op {
@@ -123,7 +126,7 @@ pub fn start(plan: &Plan, journal_dir: &Path, hook: &CrashHook) -> Result<Active
                 tun = Some(t);
                 Ok(())
             }),
-            _ => ops::apply(&op, Some(&rules)),
+            _ => ops::apply(&plan.session, &op, Some(&rules)),
         };
         if let Err(e) = r {
             warn!(op = %label, error = %e, "apply failed; rolling back");
@@ -145,11 +148,11 @@ pub fn start(plan: &Plan, journal_dir: &Path, hook: &CrashHook) -> Result<Active
     Ok(Active { tun: tun.context("plan has no tun op")?, journal, applied })
 }
 
-fn undo_one(journal: &mut Journal, seq: u32, op: &Op, hook: &CrashHook) -> Result<()> {
+pub(crate) fn undo_one(journal: &mut Journal, seq: u32, op: &Op, hook: &CrashHook) -> Result<()> {
     let label = op.label();
     journal.undo_pending(seq, op)?;
     hook.at(&format!("undo_pending:{label}"));
-    let r = ops::undo(op);
+    let r = ops::undo(journal.session(), op);
     ops::log_undo(op, &r);
     r?;
     hook.at(&format!("undo_applied:{label}"));
@@ -181,73 +184,5 @@ impl Active {
         } else {
             bail!("some undo steps failed; journal left for cleanup")
         }
-    }
-}
-
-/// `cleanup`: replay every unresolved journal. Returns Err if anything is still present.
-pub fn cleanup(journal_dir: &Path, hook: &CrashHook) -> Result<()> {
-    let files = journal::open_sessions(journal_dir)?;
-    if files.is_empty() {
-        info!("cleanup: nothing to do");
-        return Ok(());
-    }
-    let mut all_ok = true;
-    for path in files {
-        let (mut journal, lines) = Journal::open(&path)?;
-        let todo = journal::unresolved(&lines);
-        info!(journal = %path.display(), entries = todo.len(), "cleanup: replaying");
-        let mut ok = true;
-        for (seq, phase, op) in todo {
-            let label = op.label();
-            match phase {
-                Phase::Pending => {
-                    // Intent only: act if the effect is there, otherwise just close the entry.
-                    match ops::present(&op) {
-                        Ok(true) => {
-                            info!(op = %label, "pending entry is present; undoing");
-                            if undo_one(&mut journal, seq, &op, hook).is_err() {
-                                ok = false;
-                            }
-                        }
-                        Ok(false) => {
-                            journal.undone(seq, &op)?;
-                            info!(op = %label, "pending entry absent; closed");
-                        }
-                        Err(e) => {
-                            warn!(op = %label, error = %e, "cannot inspect");
-                            ok = false;
-                        }
-                    }
-                }
-                Phase::Done | Phase::UndoPending => {
-                    if undo_one(&mut journal, seq, &op, hook).is_err() {
-                        ok = false;
-                    }
-                }
-                Phase::Undone => {}
-            }
-        }
-        if ok {
-            journal.resolve()?;
-            info!(journal = %path.display(), "resolved");
-        } else {
-            all_ok = false;
-            warn!(journal = %path.display(), "left unresolved");
-        }
-    }
-    if all_ok {
-        Ok(())
-    } else {
-        bail!("cleanup incomplete")
-    }
-}
-
-/// `check` (ExecStartPre): refuse to start while any unresolved journal exists.
-pub fn check(journal_dir: &Path) -> Result<()> {
-    let files = journal::open_sessions(journal_dir)?;
-    if files.is_empty() {
-        Ok(())
-    } else {
-        bail!("unresolved journal(s): {}", files.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", "))
     }
 }

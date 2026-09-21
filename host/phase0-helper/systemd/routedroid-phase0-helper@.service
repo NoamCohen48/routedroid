@@ -1,9 +1,12 @@
-# Phase 0 helper gate spike (architecture §5.3): one session per start, no
-# restart, independent root-owned cleanup after any exit, and a start guard
-# that refuses to run while an unresolved journal exists.
+# Privileged helper (architecture §5.3): one instance per controller
+# connection (the socket unit is Accept=yes), no restart, independent
+# root-owned cleanup after any exit, and a start guard that refuses to run
+# while an orphaned journal exists. Instances share the LAN interface's
+# sysctls through reference-counted claims in /var/lib/routedroid/sysctl.
 [Unit]
-Description=Routedroid Phase 0 privileged helper (one session)
+Description=Routedroid privileged helper (session %i)
 Requires=routedroid-phase0-helper.socket
+CollectMode=inactive-or-failed
 After=network.target
 # Every controller connect is a fresh start by design; the default 5-in-10s
 # rate limit would refuse quick reconnects (and the kill matrix) as a crash loop.
@@ -12,7 +15,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 Restart=no
-# LISTEN_FDS from the socket unit (Accept=no): the helper accepts one client itself.
+# The accepted connection arrives as LISTEN_FDS (Accept=yes).
 NonBlocking=yes
 ExecStartPre=/usr/local/libexec/routedroid/phase0-helper check
 ExecStart=/usr/local/libexec/routedroid/phase0-helper serve

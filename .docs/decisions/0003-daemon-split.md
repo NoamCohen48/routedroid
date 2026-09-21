@@ -56,10 +56,9 @@ TUI inside the foreground CLI would have been a patch.
 
 ## Known limit
 
-The Phase 0 helper serves one session per activation, so the daemon can run sessions one after
-another (systemd re-activates the helper) but not two phones at once yet. The daemon side is
-ready for it (sessions keyed by serial, unique address and TUN per session); the helper gains
-multi-session support in Phase 2.
+At the time of this decision the helper served one session per activation, so the daemon could
+run sessions one after another but not two phones at once. Lifted in Phase 2, see
+[0004](0004-multi-session-helper.md).
 
 ## Out of scope for now
 
