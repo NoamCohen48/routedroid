@@ -5,6 +5,9 @@
 Description=Routedroid Phase 0 privileged helper (one session)
 Requires=routedroid-phase0-helper.socket
 After=network.target
+# Every controller connect is a fresh start by design; the default 5-in-10s
+# rate limit would refuse quick reconnects (and the kill matrix) as a crash loop.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple

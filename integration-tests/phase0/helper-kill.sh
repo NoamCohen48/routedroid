@@ -46,7 +46,9 @@ else
     HELPER="$BIN --journal-dir $JOURNAL --crash-file $CRASH"
     NS=""
     start_helper() { systemctl reset-failed $UNIT.service $UNIT.socket 2>/dev/null || true; :; }   # socket activation starts it on connect
-    wait_helper_exit() { for _ in $(seq 1 100); do systemctl is-active --quiet $UNIT.service || break; sleep 0.1; done; ! systemctl is-active --quiet $UNIT.service; }
+    # "deactivating" still counts as running: ExecStopPost=cleanup is in flight.
+    unit_settled() { case $(systemctl show -p ActiveState --value $UNIT.service) in inactive|failed) return 0;; *) return 1;; esac; }
+    wait_helper_exit() { for _ in $(seq 1 100); do unit_settled && break; sleep 0.1; done; unit_settled; }
     run_cleanup() { :; }     # ExecStopPost already ran; journalctl shows it
     run_check() { $HELPER check >/dev/null 2>&1; }
     kill_helper() { systemctl kill -s KILL $UNIT.service 2>/dev/null || true; }
