@@ -1,6 +1,6 @@
 # 0001: Phase 0 Feasibility Results
 
-Status: in progress (gate 5-wireless still open). Dates: 2026-09-14..21.
+Status: **closed** (§3.5 review done 2026-09-21; two gates deliberately deferred, see "Deferred gates"). Dates: 2026-09-14..21.
 
 Test assets: `host/phase0-tunnel`, `android/` (`dev.routedroid.phase0`),
 `integration-tests/phase0/{netns-tunnel.sh,lan-proxyarp.sh,phone-multialias.sh,emulator-userns.md}`.
@@ -181,7 +181,37 @@ steps.
    reverse listener is IPv4-only. Fixed with explicit `127.0.0.1`.
 3. `lan-proxyarp.sh` cleanup ran twice (INT then EXIT). Fixed.
 
-## Still required before Phase 1 is declared
+## Deferred gates (decided 2026-09-21)
 
-- Gate 1 on a Wi-Fi-attached PC (Ethernet done).
-- Wireless ADB (Android 11+ TLS) under the VPN default route.
+Two gates were not run because the hardware was not at hand. Per §3.5 an
+unverified environment is removed from the version 1 claim, not assumed.
+
+| Gate | What was not tested | Why it matters | Version 1 scope decision | Fallback the user gets | Reopens when |
+|---|---|---|---|---|---|
+| 1, PC attached over Wi-Fi | Whether an AP grants a second DHCP lease to the PC's Wi-Fi MAC with a different client-id, and whether proxy-ARP replies from a Wi-Fi station are honoured (client isolation, some APs drop "spoofed" identities) | Automatic mode on laptops | Automatic DHCP + proxy ARP is the primary mode **only for an Ethernet-attached PC**. On a Wi-Fi-attached PC it is offered as *experimental*: `doctor` runs the acquisition probe and reports pass/fail before anything is configured | Manual static alias (`--phone-ip`) on Wi-Fi, which needs no cooperation from the AP beyond ARP; or use Ethernet | A Wi-Fi-attached PC passes acquisition, renewal, inbound reachability, host-manager coexistence, and cleanup on one real AP (`phase0-tunnel dhcp-probe` + `lan-proxyarp.sh`) |
+| 5, wireless ADB | Whether adbd's own TCP connection to the host survives the VPN taking the phone's default route | ADB-over-Wi-Fi sessions | **USB ADB only** in version 1. The host refuses a `tcp:` / mDNS-paired serial with a clear message rather than starting a session that may cut its own transport | USB cable | An Android 11+ device is available: rerun `phone-bootstrap.sh happy` over TLS wireless debugging and hold ~25 000 packets as gate 5 did over USB. If adbd's traffic does enter the tunnel, the expected fix is excluding the host's address from the VPN routes (`VpnService.Builder.excludeRoute`, API 33+) or a `/32` route to the PC left outside the tunnel |
+
+Neither gate changes the architecture: both only decide which *transports and
+attachment modes* version 1 advertises as supported.
+
+## §3.5 gate review
+
+Architecture confirmed as revised in `92ae4aa` (single selected interface):
+raw IP over ADB with a `VpnService` ↔ TUN pair, no NAT, proxy ARP and a
+`/32` alias on the selected interface, privileged helper with a write-ahead
+journal and root-owned cleanup, protected-stdin bootstrap with mutual HMAC.
+
+Version 1 scope after the gates:
+
+- One selected interface, one alias per device (gate 3).
+- Ethernet-attached PC: automatic DHCP alias + proxy ARP is the primary mode
+  (gate 1 Ethernet, gate 2). Wi-Fi-attached PC: experimental, `doctor`-gated
+  (deferred gate 1 Wi-Fi). Wi-Fi *clients* reaching the phone through an
+  Ethernet-attached PC are supported (gate 2).
+- USB ADB only (gate 5 USB; deferred gate 5 wireless).
+- Android 10 and 14 verified; the `content write` `splice` quirk on old
+  kernels is handled by the socketpair provider (§3.4).
+- Host firewall coexistence (Docker `DOCKER-USER`, firewalld zone) is a
+  Phase 2 helper duty with `doctor` checks, not a manual step.
+
+Phase 1 may begin.
