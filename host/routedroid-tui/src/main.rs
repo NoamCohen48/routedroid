@@ -21,7 +21,7 @@ use ratatui::DefaultTerminal;
 use routedroid_ipc::Client;
 use tokio::sync::mpsc;
 
-use app::App;
+use app::{App, Level};
 use messages::{Command, Incoming};
 
 /// Exit code when the daemon is not reachable at start.
@@ -82,8 +82,11 @@ async fn run_ui(
             },
         };
         for command in followups {
-            if commands.send(command).await.is_err() {
-                anyhow::bail!("connection task ended");
+            // Never block rendering on the connection task (a `stop` can take seconds).
+            match commands.try_send(command) {
+                Ok(()) => {}
+                Err(mpsc::error::TrySendError::Full(_)) => app.push_log(Level::Error, "busy; try again".into()),
+                Err(mpsc::error::TrySendError::Closed(_)) => anyhow::bail!("connection task ended"),
             }
         }
         if app.quit {

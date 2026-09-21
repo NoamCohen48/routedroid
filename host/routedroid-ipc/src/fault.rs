@@ -24,6 +24,9 @@ pub enum Kind {
     Helper,
     /// Anything unexpected.
     Internal,
+    /// A kind this client does not know (newer daemon).
+    #[serde(other)]
+    Unknown,
 }
 
 impl Kind {
@@ -37,6 +40,7 @@ impl Kind {
             Self::Vpn => "vpn",
             Self::Helper => "helper",
             Self::Internal => "internal",
+            Self::Unknown => "unknown",
         }
     }
 
@@ -49,7 +53,7 @@ impl Kind {
             Self::Auth => 13,
             Self::Vpn => 14,
             Self::Helper => 15,
-            Self::Internal => 70,
+            Self::Internal | Self::Unknown => 70,
         }
     }
 }

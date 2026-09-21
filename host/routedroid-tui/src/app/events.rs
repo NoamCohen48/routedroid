@@ -30,6 +30,7 @@ impl App {
                 vec![]
             }
             Event::Shutdown => vec![],
+            Event::Lagged { .. } => vec![Command::RefreshDevices, Command::RefreshStatus],
         }
     }
 

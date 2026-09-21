@@ -106,6 +106,11 @@ impl HostNetwork {
                     }
                     _ => {}
                 }
+                // Nobody left to deliver to (session over, Stop acked or given
+                // up): drop our clone so the helper sees its socket close.
+                if from_tx.is_closed() && control_tx.is_closed() {
+                    break;
+                }
             }
         });
         PacketEndpoints { to_helper, from_helper }

@@ -115,4 +115,7 @@ pub enum Event {
     Devices { devices: Vec<DeviceInfo> },
     /// The daemon is shutting down; sessions are being stopped.
     Shutdown,
+    /// This connection fell behind and `missed` events were dropped; the
+    /// client should re-query `status` (and `devices`).
+    Lagged { missed: u64 },
 }

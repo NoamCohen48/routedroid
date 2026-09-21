@@ -3,18 +3,22 @@
 
 use std::sync::Arc;
 
+use futures_util::StreamExt;
 use routedroid_ipc::wire::{ClientMessage, ServerMessage, MAX_LINE};
-use routedroid_ipc::Request;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use routedroid_ipc::{Event, Request};
+use tokio::io::AsyncWriteExt;
 use tokio::net::UnixStream;
 use tokio::sync::{broadcast, mpsc};
+use tokio_util::codec::{FramedRead, LinesCodec};
 use tracing::{debug, warn};
 
 use crate::daemon::Daemon;
 
 pub async fn run(daemon: Arc<Daemon>, stream: UnixStream) {
     let (rd, mut wr) = stream.into_split();
-    let mut lines = BufReader::new(rd).lines();
+    // The codec refuses a line over MAX_LINE while it is being read, so a
+    // client cannot make the daemon buffer an unbounded line.
+    let mut lines = FramedRead::new(rd, LinesCodec::new_with_max_length(MAX_LINE));
     let (out_tx, mut out_rx) = mpsc::channel::<String>(64);
     let writer = tokio::spawn(async move {
         while let Some(mut line) = out_rx.recv().await {
@@ -24,14 +28,14 @@ pub async fn run(daemon: Arc<Daemon>, stream: UnixStream) {
             }
         }
     });
-    let mut events: Option<broadcast::Receiver<routedroid_ipc::Event>> = None;
+    let mut events: Option<broadcast::Receiver<Event>> = None;
 
     loop {
         tokio::select! {
-            line = lines.next_line() => match line {
-                Ok(Some(line)) if line.len() <= MAX_LINE => {
+            line = lines.next() => match line {
+                Some(Ok(line)) => {
                     let msg: ClientMessage = match serde_json::from_str(&line) {
-                        Ok(m) => m,
+                        Ok(msg) => msg,
                         Err(e) => { warn!(error = %e, "bad request line; closing"); break; }
                     };
                     debug!(id = msg.id, request = ?msg.request, "request");
@@ -41,23 +45,25 @@ pub async fn run(daemon: Arc<Daemon>, stream: UnixStream) {
                     let response = crate::daemon::handle(&daemon, msg.request).await;
                     if send(&out_tx, ServerMessage::Response { id: msg.id, response }).await.is_err() { break; }
                 }
-                Ok(Some(_)) => { warn!("request line too long; closing"); break; }
-                Ok(None) | Err(_) => break,
+                Some(Err(e)) => { warn!(error = %e, "request line rejected; closing"); break; }
+                None => break,
             },
-            ev = recv_event(&mut events) => match ev {
-                Ok(event) => { if send(&out_tx, ServerMessage::Event { event }).await.is_err() { break; } }
-                Err(broadcast::error::RecvError::Lagged(n)) => warn!(missed = n, "slow subscriber"),
-                Err(broadcast::error::RecvError::Closed) => break,
-            },
+            ev = recv_event(&mut events) => {
+                let event = match ev {
+                    Ok(event) => event,
+                    // Tell the client rather than silently losing (possibly) an `ended`.
+                    Err(broadcast::error::RecvError::Lagged(missed)) => Event::Lagged { missed },
+                    Err(broadcast::error::RecvError::Closed) => break,
+                };
+                if send(&out_tx, ServerMessage::Event { event }).await.is_err() { break; }
+            }
         }
     }
     drop(out_tx);
     let _ = writer.await;
 }
 
-async fn recv_event(
-    events: &mut Option<broadcast::Receiver<routedroid_ipc::Event>>,
-) -> Result<routedroid_ipc::Event, broadcast::error::RecvError> {
+async fn recv_event(events: &mut Option<broadcast::Receiver<Event>>) -> Result<Event, broadcast::error::RecvError> {
     match events {
         Some(rx) => rx.recv().await,
         None => std::future::pending().await,

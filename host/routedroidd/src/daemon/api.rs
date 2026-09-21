@@ -55,17 +55,19 @@ async fn start(daemon: &Arc<Daemon>, req: StartRequest) -> Result<Response, Faul
     Ok(Response::Started { serial })
 }
 
+/// The handle stays in the map (state `Stopping`) until its task has torn
+/// everything down, so a concurrent `start` on the serial is refused.
 async fn stop(daemon: &Arc<Daemon>, serial: &str) -> Result<Response, Fault> {
-    let handle = daemon
-        .sessions
-        .lock()
-        .await
-        .remove(serial)
-        .ok_or_else(|| Fault::msg(Kind::Usage, format!("no session on {serial}")))?;
-    let outcome = handle.stop_and_wait().await;
-    if outcome.ok {
-        Ok(Response::Ok)
-    } else {
-        Err(Fault::msg(outcome.kind.unwrap_or(Kind::Internal), outcome.message))
+    let (stop, state) = {
+        let sessions = daemon.sessions.lock().await;
+        let handle = sessions.get(serial).ok_or_else(|| Fault::msg(Kind::Usage, format!("no session on {serial}")))?;
+        (handle.stop_switch(), handle.state_watch())
+    };
+    match SessionHandle::stop_and_wait_on(&stop, state).await {
+        Some(outcome) if outcome.ok => Ok(Response::Ok),
+        Some(outcome) => Err(Fault::msg(outcome.kind.unwrap_or(Kind::Internal), outcome.message)),
+        None => {
+            Err(Fault::msg(Kind::Internal, format!("session on {serial} is still stopping; watch for its ended event")))
+        }
     }
 }

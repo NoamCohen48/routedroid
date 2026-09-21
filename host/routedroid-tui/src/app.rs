@@ -84,7 +84,7 @@ impl App {
         self.push_log(Level::Error, text.into());
     }
 
-    pub(super) fn push_log(&mut self, level: Level, text: String) {
+    pub fn push_log(&mut self, level: Level, text: String) {
         if self.log.len() == LOG_CAPACITY {
             self.log.pop_front();
         }

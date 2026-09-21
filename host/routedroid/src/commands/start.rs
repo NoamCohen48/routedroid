@@ -91,8 +91,26 @@ async fn follow(client: &mut Client, serial: &str) -> Result<Outcome> {
             }
             Event::Session { state, .. } => println!("{}", state_line(&state)),
             Event::Shutdown => eprintln!("routedroidd is shutting down"),
+            // We may have missed our `ended`; ask instead of waiting forever.
+            Event::Lagged { .. } => {
+                if let Some(outcome) = ended_meanwhile(client, serial).await? {
+                    println!("{}", state_line(&SessionState::Ended(outcome.clone())));
+                    return Ok(outcome);
+                }
+            }
             Event::Traffic { .. } | Event::Devices { .. } => {}
         }
+    }
+}
+
+/// After missed events: `Some(outcome)` if our session is no longer listed.
+async fn ended_meanwhile(client: &mut Client, serial: &str) -> Result<Option<Outcome>> {
+    match client.call_ok(Request::Status).await? {
+        Response::Status { sessions } if sessions.iter().any(|session| session.serial == serial) => Ok(None),
+        Response::Status { .. } => {
+            Ok(Some(Outcome { ok: false, kind: None, message: "session ended while events were missed".into() }))
+        }
+        other => bail!("unexpected answer to status: {other:?}"),
     }
 }
 

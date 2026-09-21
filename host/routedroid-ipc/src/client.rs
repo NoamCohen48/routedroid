@@ -1,17 +1,20 @@
 //! Async client: one connection, sequential calls, optional event stream.
+//! Reads go through `Lines::next_line`, which is cancel-safe, so callers may
+//! use `next_event` inside `select!`.
 
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::UnixStream;
 
 use crate::api::{Event, Request, Response};
 use crate::wire::{ClientMessage, ServerMessage};
+use crate::API_VERSION;
 
 pub struct Client {
-    reader: BufReader<OwnedReadHalf>,
+    lines: Lines<BufReader<OwnedReadHalf>>,
     writer: OwnedWriteHalf,
     next_id: u64,
     /// Events read while waiting for a response; drained by `next_event`.
@@ -24,7 +27,14 @@ impl Client {
             .await
             .with_context(|| format!("connect to routedroidd at {} (is it running?)", path.display()))?;
         let (rd, writer) = stream.into_split();
-        Ok(Self { reader: BufReader::new(rd), writer, next_id: 1, pending: Default::default() })
+        let mut client = Self { lines: BufReader::new(rd).lines(), writer, next_id: 1, pending: Default::default() };
+        match client.call(Request::Version).await? {
+            Response::Version { api, .. } if api == API_VERSION => Ok(client),
+            Response::Version { daemon, api } => {
+                bail!("routedroidd {daemon} speaks API {api}; this client needs {API_VERSION}")
+            }
+            other => bail!("unexpected answer to version: {other:?}"),
+        }
     }
 
     /// Send one request and wait for its response. Events that arrive in
@@ -68,11 +78,9 @@ impl Client {
     }
 
     async fn read_message(&mut self) -> Result<ServerMessage> {
-        let mut line = String::new();
-        let n = self.reader.read_line(&mut line).await.context("read from routedroidd")?;
-        if n == 0 {
+        let Some(line) = self.lines.next_line().await.context("read from routedroidd")? else {
             return Err(Closed.into());
-        }
+        };
         serde_json::from_str(&line).with_context(|| format!("bad line from routedroidd: {}", line.trim()))
     }
 }

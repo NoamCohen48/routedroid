@@ -39,5 +39,6 @@ pub fn event(event: &Event) -> Option<String> {
             Some(format!("devices: {} attached [{}]", devices.len(), serials.join(", ")))
         }
         Event::Shutdown => Some("daemon is shutting down".into()),
+        Event::Lagged { missed } => Some(format!("missed {missed} events; refreshing")),
     }
 }

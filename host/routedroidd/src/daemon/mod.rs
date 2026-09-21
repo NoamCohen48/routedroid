@@ -46,7 +46,7 @@ impl Daemon {
         let handles: Vec<SessionHandle> = self.sessions.lock().await.drain().map(|(_, handle)| handle).collect();
         let mut stopping = tokio::task::JoinSet::new();
         for handle in handles {
-            stopping.spawn(handle.stop_and_wait());
+            stopping.spawn(async move { handle.stop_and_wait().await });
         }
         while stopping.join_next().await.is_some() {}
     }

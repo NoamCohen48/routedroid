@@ -8,12 +8,13 @@ use std::time::{Duration, SystemTime};
 
 use routedroid_ipc::{Event, Outcome, SessionInfo, SessionState, StartRequest};
 use tokio::sync::watch;
-use tokio::task::JoinHandle;
 
 use super::Daemon;
 use crate::session::Counters;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+/// Longer than the worst orderly teardown (adb timeout 15 s + helper ack 10 s).
+const STOP_WAIT: Duration = Duration::from_secs(30);
 
 pub struct SessionHandle {
     /// Distinguishes this handle from a later session on the same serial.
@@ -25,8 +26,7 @@ pub struct SessionHandle {
     pub started_at: u64,
     pub counters: Arc<Counters>,
     state: watch::Receiver<SessionState>,
-    stop: watch::Sender<bool>,
-    task: Option<JoinHandle<()>>,
+    stop: Arc<watch::Sender<bool>>,
 }
 
 /// Publishes state changes to the handle's watch and to the event bus.
@@ -46,11 +46,13 @@ impl StateSink {
 
 impl SessionHandle {
     /// Spawn the session task. The handle is live immediately in state
-    /// `Starting`; failures surface as `Ended` with a non-ok outcome.
+    /// `Starting`; failures surface as `Ended` with a non-ok outcome. The task
+    /// is never aborted: teardown (adb, helper) must always run to the end.
     pub fn spawn(daemon: Arc<Daemon>, req: StartRequest, tun: String) -> Self {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         let (state_tx, state) = watch::channel(SessionState::Starting);
         let (stop, stop_rx) = watch::channel(false);
+        let stop = Arc::new(stop);
         let counters = Arc::new(Counters::default());
         let sink = StateSink { serial: req.serial.clone(), daemon: daemon.clone(), tx: state_tx };
         let serial = req.serial.clone();
@@ -59,18 +61,22 @@ impl SessionHandle {
         let phone_ip = req.phone_ip;
         let task_counters = counters.clone();
         let task_tun = tun.clone();
-        let task = tokio::spawn(async move {
+        tokio::spawn(async move {
             sink.set(SessionState::Starting);
             let outcome = super::api::run_session(&daemon, req, task_tun, stop_rx, task_counters, &sink).await;
-            sink.set(SessionState::Ended(outcome));
-            // Only our own entry: `stop` may have removed it and `start` replaced it.
-            let mut sessions = daemon.sessions.lock().await;
-            if sessions.get(&serial).is_some_and(|h| h.id == id) {
-                sessions.remove(&serial);
+            // Leave the map before announcing the end, so a client reacting
+            // to `Ended` with a new `start` finds the serial free. Only our
+            // own entry: daemon shutdown may have drained the map already.
+            {
+                let mut sessions = daemon.sessions.lock().await;
+                if sessions.get(&serial).is_some_and(|handle| handle.id == id) {
+                    sessions.remove(&serial);
+                }
             }
+            sink.set(SessionState::Ended(outcome));
         });
         let started_at = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        Self { id, serial: handle_serial, lan_if, phone_ip, tun, started_at, counters, state, stop, task: Some(task) }
+        Self { id, serial: handle_serial, lan_if, phone_ip, tun, started_at, counters, state, stop }
     }
 
     pub fn state(&self) -> SessionState {
@@ -90,31 +96,36 @@ impl SessionHandle {
         }
     }
 
-    pub fn request_stop(&self) {
-        let _ = self.stop.send(true);
+    /// The stop switch and state watch, so a caller can wait for the end
+    /// without holding the session map locked (the task needs that lock).
+    pub fn stop_switch(&self) -> Arc<watch::Sender<bool>> {
+        self.stop.clone()
+    }
+
+    pub fn state_watch(&self) -> watch::Receiver<SessionState> {
+        self.state.clone()
     }
 
     /// Resolves with the final outcome once the task has ended.
-    pub async fn wait_ended(&self) -> Outcome {
-        let mut rx = self.state.clone();
+    pub async fn wait_ended(mut state: watch::Receiver<SessionState>) -> Outcome {
         loop {
-            if let SessionState::Ended(o) = &*rx.borrow() {
-                return o.clone();
+            if let SessionState::Ended(outcome) = &*state.borrow() {
+                return outcome.clone();
             }
-            if rx.changed().await.is_err() {
+            if state.changed().await.is_err() {
                 return Outcome { ok: false, kind: None, message: "session task vanished".into() };
             }
         }
     }
 
-    pub async fn stop_and_wait(mut self) -> Outcome {
-        self.request_stop();
-        let outcome = tokio::time::timeout(Duration::from_secs(20), self.wait_ended()).await;
-        if let Some(task) = self.task.take() {
-            if outcome.is_err() {
-                task.abort();
-            }
-        }
-        outcome.unwrap_or_else(|_| Outcome { ok: false, kind: None, message: "session did not stop in time".into() })
+    /// Ask the session to stop and wait for it; `None` if it is still tearing
+    /// down after `STOP_WAIT` (it keeps going; a later `Ended` event tells).
+    pub async fn stop_and_wait_on(stop: &watch::Sender<bool>, state: watch::Receiver<SessionState>) -> Option<Outcome> {
+        let _ = stop.send(true);
+        tokio::time::timeout(STOP_WAIT, Self::wait_ended(state)).await.ok()
+    }
+
+    pub async fn stop_and_wait(&self) -> Option<Outcome> {
+        Self::stop_and_wait_on(&self.stop, self.state.clone()).await
     }
 }

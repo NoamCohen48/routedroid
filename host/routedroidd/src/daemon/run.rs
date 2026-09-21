@@ -22,6 +22,7 @@ use crate::host_network::HostNetwork;
 use crate::session::{Counters, Machine, Progress, SessionConfig, SessionDriver, SessionEnd};
 
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(90);
+const HELPER_START_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub async fn run_session(
     daemon: &Daemon,
@@ -32,7 +33,7 @@ pub async fn run_session(
     sink: &StateSink,
 ) -> Outcome {
     match run(daemon, req, tun, stop_rx, counters, sink).await {
-        Ok(()) => Outcome { ok: true, kind: None, message: "session ended cleanly".into() },
+        Ok(message) => Outcome { ok: true, kind: None, message: message.into() },
         Err(e) => {
             tracing::warn!(kind = e.kind().as_str(), "session failed: {e}");
             Outcome { ok: false, kind: Some(e.kind()), message: e.to_string() }
@@ -47,7 +48,7 @@ async fn run(
     mut stop_rx: watch::Receiver<bool>,
     counters: Arc<Counters>,
     sink: &StateSink,
-) -> Result<()> {
+) -> Result<&'static str> {
     Transport::check(&req.serial, req.allow_network_adb)?;
     let mtu = req.mtu.unwrap_or(DEFAULT_MTU);
     if !(576..=65535).contains(&mtu) {
@@ -57,7 +58,12 @@ async fn run(
     let listener = AppListener::bind().await?;
     let host_port = listener.port();
 
-    let mut network = HostNetwork::start(&daemon.helper_socket, &req.lan_if, req.phone_ip, &tun, mtu).await?;
+    let mut network = tokio::time::timeout(
+        HELPER_START_TIMEOUT,
+        HostNetwork::start(&daemon.helper_socket, &req.lan_if, req.phone_ip, &tun, mtu),
+    )
+    .await
+    .map_err(|_| Fault::msg(Kind::Helper, format!("helper did not answer Start within {HELPER_START_TIMEOUT:?}")))??;
     info!(serial = adb.serial(), tun = %network.tun, host_ip = %network.host_ip, lan_prefix = network.lan_prefix,
           phone_ip = %req.phone_ip, helper_session = %network.session, "host network ready");
     let mut device_session = match DeviceSession::open(adb, host_port).await {
@@ -76,7 +82,7 @@ async fn run(
         let connect_timeout = req.connect_timeout_secs.map(Duration::from_secs).unwrap_or(DEFAULT_CONNECT_TIMEOUT);
         let stream = tokio::select! {
             r = listener.accept(connect_timeout) => r?,
-            _ = stop_rx.changed() => return Err(Fault::msg(Kind::Usage, "stopped before the app connected")),
+            _ = stop_rx.changed() => return Ok("stopped before the app connected"),
         };
         info!(host_port, device_port = device_session.device_port(), "app connected");
         sink.set(SessionState::Handshaking);
@@ -115,7 +121,11 @@ async fn run(
         );
         sink.set(SessionState::Stopping);
         match summary.end {
-            SessionEnd::LocalStop | SessionEnd::PeerStop | SessionEnd::PeerClosed if summary.reached_active => Ok(()),
+            // A stop we asked for is a success whatever phase it interrupted.
+            SessionEnd::LocalStop if !summary.reached_active => Ok("stopped before the session was active"),
+            SessionEnd::LocalStop | SessionEnd::PeerStop | SessionEnd::PeerClosed if summary.reached_active => {
+                Ok("session ended cleanly")
+            }
             // Peer-supplied text: `{:?}` escapes control characters before it reaches a terminal.
             SessionEnd::VpnError(e) => Err(Fault::msg(Kind::Vpn, format!("{}: {:?}", e.code, e.message))),
             SessionEnd::Refused(e) if e.code == "auth_failed" => Err(Fault::msg(Kind::Auth, e.message)),
@@ -125,7 +135,7 @@ async fn run(
     }
     .await;
 
-    device_session.close().await;
-    network.stop().await;
+    // Concurrent: a hung adb must not delay releasing the host network.
+    tokio::join!(device_session.close(), network.stop());
     outcome
 }
