@@ -98,7 +98,6 @@ pub async fn run(adb_bin: &str, a: StartArgs) -> Result<()> {
             SessionEnd::VpnError(e) => Err(Fault::msg(Kind::Vpn, format!("{}: {}", e.code, e.message))),
             SessionEnd::Refused(e) if e.code == "auth_failed" => Err(Fault::msg(Kind::Auth, e.message)),
             SessionEnd::Refused(e) => Err(Fault::msg(Kind::Protocol, format!("{}: {}", e.code, e.message))),
-            SessionEnd::PeerError(e) => Err(Fault::msg(Kind::Protocol, format!("app error {}: {}", e.code, e.message))),
             other => Err(Fault::msg(Kind::Vpn, other.to_string())),
         }
     }

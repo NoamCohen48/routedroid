@@ -134,7 +134,6 @@ pub async fn run_session(
             Err(close) => {
                 break match close {
                     Close::PeerStop => SessionEnd::PeerStop,
-                    Close::PeerError(e) => SessionEnd::PeerError(e),
                     Close::VpnError(e) => SessionEnd::VpnError(e),
                     Close::Refuse(e) => {
                         let _ = out_tx.send(Frame::json(MessageType::Error, &e)).await;

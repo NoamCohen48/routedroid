@@ -73,7 +73,7 @@ HELLO_ACK has been sent or received IP_PACKET is not allowed in any case
 | 0x20 | PING | both | empty |
 | 0x21 | PONG | both | empty |
 | 0x30 | STOP | both | empty |
-| 0x7F | ERROR | both | JSON §4.6 |
+| 0x7F | ERROR | host → Android | JSON §4.6 |
 
 Any other value is a protocol violation. Values are listed in the order they
 occur in a session; numbering is historical and MUST NOT be reassigned.
@@ -159,19 +159,20 @@ negotiated value.
 {"code":"<snake_case>","message":"<human readable, ≤ 512 chars>"}
 ```
 
-`code` values:
+ERROR is host → Android only; the app reports everything, including a
+protocol violation it detected, through VPN_ERROR. `code` values:
 
 | code | sent by | meaning |
 |---|---|---|
 | `protocol_unsupported` | host | HELLO `protocol` is not 1; body MAY add `"supported":[1]` |
-| `protocol_error` | either | malformed frame or body, or message illegal in the current state |
+| `protocol_error` | either (host: ERROR, app: VPN_ERROR) | malformed frame or body, or message illegal in the current state |
 | `auth_failed` | host | AUTH proof did not verify |
 | `session_mismatch` | host | HELLO `session` or `device_port` is not the one the host launched |
 | `transport_unsupported` | host | see §1 |
 | `vpn_permission_denied` | Android (VPN_ERROR) | user declined the VPN consent |
 | `vpn_establish_failed` | Android (VPN_ERROR) | `establish()` returned null or threw |
 | `config_rejected` | Android (VPN_ERROR) | CONFIGURE_VPN failed §4.4 validation |
-| `internal` | either | unexpected failure; message is diagnostic only |
+| `internal` | either (host: ERROR, app: VPN_ERROR) | unexpected failure; message is diagnostic only |
 
 A receiver MUST NOT act on `message` programmatically; it is for logs and
 the user.
@@ -199,6 +200,9 @@ state is a protocol violation.
 | Negotiated | STOP | CONFIGURE_VPN, ERROR, STOP |
 | Configuring | VPN_READY, VPN_ERROR, STOP | ERROR, STOP |
 | Active | IP_PACKET, PING, PONG, STOP, VPN_ERROR | IP_PACKET, PING, PONG, STOP, ERROR |
+
+VPN_ERROR in Active means the app lost the VPN (revoked by the user or the
+system) or detected a violation; the host tears down.
 | Closed | — | — |
 
 Transitions:
