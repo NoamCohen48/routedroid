@@ -4,8 +4,8 @@
 mod client;
 mod journal;
 mod ops;
-mod proto;
-mod seqpacket;
+use routedroid_helper_ipc::proto;
+use routedroid_helper_ipc::seqpacket;
 mod serve;
 mod session;
 mod tun;

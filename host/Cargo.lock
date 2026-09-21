@@ -352,6 +352,7 @@ dependencies = [
  "anyhow",
  "clap",
  "libc",
+ "routedroid-helper-ipc",
  "serde",
  "serde_json",
  "tokio",
@@ -442,6 +443,17 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "routedroid-helper-ipc"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

@@ -1,0 +1,14 @@
+[package]
+name = "routedroid-helper-ipc"
+version = "0.1.0"
+description = "Controller <-> privileged helper IPC: typed JSON requests and packet datagrams over Unix SOCK_SEQPACKET"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow = "1"
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["net", "io-util"] }
