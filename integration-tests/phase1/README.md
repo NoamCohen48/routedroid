@@ -21,6 +21,7 @@ Prerequisites: `cargo build --release -p routedroid -p phase0-helper`, the app i
 |---|---|---|
 | One statically configured address end to end (`routedroid start … --phone-ip 10.90.0.7`) | PASS | PASS |
 | ICMP both directions, TCP PC → phone 200 KB md5-equal | PASS | PASS |
+| TCP phone → PC 2 MB md5-equal (bulk frames from the phone while ACKs flow back) | PASS (after review fix, see notes) | not run |
 | Host Ctrl-C → STOP → app "session ended cleanly", VPN address gone | PASS | PASS |
 | App Stop button → host "peer sent STOP", exit 0 | PASS | not run |
 | Helper acknowledges Stop, TUN gone, reverse mapping removed | PASS | PASS |
@@ -52,3 +53,23 @@ Notes:
   `Stopped` reply, so `routedroid start` logged "helper did not acknowledge Stop" although
   cleanup had happened. Control replies now go through the relay to `stop()`.
 - The Phase 0 helper (`phase0-helper`) is still the privileged side; Phase 2 replaces it.
+- `toybox nc` on the Android 14 emulator truncates a regular-file stdin when used as a
+  client (8 KiB on loopback), so the bulk phone → PC check makes the phone the *listener*
+  that sends the file.
+
+## Post-review fixes (same day)
+
+The end-of-phase code review found, and these were fixed and re-verified with both rigs:
+
+- host frame reads were raced inside `select!` and not cancellation-safe: a TUN packet
+  arriving mid-frame lost bytes and desynchronised the stream (only visible with bulk
+  phone → PC traffic; now a dedicated reader task, covered by the 2 MB check);
+- no host deadline before Active: a silent connection to the reverse port held the TUN and
+  reverse mapping until Ctrl-C (now 15 s to reach Configuring, 120 s for the consent;
+  unit-tested with paused time);
+- Ctrl-C before the app connected skipped cleanup; `content write` provider errors on
+  stderr were missed; the secret record outlived the handshake in host memory; the helper
+  `Stopped` ack could still be lost to a late packet;
+- app: backing out of the bootstrap screen during authentication leaked the socket
+  (host then waited); a guessed-session launch consumed the host's record; org.json
+  exceptions escaped the decoders as `internal` instead of `config_rejected`/`protocol_error`.

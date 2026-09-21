@@ -54,6 +54,14 @@ if grep -q 'session Active' "$S/host.log"; then
     adb -s "$SERIAL" shell 'toybox nc -l -p 7000 > /data/local/tmp/blob' & sleep 1
     $NS sh -c "cat '$S/blob' | timeout 10 socat - TCP4:$PHONE_IP:7000"; sleep 1
     check "TCP PC -> phone 200 KB" [ "$(md5sum < "$S/blob" | cut -d' ' -f1)" = "$(adb -s "$SERIAL" shell md5sum /data/local/tmp/blob | cut -d' ' -f1)" ]
+    # Bulk phone -> PC: exercises host frame reads while ACKs flow the other way. The phone
+    # is the listener and sends the file (toybox nc as a client truncates file stdin).
+    head -c 2000000 /dev/urandom > "$S/big"; adb -s "$SERIAL" push "$S/big" /data/local/tmp/big >/dev/null
+    adb -s "$SERIAL" shell 'toybox nc -l -p 7001 < /data/local/tmp/big' & sleep 1
+    t0=$(date +%s%N)
+    $NS sh -c "sleep 60 | timeout 60 socat -u TCP4:$PHONE_IP:7001 - > '$S/from_phone'"
+    echo "phone -> PC 2 MB in $(( ($(date +%s%N) - t0) / 1000000 )) ms"
+    check "TCP phone -> PC 2 MB" [ "$(md5sum < "$S/big" | cut -d' ' -f1)" = "$(md5sum < "$S/from_phone" | cut -d' ' -f1)" ]
     if [[ $STOP_MODE == app ]]; then
         adb -s "$SERIAL" shell am start -n dev.routedroid/.ui.MainActivity >/dev/null; sleep 2
         tap_button Stop || tap_button STOP || echo "could not find the Stop button"

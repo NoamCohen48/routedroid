@@ -21,7 +21,7 @@ data class Hello(
         const val MAX_APP_LEN = 64
 
         /** `protocol` is not checked here: a mismatch is a session decision (§9). */
-        fun decode(body: ByteArray): Hello {
+        fun decode(body: ByteArray): Hello = Fields.decoding {
             val o = Fields.parse(body)
             val session = Fields.str(o, "session")
             if (!Protocol.validSession(session)) Fields.fail("session", "1-40 characters from [A-Za-z0-9._-]")
@@ -29,7 +29,7 @@ data class Hello(
             if (port !in 1..65535) Fields.fail("device_port", "must be 1-65535")
             val app = if (o.has("app")) Fields.str(o, "app") else null
             if (app != null && app.length > MAX_APP_LEN) Fields.fail("app", "at most 64 characters")
-            return Hello(Fields.int(o, "protocol"), session, port, Fields.hex("client_nonce", Fields.str(o, "client_nonce"), 64), app)
+            Hello(Fields.int(o, "protocol"), session, port, Fields.hex("client_nonce", Fields.str(o, "client_nonce"), 64), app)
         }
     }
 }

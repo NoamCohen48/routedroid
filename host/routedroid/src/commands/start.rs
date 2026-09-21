@@ -35,7 +35,8 @@ pub struct StartArgs {
     /// TUN interface name the helper creates.
     #[arg(long, default_value = "phone0")]
     pub tun: String,
-    #[arg(long, default_value_t = DEFAULT_MTU)]
+    /// Packet MTU offered in HELLO_ACK (576..=65535).
+    #[arg(long, default_value_t = DEFAULT_MTU, value_parser = clap::value_parser!(u32).range(576..=65535))]
     pub mtu: u32,
     /// DNS server(s) to hand the phone; defaults to none.
     #[arg(long = "dns")]
@@ -64,14 +65,28 @@ pub async fn run(adb_bin: &str, a: StartArgs) -> Result<()> {
     let host_nonce = auth::random_nonce().fault(Kind::Internal)?;
     let record = bootstrap::encode(&session, &secret).expect("session id is valid hex");
 
+    // Ctrl-C from here on: everything below is undone at the bottom of `run`.
+    let (stop_tx, mut stop_rx) = watch::channel(false);
+    tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            info!("stop requested");
+            let _ = stop_tx.send(true);
+        }
+    });
+
     let mut helper = HelperSession::start(&a.helper_socket, &a.lan_if, a.phone_ip, &a.tun, a.mtu).await?;
     info!(serial = adb.serial(), tun = %helper.tun, host_ip = %helper.host_ip, lan_prefix = helper.lan_prefix,
           phone_ip = %a.phone_ip, helper_session = %helper.session, "host network ready");
     let outcome = async {
         adb.reverse_add(device_port, host_port).await?;
         adb.write_bootstrap_record(record.as_slice()).await?;
+        drop(record); // §7.3: the host keeps only the copy the session machine consumes
         adb.launch_bootstrap(&session, device_port).await?;
-        let stream = listener::accept_one(&listener, a.connect_timeout).await?;
+        let stream = tokio::select! {
+            r = listener::accept_one(&listener, a.connect_timeout) => r?,
+            _ = stop_rx.changed() => return Err(Fault::msg(Kind::Usage, "stopped before the app connected")),
+        };
+        drop(listener); // one session per run: refuse anything else that connects
         info!(host_port, device_port, "app connected");
 
         let cfg = SessionConfig {
@@ -84,20 +99,14 @@ pub async fn run(adb_bin: &str, a: StartArgs) -> Result<()> {
             expected_device_port: device_port,
             secret,
         };
-        let (stop_tx, stop_rx) = watch::channel(false);
-        tokio::spawn(async move {
-            if tokio::signal::ctrl_c().await.is_ok() {
-                info!("stop requested");
-                let _ = stop_tx.send(true);
-            }
-        });
         let summary = run_session(stream, Machine::new(cfg, host_nonce), helper.relay(), stop_rx).await;
         info!(to_phone = summary.packets_to_phone, from_phone = summary.packets_from_phone, dropped = summary.bad_packets, "traffic");
         match summary.end {
             SessionEnd::LocalStop | SessionEnd::PeerStop | SessionEnd::PeerClosed if summary.reached_active => Ok(()),
-            SessionEnd::VpnError(e) => Err(Fault::msg(Kind::Vpn, format!("{}: {}", e.code, e.message))),
+            // Peer-supplied text: `{:?}` escapes control characters before it reaches a terminal.
+            SessionEnd::VpnError(e) => Err(Fault::msg(Kind::Vpn, format!("{}: {:?}", e.code, e.message))),
             SessionEnd::Refused(e) if e.code == "auth_failed" => Err(Fault::msg(Kind::Auth, e.message)),
-            SessionEnd::Refused(e) => Err(Fault::msg(Kind::Protocol, format!("{}: {}", e.code, e.message))),
+            SessionEnd::Refused(e) => Err(Fault::msg(Kind::Protocol, format!("{}: {:?}", e.code, e.message))),
             other => Err(Fault::msg(Kind::Vpn, other.to_string())),
         }
     }

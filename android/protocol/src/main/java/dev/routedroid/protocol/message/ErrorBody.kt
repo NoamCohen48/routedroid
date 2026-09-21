@@ -19,14 +19,14 @@ data class ErrorBody(val code: String, val message: String, val supported: List<
         fun protocolUnsupported(message: String) =
             ErrorBody(ErrorCode.PROTOCOL_UNSUPPORTED.wire, message, listOf(Protocol.VERSION))
 
-        fun decode(body: ByteArray): ErrorBody {
+        fun decode(body: ByteArray): ErrorBody = Fields.decoding {
             val o = Fields.parse(body)
             val code = Fields.str(o, "code")
             if (code.isEmpty() || !code.all { it in 'a'..'z' || it == '_' }) Fields.fail("code", "snake_case identifier")
             val msg = Fields.str(o, "message")
             if (msg.length > MAX_MESSAGE_LEN) Fields.fail("message", "at most 512 characters")
             val sup = o.optJSONArray("supported")?.let { a -> (0 until a.length()).map { a.getInt(it) } }
-            return ErrorBody(code, msg, sup)
+            ErrorBody(code, msg, sup)
         }
     }
 }

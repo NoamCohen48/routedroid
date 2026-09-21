@@ -3,21 +3,15 @@
 
 use std::time::Duration;
 
-use routedroid_proto::frame::{self, Frame, FrameError, MessageType};
+use routedroid_proto::frame::{Frame, FrameError, MessageType};
 use routedroid_proto::messages::{ErrorBody, ErrorCode};
 use routedroid_proto::state::State;
-use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, info, warn};
 
+use super::tasks::{phase_deadline, reader_task, writer_task, KEEPALIVE_DEAD, KEEPALIVE_IDLE, QUEUE_DEPTH};
 use super::{Close, Machine, Outbound, SessionEnd};
-
-/// Bounded queue depth for every packet/frame channel.
-pub const QUEUE_DEPTH: usize = 256;
-/// §5.1: PING after this much silence, dead after `KEEPALIVE_DEAD`.
-pub const KEEPALIVE_IDLE: Duration = Duration::from_secs(10);
-pub const KEEPALIVE_DEAD: Duration = Duration::from_secs(30);
 
 /// Packets to inject (`to_helper`) and packets read from the TUN (`from_helper`).
 pub struct PacketEndpoints {
@@ -34,17 +28,6 @@ pub struct SessionSummary {
     pub bad_packets: u64,
 }
 
-async fn writer_task<W: AsyncWrite + Unpin>(mut wr: W, mut rx: mpsc::Receiver<Frame>) -> std::io::Result<()> {
-    let mut buf = Vec::with_capacity(frame::HEADER_LEN + 65_536);
-    while let Some(f) = rx.recv().await {
-        buf.clear();
-        f.encode_into(&mut buf);
-        wr.write_all(&buf).await?;
-    }
-    wr.shutdown().await.ok();
-    Ok(())
-}
-
 pub async fn run_session(
     stream: TcpStream,
     mut machine: Machine,
@@ -53,26 +36,36 @@ pub async fn run_session(
 ) -> SessionSummary {
     let mtu = machine.mtu();
     let PacketEndpoints { to_helper, mut from_helper } = packets;
-    let (mut rd, wr) = stream.into_split();
+    let (rd, wr) = stream.into_split();
     let (out_tx, out_rx) = mpsc::channel::<Frame>(QUEUE_DEPTH);
     let writer = tokio::spawn(writer_task(wr, out_rx));
+    let (in_tx, mut in_rx) = mpsc::channel::<Result<Frame, FrameError>>(QUEUE_DEPTH);
+    let reader = tokio::spawn(reader_task(rd, mtu, in_tx));
 
     let mut reached_active = false;
     let mut to_phone = 0u64;
     let mut from_phone = 0u64;
     let mut last_rx = tokio::time::Instant::now();
     let mut pinged = false;
+    let mut phase_started = tokio::time::Instant::now();
+    let mut watch_shutdown = true;
 
     let end = loop {
         let idle = tokio::time::sleep_until(last_rx + if pinged { KEEPALIVE_DEAD } else { KEEPALIVE_IDLE });
+        let phase = phase_deadline(machine.state());
+        let phase_timer = tokio::time::sleep_until(phase_started + phase.unwrap_or_default());
         let frame = tokio::select! {
             biased;
-            _ = shutdown.changed() => {
-                if *shutdown.borrow() {
-                    let _ = out_tx.send(Frame::empty(MessageType::Stop)).await;
-                    break SessionEnd::LocalStop;
+            r = shutdown.changed(), if watch_shutdown => {
+                match r {
+                    Ok(()) if *shutdown.borrow() => {
+                        let _ = out_tx.send(Frame::empty(MessageType::Stop)).await;
+                        break SessionEnd::LocalStop;
+                    }
+                    Ok(()) => continue,
+                    // Sender gone (no Ctrl-C handler): stop polling this branch.
+                    Err(_) => { watch_shutdown = false; continue; }
                 }
-                continue;
             }
             pkt = from_helper.recv(), if reached_active => match pkt {
                 Some(pkt) => {
@@ -88,7 +81,12 @@ pub async fn run_session(
                 let _ = out_tx.send(Frame::empty(MessageType::Ping)).await;
                 continue;
             }
-            r = frame::read_frame(&mut rd, mtu) => match r {
+            _ = phase_timer, if phase.is_some() => {
+                let body = ErrorBody::new(ErrorCode::ProtocolError, format!("no progress from {} within {:?}", machine.state().name(), phase.unwrap_or_default()));
+                let _ = out_tx.send(Frame::json(MessageType::Error, &body)).await;
+                break SessionEnd::Refused(body);
+            }
+            r = in_rx.recv() => match r.unwrap_or(Err(FrameError::Io("reader task ended".into()))) {
                 Ok(f) => f,
                 Err(FrameError::Truncated { clean: true }) => break SessionEnd::PeerClosed,
                 Err(FrameError::Io(e)) => break SessionEnd::Transport(e),
@@ -102,6 +100,7 @@ pub async fn run_session(
         };
         last_rx = tokio::time::Instant::now();
         pinged = false;
+        let state_before = machine.state();
         if frame.message_type != MessageType::IpPacket {
             debug!(%frame.message_type, state = machine.state().name(), "control frame");
         }
@@ -122,6 +121,9 @@ pub async fn run_session(
                             }
                         }
                     }
+                }
+                if machine.state() != state_before {
+                    phase_started = tokio::time::Instant::now();
                 }
                 if machine.state() == State::Active && !reached_active {
                     reached_active = true;
@@ -145,6 +147,7 @@ pub async fn run_session(
     };
 
     drop(out_tx);
+    reader.abort();
     match tokio::time::timeout(Duration::from_millis(500), writer).await {
         Ok(Ok(Ok(()))) => {}
         Ok(Ok(Err(e))) => warn!(error = %e, "TCP writer failed"),

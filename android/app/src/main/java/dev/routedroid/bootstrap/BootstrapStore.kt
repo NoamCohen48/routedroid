@@ -26,17 +26,21 @@ object BootstrapStore {
         Log.i(TAG, "bootstrap record stored for session=${record.session} (expires in ${TTL_MS / 1000}s)")
     }
 
-    /** Takes the record for [session] if present, unexpired, and matching; otherwise null. Atomic. */
+    /**
+     * Takes the record for [session] if present, unexpired, and matching; otherwise null.
+     * A mismatch leaves the record in place: any app can launch the activity with a guessed
+     * session, and that must not cost the host its record. Atomic.
+     */
     fun take(session: String): BootstrapRecord? {
         synchronized(lock) {
             val p = pending ?: return null.also { Log.w(TAG, "take: no pending record") }
-            pending = null
             if (SystemClock.elapsedRealtime() > p.expiresAt) {
-                p.record.wipe(); Log.w(TAG, "take: record expired"); return null
+                pending = null; p.record.wipe(); Log.w(TAG, "take: record expired"); return null
             }
             if (p.record.session != session) {
-                p.record.wipe(); Log.w(TAG, "take: session mismatch"); return null
+                Log.w(TAG, "take: session mismatch"); return null
             }
+            pending = null
             return p.record
         }
     }

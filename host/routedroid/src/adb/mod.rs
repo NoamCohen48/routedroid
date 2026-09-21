@@ -60,6 +60,12 @@ impl Adb {
     }
 
     pub async fn run_with_stdin(&self, args: &[&str], stdin: Option<&[u8]>) -> Result<String> {
+        Ok(self.run_both(args, stdin).await?.0)
+    }
+
+    /// Like `run_with_stdin` but returns `(stdout, stderr)` on success, for
+    /// commands that report failures on stderr with a zero exit status.
+    pub async fn run_both(&self, args: &[&str], stdin: Option<&[u8]>) -> Result<(String, String)> {
         let mut cmd = self.command(args);
         if stdin.is_some() {
             cmd.stdin(Stdio::piped());
@@ -79,7 +85,7 @@ impl Adb {
             if !out.status.success() {
                 bail!("{desc} failed ({}): {}{}", out.status, stdout.trim(), stderr.trim());
             }
-            Ok::<_, anyhow::Error>(stdout)
+            Ok::<_, anyhow::Error>((stdout, stderr))
         };
         match tokio::time::timeout(self.timeout, fut).await {
             Ok(r) => r.fault(Kind::Adb),

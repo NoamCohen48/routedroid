@@ -19,7 +19,7 @@ data class ConfigureVpn(
     companion object {
         const val MAX_SESSION_NAME_LEN = 64
 
-        fun decode(body: ByteArray): ConfigureVpn {
+        fun decode(body: ByteArray): ConfigureVpn = Fields.decoding {
             val o = Fields.parse(body)
             val mtu = Fields.mtu("mtu", Fields.int(o, "mtu"))
             val addrs = o.optJSONArray("addresses") ?: Fields.fail("addresses", "required list")
@@ -29,7 +29,7 @@ data class ConfigureVpn(
             val dns = o.optJSONArray("dns") ?: Fields.fail("dns", "required list")
             val name = Fields.str(o, "session_name")
             if (name.length > MAX_SESSION_NAME_LEN) Fields.fail("session_name", "at most 64 characters")
-            return ConfigureVpn(
+            ConfigureVpn(
                 mtu,
                 (0 until addrs.length()).map { Prefix.decode("addresses", addrs.getJSONObject(it)) },
                 (0 until routes.length()).map { Prefix.decode("routes", routes.getJSONObject(it)) },

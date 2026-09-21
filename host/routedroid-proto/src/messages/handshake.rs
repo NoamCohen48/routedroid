@@ -4,7 +4,9 @@ use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hello {
-    pub protocol: u8,
+    /// Wider than the `u8` on the wire so an unknown future version still
+    /// parses and gets ERROR `protocol_unsupported` rather than `protocol_error`.
+    pub protocol: u32,
     pub session: String,
     pub device_port: u16,
     /// 32 random bytes, lowercase hex.

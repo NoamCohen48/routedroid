@@ -96,7 +96,7 @@ impl Machine {
 
     fn on_hello(&mut self, bytes: &[u8]) -> Result<Vec<Outbound>, Close> {
         let hello: Hello = self.body("HELLO", bytes)?;
-        if hello.protocol != PROTOCOL_VERSION {
+        if hello.protocol != u32::from(PROTOCOL_VERSION) {
             self.state = State::Closed;
             self.secret = None;
             return Err(Close::Refuse(ErrorBody::protocol_unsupported(format!(

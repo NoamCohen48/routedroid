@@ -81,8 +81,9 @@ class BootstrapProvider : ContentProvider() {
             Log.w(TAG, "record rejected: got $n bytes, want ${BootstrapRecord.LENGTH}")
             buf.fill(0); return
         }
-        val record = BootstrapRecord.decode(buf.copyOf(BootstrapRecord.LENGTH))
-        buf.fill(0)
+        val exact = buf.copyOf(BootstrapRecord.LENGTH)
+        val record = BootstrapRecord.decode(exact)
+        buf.fill(0); exact.fill(0)
         if (record == null) { Log.w(TAG, "record rejected: bad layout"); return }
         BootstrapStore.put(record)
     }

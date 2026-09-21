@@ -12,9 +12,10 @@ pub const BOOTSTRAP_COMPONENT: &str = "dev.routedroid/.BootstrapActivity";
 impl Adb {
     /// The record (and so the secret) goes to stdin, never to an argument.
     pub async fn write_bootstrap_record(&self, record: &[u8]) -> Result<()> {
-        let out = self.run_with_stdin(&["shell", "content", "write", "--uri", PROVIDER_URI], Some(record)).await?;
-        // `content` exits 0 even on provider errors; it prints them instead.
-        if out.contains("Error") || out.contains("Exception") {
+        let (stdout, stderr) = self.run_both(&["shell", "content", "write", "--uri", PROVIDER_URI], Some(record)).await?;
+        // `content` exits 0 even on provider errors; it prints them (to either stream) instead.
+        let out = format!("{stdout}{stderr}");
+        if !out.trim().is_empty() {
             return Err(Fault::msg(Kind::Adb, format!("content write reported: {}", out.trim())));
         }
         info!(uri = PROVIDER_URI, bytes = record.len(), "bootstrap record delivered over adb stdin");

@@ -12,6 +12,7 @@ use crate::fault::{Fault, FaultExt, Kind, Result};
 use crate::session::{PacketEndpoints, QUEUE_DEPTH};
 
 pub const DEFAULT_SOCKET: &str = "/run/routedroid/phase0-helper.sock";
+const STOP_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// A started helper session: the TUN exists and packets can flow.
 pub struct HelperSession {
@@ -91,10 +92,10 @@ impl HelperSession {
                     Ok(n) => n,
                 };
                 match buf[0] {
+                    // After the session ended the receiver is gone; drop late packets
+                    // but keep reading so the Stop ack still gets through.
                     KIND_PACKET => {
-                        if from_tx.send(buf[1..n].to_vec()).await.is_err() {
-                            break;
-                        }
+                        let _ = from_tx.send(buf[1..n].to_vec()).await;
                     }
                     KIND_CONTROL => {
                         let _ = control_tx.try_send(buf[1..n].to_vec());
@@ -113,12 +114,18 @@ impl HelperSession {
             warn!(error = %e, "could not send Stop to helper");
             return;
         }
-        let reply = match self.control_rx.take() {
-            Some(mut rx) => match rx.recv().await {
-                Some(b) => serde_json::from_slice::<Reply>(&b).context("parse helper reply"),
-                None => Err(anyhow::anyhow!("helper closed the connection")),
-            },
-            None => recv_reply(&self.conn, &mut vec![0u8; MAX_DATAGRAM]).await,
+        let reply = async {
+            match self.control_rx.take() {
+                Some(mut rx) => match rx.recv().await {
+                    Some(b) => serde_json::from_slice::<Reply>(&b).context("parse helper reply"),
+                    None => Err(anyhow::anyhow!("helper closed the connection")),
+                },
+                None => recv_reply(&self.conn, &mut vec![0u8; MAX_DATAGRAM]).await,
+            }
+        };
+        let reply = match tokio::time::timeout(STOP_ACK_TIMEOUT, reply).await {
+            Ok(r) => r,
+            Err(_) => Err(anyhow::anyhow!("no reply within {STOP_ACK_TIMEOUT:?}")),
         };
         match reply {
             Ok(Reply::Stopped) => info!("helper session stopped"),

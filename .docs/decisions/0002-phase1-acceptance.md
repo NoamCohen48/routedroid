@@ -26,3 +26,8 @@ Decisions taken in this phase:
 - `emulator-5554`-style serials are accepted (transport class `Emulator`) so the emulator
   can be used for tests; network serials remain refused (decision 0001, deferred gate 5).
 - `--phone-ip` is manual in Phase 1; DHCP comes in Phase 3.
+- Host deadlines before Active: 15 s from connect to Configuring (anyone on the phone can
+  connect to the reverse port), 120 s for the VPN consent; expiry is ERROR `protocol_error`
+  and full cleanup.
+- Not enforced: §7.1 "at most one record per 60 s" on the provider (only the shell UID can
+  write; a new record replaces the old one). Revisit if the bootstrap surface widens.

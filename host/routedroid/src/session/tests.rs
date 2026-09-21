@@ -26,7 +26,7 @@ fn machine() -> Machine {
     Machine::new(cfg(), HOST_NONCE)
 }
 
-fn hello(session: &str, port: u16, protocol: u8) -> Frame {
+fn hello(session: &str, port: u16, protocol: u32) -> Frame {
     Frame::json(
         MessageType::Hello,
         &Hello { protocol, session: session.into(), device_port: port, client_nonce: hex::encode(CLIENT_NONCE), app: None },

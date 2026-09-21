@@ -9,11 +9,11 @@ data class HelloAck(val protocol: Int, val mtu: Int, val hostNonce: String, val 
         .bytes()
 
     companion object {
-        fun decode(body: ByteArray): HelloAck {
+        fun decode(body: ByteArray): HelloAck = Fields.decoding {
             val o = Fields.parse(body)
             val protocol = Fields.int(o, "protocol")
             if (protocol != Protocol.VERSION) Fields.fail("protocol", "must be ${Protocol.VERSION}")
-            return HelloAck(
+            HelloAck(
                 protocol,
                 Fields.mtu("mtu", Fields.int(o, "mtu")),
                 Fields.hex("host_nonce", Fields.str(o, "host_nonce"), 64),

@@ -5,7 +5,7 @@ data class VpnReady(val addresses: List<String>, val mtu: Int) {
     fun encode(): ByteArray = JsonOut().strList("addresses", addresses).num("mtu", mtu).bytes()
 
     companion object {
-        fun decode(body: ByteArray): VpnReady {
+        fun decode(body: ByteArray): VpnReady = Fields.decoding {
             val o = Fields.parse(body)
             val list = o.optJSONArray("addresses") ?: Fields.fail("addresses", "required list")
             val addrs = (0 until list.length()).map { i ->
@@ -16,7 +16,7 @@ data class VpnReady(val addresses: List<String>, val mtu: Int) {
                 if (a.substring(slash + 1).toIntOrNull() !in 0..32) Fields.fail("addresses", "prefix must be 0-32")
                 a
             }
-            return VpnReady(addrs, Fields.mtu("mtu", Fields.int(o, "mtu")))
+            VpnReady(addrs, Fields.mtu("mtu", Fields.int(o, "mtu")))
         }
     }
 }

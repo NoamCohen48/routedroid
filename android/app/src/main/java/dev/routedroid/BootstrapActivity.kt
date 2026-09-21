@@ -43,6 +43,8 @@ class BootstrapActivity : AppCompatActivity() {
 
     private var session: String = ""
     private lateinit var message: TextView
+    /** Set once the service owns the connection; until then leaving this activity discards it. */
+    private var handedOff = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -85,6 +87,11 @@ class BootstrapActivity : AppCompatActivity() {
             }
             PendingConnection.put(PendingConnection.Handoff(session, result.channel, result.mtu))
             runOnUiThread {
+                if (isFinishing || isDestroyed) {
+                    // User backed out while authenticating: close so the host sees EOF now.
+                    PendingConnection.discard()
+                    return@runOnUiThread
+                }
                 message.text = getString(R.string.bootstrap_permissions)
                 requestNotificationsThenVpn()
             }
@@ -131,7 +138,13 @@ class BootstrapActivity : AppCompatActivity() {
         }
     }
 
+    override fun onDestroy() {
+        if (!handedOff) PendingConnection.discard()
+        super.onDestroy()
+    }
+
     private fun startTunnel() {
+        handedOff = true
         val svc = Intent(this, RoutedroidVpnService::class.java)
             .setAction(RoutedroidVpnService.ACTION_START)
             .putExtra(RoutedroidVpnService.EXTRA_SESSION, session)

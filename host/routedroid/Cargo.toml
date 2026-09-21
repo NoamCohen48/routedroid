@@ -22,3 +22,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-uti
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 hex = "0.4"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
