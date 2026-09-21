@@ -7,13 +7,15 @@ mod config;
 mod driver;
 #[cfg(test)]
 mod driver_tests;
+mod handlers;
 mod machine;
 mod tasks;
 #[cfg(test)]
 mod tests;
+mod timers;
 
 pub use close::{Close, SessionEnd};
 pub use config::SessionConfig;
-pub use driver::{run_session, PacketEndpoints};
+pub use driver::{PacketEndpoints, SessionDriver};
 pub use machine::{Machine, Outbound};
 pub use tasks::QUEUE_DEPTH;

@@ -9,7 +9,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch};
 
-use super::tasks::{CONSENT_DEADLINE, HANDSHAKE_DEADLINE};
+use super::timers::{CONSENT_DEADLINE, HANDSHAKE_DEADLINE};
 use super::*;
 
 fn cfg() -> SessionConfig {
@@ -36,9 +36,8 @@ async fn start() -> (TcpStream, tokio::task::JoinHandle<SessionEnd>, watch::Send
     let (_from_tx, from_helper) = mpsc::channel(4);
     let (stop_tx, stop_rx) = watch::channel(false);
     let handle = tokio::spawn(async move {
-        run_session(stream, Machine::new(cfg(), [0xbb; 32]), PacketEndpoints { to_helper, from_helper }, stop_rx)
-            .await
-            .end
+        let packets = PacketEndpoints { to_helper, from_helper };
+        SessionDriver::run(stream, Machine::new(cfg(), [0xbb; 32]), packets, stop_rx).await.end
     });
     (peer, handle, stop_tx)
 }

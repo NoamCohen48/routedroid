@@ -18,7 +18,7 @@ use crate::app_listener::AppListener;
 use crate::device::{DeviceSession, Transport};
 use crate::fault::{Fault, Kind, Result};
 use crate::host_network::{HostNetwork, DEFAULT_SOCKET};
-use crate::session::{run_session, Machine, SessionConfig, SessionEnd};
+use crate::session::{Machine, SessionConfig, SessionDriver, SessionEnd};
 
 #[derive(Debug, Args)]
 pub struct StartArgs {
@@ -105,7 +105,8 @@ pub async fn run(adb_bin: &str, args: StartArgs) -> Result<()> {
         // Runs the protocol on that stream (HELLO/AUTH/CONFIGURE_VPN, then
         // IP_PACKET both ways between the app and the TUN, with keepalive)
         // until either side stops or something fails.
-        let summary = run_session(stream, Machine::new(cfg, device_session.host_nonce), network.relay(), stop_rx).await;
+        let summary =
+            SessionDriver::run(stream, Machine::new(cfg, device_session.host_nonce), network.relay(), stop_rx).await;
         info!(
             to_phone = summary.packets_to_phone,
             from_phone = summary.packets_from_phone,
