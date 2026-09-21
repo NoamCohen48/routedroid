@@ -11,6 +11,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{sleep_until, Instant};
 use tracing::{info, warn};
 
+use super::progress::Progress;
 use super::tasks::{reader_task, writer_task, QUEUE_DEPTH};
 use super::timers::{Keepalive, PhaseTimer};
 use super::{Machine, SessionEnd};
@@ -30,13 +31,6 @@ pub struct SessionSummary {
     pub bad_packets: u64,
 }
 
-#[derive(Default)]
-pub(super) struct Stats {
-    pub reached_active: bool,
-    pub to_phone: u64,
-    pub from_phone: u64,
-}
-
 pub struct SessionDriver {
     pub(super) machine: Machine,
     /// Frames for the writer task.
@@ -44,7 +38,7 @@ pub struct SessionDriver {
     pub(super) to_helper: mpsc::Sender<Vec<u8>>,
     pub(super) keepalive: Keepalive,
     pub(super) phase: PhaseTimer,
-    pub(super) stats: Stats,
+    pub(super) progress: Progress,
     writer: JoinHandle<std::io::Result<()>>,
 }
 
@@ -55,6 +49,7 @@ impl SessionDriver {
         machine: Machine,
         packets: PacketEndpoints,
         mut shutdown: watch::Receiver<bool>,
+        progress: Progress,
     ) -> SessionSummary {
         let mtu = machine.mtu();
         let PacketEndpoints { to_helper, mut from_helper } = packets;
@@ -68,13 +63,13 @@ impl SessionDriver {
             to_helper,
             keepalive: Keepalive::new(),
             phase: PhaseTimer::new(),
-            stats: Stats::default(),
+            progress,
             writer: tokio::spawn(writer_task(wr, out_rx)),
         };
         let mut watch_shutdown = true;
 
         let end = loop {
-            let active = driver.stats.reached_active;
+            let active = driver.progress.counters.reached_active();
             let idle = sleep_until(driver.keepalive.deadline());
             let phase_deadline = driver.phase.deadline(driver.machine.state());
             let phase = sleep_until(phase_deadline.unwrap_or_else(Instant::now));
@@ -105,7 +100,7 @@ impl SessionDriver {
 
     /// Close the writer (flushing queued frames) and report.
     async fn finish(self, end: SessionEnd) -> SessionSummary {
-        let Self { machine, out_tx, writer, stats, .. } = self;
+        let Self { machine, out_tx, writer, progress, .. } = self;
         drop(out_tx);
         match tokio::time::timeout(Duration::from_millis(500), writer).await {
             Ok(Ok(Ok(()))) => {}
@@ -116,9 +111,9 @@ impl SessionDriver {
         info!(end = %end, "session ended");
         SessionSummary {
             end,
-            reached_active: stats.reached_active,
-            packets_to_phone: stats.to_phone,
-            packets_from_phone: stats.from_phone,
+            reached_active: progress.counters.reached_active(),
+            packets_to_phone: progress.counters.packets_to_phone(),
+            packets_from_phone: progress.counters.packets_from_phone(),
             bad_packets: machine.bad_packets,
         }
     }

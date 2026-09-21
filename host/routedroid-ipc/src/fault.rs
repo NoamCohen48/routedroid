@@ -1,9 +1,12 @@
-//! Error taxonomy: every failure the CLI reports belongs to one kind, and
-//! each kind has a stable exit code so scripts can branch on it.
+//! Error taxonomy: every failure the daemon reports belongs to one kind, and
+//! each kind has a stable CLI exit code so scripts can branch on it.
 
 use std::fmt;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Kind {
     /// Bad arguments or configuration.
     Usage,

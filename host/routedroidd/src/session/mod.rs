@@ -9,6 +9,7 @@ mod driver;
 mod driver_tests;
 mod handlers;
 mod machine;
+mod progress;
 mod tasks;
 #[cfg(test)]
 mod tests;
@@ -18,4 +19,5 @@ pub use close::{Close, SessionEnd};
 pub use config::SessionConfig;
 pub use driver::{PacketEndpoints, SessionDriver};
 pub use machine::{Machine, Outbound};
+pub use progress::{Counters, Progress};
 pub use tasks::QUEUE_DEPTH;

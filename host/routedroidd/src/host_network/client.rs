@@ -8,8 +8,8 @@ use routedroid_helper_ipc::seqpacket::SeqPacket;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-use crate::fault::{Fault, FaultExt, Kind, Result};
 use crate::session::{PacketEndpoints, QUEUE_DEPTH};
+use routedroid_ipc::fault::{Fault, FaultExt, Kind, Result};
 
 pub const DEFAULT_SOCKET: &str = "/run/routedroid/phase0-helper.sock";
 const STOP_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);

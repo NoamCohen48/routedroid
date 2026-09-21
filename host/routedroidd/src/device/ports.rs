@@ -6,7 +6,7 @@
 use tracing::{info, warn};
 
 use crate::adb::{AdbDevice, ReverseMapping};
-use crate::fault::{Fault, Kind, Result};
+use routedroid_ipc::fault::{Fault, Kind, Result};
 
 pub const DEVICE_PORT_RANGE: std::ops::RangeInclusive<u16> = 17_000..=17_999;
 

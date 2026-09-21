@@ -105,9 +105,11 @@ The application does not implement TCP, UDP, NAT, DHCP, or ARP. Android's networ
 
 ### 4.2 Host Controller
 
-Use Rust for the Linux host executable. Rust provides memory-safe packet parsing, good async and system-call support, and produces a single deployable binary.
+Use Rust for the Linux host executables. Rust provides memory-safe packet parsing, good async and system-call support, and produces single deployable binaries.
 
-Primary modules:
+The controller is a headless per-user daemon, `routedroidd`, that owns every phone session and applies all policy; user interfaces (`routedroid` CLI, `routedroid-tui`, later a tray) are separate processes that drive it over a user-owned Unix socket with JSON lines (`routedroid-ipc`; decision 0003). The daemon is unprivileged; the privileged helper (§4.3) stays a separate system service.
+
+Primary daemon modules:
 
 - `device`: ADB device discovery, package installation checks, launch, and teardown.
 - `session`: per-device state machine and lifecycle coordination.
@@ -122,14 +124,15 @@ Primary modules:
 - `state`: durable lease and cleanup metadata.
 - `diagnostics`: structured logs and a redacted support bundle.
 
-Initial commands:
+Initial commands (each a request to the daemon):
 
 ```text
 routedroid devices
 routedroid interfaces
-routedroid start --device SERIAL --interface eth0
-routedroid status --device SERIAL
-routedroid stop --device SERIAL
+routedroid start --serial SERIAL --lan-if eth0 ...   # attached until Ctrl-C, or --detach
+routedroid status
+routedroid stop --serial SERIAL
+routedroid events                                    # follow the daemon's event stream
 routedroid doctor
 ```
 

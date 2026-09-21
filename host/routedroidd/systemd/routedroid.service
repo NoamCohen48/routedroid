@@ -1,0 +1,10 @@
+[Unit]
+Description=Routedroid daemon
+
+[Service]
+ExecStart=%h/.local/bin/routedroidd
+Restart=on-failure
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=default.target

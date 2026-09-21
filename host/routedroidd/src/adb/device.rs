@@ -6,7 +6,7 @@ use anyhow::{bail, Context};
 use tokio::process::Command;
 
 use super::Adb;
-use crate::fault::{Fault, FaultExt, Kind, Result};
+use routedroid_ipc::fault::{Fault, FaultExt, Kind, Result};
 
 #[derive(Debug, Clone)]
 pub struct AdbDevice {

@@ -38,7 +38,7 @@ fn classifies_serials() {
 fn network_is_refused_unless_allowed() {
     assert!(Transport::check("R58M12345AB", false).is_ok());
     assert!(Transport::check("emulator-5554", false).is_ok());
-    assert_eq!(Transport::check("10.0.0.2:5555", false).unwrap_err().kind(), crate::fault::Kind::Transport);
+    assert_eq!(Transport::check("10.0.0.2:5555", false).unwrap_err().kind(), routedroid_ipc::fault::Kind::Transport);
     assert!(Transport::check("10.0.0.2:5555", true).is_ok());
-    assert_eq!(Transport::check("", true).unwrap_err().kind(), crate::fault::Kind::Usage);
+    assert_eq!(Transport::check("", true).unwrap_err().kind(), routedroid_ipc::fault::Kind::Usage);
 }

@@ -37,7 +37,7 @@ async fn start() -> (TcpStream, tokio::task::JoinHandle<SessionEnd>, watch::Send
     let (stop_tx, stop_rx) = watch::channel(false);
     let handle = tokio::spawn(async move {
         let packets = PacketEndpoints { to_helper, from_helper };
-        SessionDriver::run(stream, Machine::new(cfg(), [0xbb; 32]), packets, stop_rx).await.end
+        SessionDriver::run(stream, Machine::new(cfg(), [0xbb; 32]), packets, stop_rx, Progress::detached()).await.end
     });
     (peer, handle, stop_tx)
 }

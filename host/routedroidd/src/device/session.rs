@@ -8,7 +8,7 @@ use tracing::info;
 
 use super::{DevicePorts, ReservedPort};
 use crate::adb::{AdbDevice, Extra};
-use crate::fault::{FaultExt, Kind, Result};
+use routedroid_ipc::fault::{FaultExt, Kind, Result};
 
 pub const BOOTSTRAP_COMPONENT: &str = "dev.routedroid/.BootstrapActivity";
 

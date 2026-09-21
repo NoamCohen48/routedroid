@@ -1,0 +1,13 @@
+[package]
+name = "routedroid-ipc"
+version = "0.1.0"
+description = "Control API between the routedroid daemon and its clients (CLI, TUI): JSON lines over a Unix socket"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["net", "io-util", "sync"] }

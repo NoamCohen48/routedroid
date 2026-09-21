@@ -19,7 +19,7 @@ impl SessionDriver {
     /// A packet read from the TUN, for the phone.
     pub(super) async fn on_helper_packet(&mut self, pkt: Option<Vec<u8>>) -> Option<SessionEnd> {
         let Some(pkt) = pkt else { return Some(SessionEnd::HelperClosed) };
-        self.stats.to_phone += 1;
+        self.progress.bump_to_phone();
         if self.out_tx.send(Frame::ip_packet(pkt)).await.is_err() {
             return Some(SessionEnd::Transport("writer gone".into()));
         }
@@ -74,7 +74,7 @@ impl SessionDriver {
             let delivered = match o {
                 Outbound::ToPeer(f) => self.out_tx.send(f).await.is_ok(),
                 Outbound::ToHelper(pkt) => {
-                    self.stats.from_phone += 1;
+                    self.progress.bump_from_phone();
                     // Bounded: suspends the TCP reader when the helper lags.
                     self.to_helper.send(pkt).await.is_ok()
                 }
@@ -86,8 +86,8 @@ impl SessionDriver {
         if self.machine.state() != state_before {
             self.phase.reset();
         }
-        if self.machine.state() == State::Active && !self.stats.reached_active {
-            self.stats.reached_active = true;
+        if self.machine.state() == State::Active && !self.progress.counters.reached_active() {
+            self.progress.set_active();
             info!("session Active");
         }
         if self.writer_ended() {

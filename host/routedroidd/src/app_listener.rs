@@ -9,7 +9,7 @@ use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tracing::warn;
 
-use crate::fault::{Fault, FaultExt, Kind, Result};
+use routedroid_ipc::fault::{Fault, FaultExt, Kind, Result};
 
 pub struct AppListener {
     listener: TcpListener,
