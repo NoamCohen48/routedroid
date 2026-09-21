@@ -1,10 +1,18 @@
-# Routedroid Android — Phase 0 probe
+# Routedroid Android
 
-Throwaway-quality Android side of implementation-plan §3.1 ("Minimal Packet Tunnel").
-It implements `protocol/phase0-draft.md` exactly and nothing more. It will be replaced,
-not evolved, once the Phase 0 gates are recorded.
+Android side of the version-1 wire protocol (`protocol/version-1.md`): a foreground
+`VpnService` that becomes the phone end of the raw-IP tunnel the host opens over ADB.
 
-Package / applicationId: `dev.routedroid.phase0`. minSdk 26, targetSdk/compileSdk 36.
+Modules:
+
+| Module | Package | Role |
+|---|---|---|
+| `:protocol` | `dev.routedroid.protocol` | Pure-Kotlin protocol library (framing, bodies, state allowlist, mutual HMAC, bootstrap record). Unit-tested on the JVM against `protocol/fixtures/`. |
+| `:app` | `dev.routedroid` | The product app. minSdk 26, targetSdk/compileSdk 36. |
+| `:hostile` | `dev.routedroid.hostile` | Throwaway third-party app that tries to write/read the bootstrap provider and launch the bootstrap activity; every attempt must be denied. |
+
+The Phase 0 probe app (`dev.routedroid.phase0`) was replaced in place; it is in git history
+before the "Phase 1 Android app" commit.
 
 ## Toolchain
 
@@ -49,116 +57,75 @@ sdk.dir=/home/<you>/Android/Sdk
 
 ```
 cd android
-./gradlew :app:assembleDebug :app:testDebugUnitTest
+./gradlew :app:assembleDebug :protocol:testDebugUnitTest
 ```
 
-Output APK: `app/build/outputs/apk/debug/app-debug.apk`.
-Unit tests: `app/src/test/java/dev/routedroid/phase0/FrameCodecTest.kt` (header golden
-vectors, limit enforcement, IPv4 validation, no-allocation on hostile lengths).
+Output APK: `app/build/outputs/apk/debug/app-debug.apk`. The protocol tests replay the
+golden fixtures (frames, auth vectors, bootstrap record, state allowlists) and the IPv4 rules.
 
-## Install and launch
+## How a session starts
 
-```
-adb -s SERIAL install -r app/build/outputs/apk/debug/app-debug.apk
-```
+The host (`routedroid start`) does all of this; nothing on the phone is started by hand.
 
-The host side is expected to:
+1. bind a loopback listener on `127.0.0.1:HOST_PORT` and `adb reverse tcp:DEVICE_PORT tcp:HOST_PORT`;
+2. stream the 80-byte bootstrap record (session id + secret, §7.1) to the provider's stdin:
+   `adb shell content write --uri content://dev.routedroid.bootstrap/record`;
+3. `adb shell am start -n dev.routedroid/.BootstrapActivity --es session <id> --ei device_port <n>`.
 
-1. bind a loopback listener on `127.0.0.1:HOST_PORT`;
-2. `adb -s SERIAL reverse tcp:DEVICE_PORT tcp:HOST_PORT`;
-3. stream the 80-byte bootstrap record (session + secret) to the provider's stdin;
-4. launch the bootstrap activity with non-secret extras:
+`BootstrapActivity` (rate limited: 3 launches per 10 s) takes the pending record — fail closed
+if missing, expired (60 s), for another session, or lost to process death — connects to
+`127.0.0.1:DEVICE_PORT` and runs HELLO / HELLO_ACK / AUTH (`HostHandshake`). A bad `host_proof`
+closes the socket silently. Only after the host is authenticated does it ask for
+`POST_NOTIFICATIONS` (API 33+) and VPN consent, start `RoutedroidVpnService` as a foreground
+service and open `MainActivity`. If the user declines the consent the app sends
+`VPN_ERROR vpn_permission_denied` so the host fails fast.
 
-```
-phase0-tunnel bootstrap-record --session <id> --secret-file <hex> \
-  | adb -s SERIAL shell content write --uri content://dev.routedroid.phase0.bootstrap/record
-adb -s SERIAL shell am start -n dev.routedroid.phase0/.BootstrapActivity \
-    --es session <id> --ei device_port <DEVICE_PORT>
-```
-
-`BootstrapActivity` takes the pending record (fail closed if missing, expired after 60 s, for
-another session, or lost to process death), connects and completes the mutual HMAC handshake
-(`HostHandshake`), and only then requests `POST_NOTIFICATIONS` (API 33+) and VPN consent
-(`VpnService.prepare`), starts `Phase0VpnService` as a foreground service (which takes the
-authenticated channel from `PendingConnection`) and opens `MainActivity`. The first launch on a
-device shows the system VPN consent dialog, which must be accepted by hand. A launch without a
-valid record does nothing visible.
-
-`Phase0VpnService` then connects to `127.0.0.1:DEVICE_PORT`, `protect()`s the socket, sends
-`HELLO`, waits for `HELLO_ACK` and `CONFIGURE_VPN`, establishes the VPN, answers `VPN_READY`
-(or `VPN_ERROR`), and runs the two packet pumps until `STOP`, socket close, the Stop button in
-`MainActivity`, or `onRevoke()`.
+`RoutedroidVpnService` takes the authenticated socket from `PendingConnection`, `protect()`s
+it, waits for `CONFIGURE_VPN` (15 s), validates it (`ConfigureVpn.decode` + MTU equality),
+establishes the VPN, answers `VPN_READY` and runs the pumps until the host sends STOP or
+ERROR, the socket closes, the Stop button, `onRevoke()`, a protocol violation
+(`VPN_ERROR protocol_error`), or 30 s without any frame from the host (§5.1).
 
 Useful while testing:
 
 ```
-adb -s SERIAL logcat -s Phase0Vpn Phase0Bootstrap
-adb -s SERIAL shell am start -n dev.routedroid.phase0/.MainActivity   # status UI
-adb -s SERIAL shell am startservice -n dev.routedroid.phase0/.Phase0VpnService -a dev.routedroid.phase0.STOP
+adb -s SERIAL logcat -s Bootstrap HostHandshake VpnService Session SocketReader BootstrapProvider
+adb -s SERIAL shell am start -n dev.routedroid/.ui.MainActivity   # status UI + Stop
 ```
 
-## Source map
+## Source map (`app/src/main/java/dev/routedroid`)
 
-| File | Role (architecture.md §4.1 name) |
+| File | Role |
 |---|---|
-| `FrameCodec.kt` | `FrameCodec`: 8-byte header encode/decode, per-type limits, IPv4 check. Pure Kotlin. |
-| `Phase0VpnService.kt` | `RoutedroidVpnService` + `HostTransport` + `VpnConfigurator` + `PacketPump` collapsed into one class for the probe. |
-| `BootstrapActivity.kt` | Exported, non-browsable entry point started by `am start`; refuses without a record. |
-| `BootstrapProvider.kt` | Exported, `DUMP`-guarded, shell-UID-checked `content write` sink; returns a socketpair end (see §3.4 notes in the decision record for why not a pipe). |
-| `BootstrapStore.kt` / `PendingConnection.kt` | In-memory single-slot holders for the record (60 s TTL) and the authenticated channel. |
-| `Auth.kt` / `HostHandshake.kt` | Transcript/HMAC-SHA256 proofs (vector shared with `auth.rs`) and the client half of HELLO/HELLO_ACK/AUTH. |
-| `MainActivity.kt` | Status text and Stop button. |
-| `StatusStore.kt` | `StatusStore`: StateFlow for low-rate state, atomics for packet counters. |
+| `BootstrapActivity.kt` | Exported, non-browsable §7.2 entry point; refuses without a record; consent flow. |
+| `ConsentDenied.kt` | Reports a declined consent to the waiting host. |
+| `bootstrap/BootstrapProvider.kt` | Exported, `DUMP`-guarded, shell-UID-checked `content write` sink (socketpair, not pipe — see decision record 0001 §3.4). |
+| `bootstrap/BootstrapStore.kt`, `bootstrap/LaunchGate.kt` | Single-slot 60 s record holder; launch rate limit. |
+| `bootstrap/HostHandshake.kt` | §5 steps 1–2 on the client side; wipes the secret on every path. |
+| `session/PendingConnection.kt`, `session/StatusStore.kt` | Handoff of the authenticated socket + MTU to the service; UI status (StateFlow + atomic counters). |
+| `transport/ChannelInput.kt`, `ChannelOutput.kt` | Direct `SocketChannel` I/O (the adaptor streams share one lock and deadlock; see Phase 0 notes). Header validated before any body allocation. |
+| `transport/Slot.kt`, `Pumps.kt`, `TunReader.kt`, `TunWriter.kt`, `SocketReader.kt`, `Keepalive.kt` | Bounded slot pools (258 per direction, `Channel(256)`), the four pumps, PING/PONG and dead-peer detection. |
+| `vpn/RoutedroidVpnService.kt`, `SessionRunner.kt`, `Configure.kt`, `VpnConfigurator.kt`, `VpnFailure.kt`, `VpnNotification.kt` | Service lifecycle; Negotiated → Active → Closed; `VpnService.Builder`; VPN_ERROR mapping; foreground notification. |
+| `ui/MainActivity.kt`, `ui/StatusText.kt` | Status text and Stop button. |
 
-Packet path details:
+Packet path properties (unchanged from the Phase 0 measurements):
 
-- One TCP stream. Frames are written whole through one `BufferedOutputStream` with an explicit
-  `flush()` per frame; the buffered stream continues a partial TCP write until the frame is
-  fully sent.
-- VPN reads/writes use `android.system.Os.read/write` on the `ParcelFileDescriptor`, so a
-  short VPN write is visible and treated as fatal (the session ends; the suffix is never
-  re-submitted). `EINTR` (zero bytes transferred) is retried. The VPN read side uses `Os.poll`
-  with a 500 ms timeout so teardown can stop the reader without relying on closing an fd out
-  from under a blocked read.
-- Each direction has a preallocated pool of 258 frame-sized slots (`mtu + 8` bytes) and a
-  `Channel(256)` between reader and writer. The reader suspends when it cannot obtain a free
-  slot, which is the backpressure required by architecture.md §8.4. No per-packet allocation.
-- IPv4 validation (version nibble, IHL, total_length == body_length, total_length >= IHL*4)
-  is applied to every packet received from the host; a violation closes the session. Packets
-  read from the VPN that are not valid IPv4 (e.g. stray IPv6) are dropped and counted rather
-  than sent.
+- VPN reads/writes use `android.system.Os.read/write`; a short VPN write is fatal, `EINTR`
+  is retried, the reader uses `Os.poll` (500 ms) so teardown never closes an fd under a
+  blocked read.
+- No per-packet allocation; backpressure by suspending on the free pool (architecture.md §8.4).
+- Host packets failing the §6 IPv4 checks are dropped and counted; locally read non-IPv4
+  packets (stray IPv6/ND) are dropped and counted; a bad *frame* is a violation and closes.
 
-## Deliberately missing vs architecture.md
+## Still missing vs architecture.md
 
-This is the §3.1 probe only. Compared with the production design it has:
+- no `LEASE_UPDATE` / reconfiguration: one `CONFIGURE_VPN`, one VPN, no re-establish;
+- no persistence, no reconnect, no notification Stop action, no diagnostics export;
+- foreground service type `specialUse` (fine sideloaded; Play would need a justification);
+- IPv4 only.
 
-- **no rate limiting** of bootstrap attempts (authentication and the bootstrap provider are
-  present since §3.4; `hostile/` is a throwaway third-party app that exercises the denials).
-- **no `LEASE_UPDATE` / reconfiguration**: one `CONFIGURE_VPN`, one VPN, no re-establish.
-- **no persistence, no reconnect**, no notification Stop action, no diagnostics export
-  (queue depth, RTT) beyond the on-screen counters.
-- **foreground service type** is `specialUse` with a `PROPERTY_SPECIAL_USE_FGS_SUBTYPE`
-  property, which is acceptable for a sideloaded probe; a Play-distributed app would need a
-  declared justification.
-- Only IPv4; no IPv6 addresses or routes.
+## Device verification
 
-## Acceptance items that need a real device
-
-Everything in implementation-plan §3.1 "Acceptance" is end-to-end and cannot be checked by the
-JVM unit tests here. Specifically, the following require a physical device (or emulator with a
-working VPN stack) plus the host probe in an isolated network namespace or lab LAN:
-
-- Android can ping the PC and one LAN host through the TUN path;
-- the PC and a LAN host can ping the Android VPN address;
-- a LAN host can initiate TCP and UDP traffic to test applications on Android;
-- packet capture confirms Linux forwards the original phone address without NAT;
-- disconnecting ADB does not cause unbounded memory growth (bounded pools here; verify with
-  `dumpsys meminfo dev.routedroid.phase0` while the reverse mapping is removed);
-- VPN reads and writes contain one raw IPv4 packet with no packet-information prefix;
-- VPN consent flow, `onRevoke()` teardown, and foreground-service behaviour on API 26, 33/34+
-  (notification permission, `specialUse` type) and a vendor-customised device;
-- `protect()` actually keeps the loopback/adb socket outside the VPN once `0.0.0.0/0` is
-  routed into it (this is the single most important thing to confirm on hardware).
-
-What the unit tests do cover: exact header bytes, version/flags/type/limit enforcement,
-rejection of `0xFFFFFFFF` lengths without allocation, and the IPv4 sanity rules.
+`integration-tests/phase1/emulator-userns.sh` (end to end, no root) and
+`integration-tests/phase1/fake_host.py` (negative cases) — results in
+`integration-tests/phase1/README.md`.

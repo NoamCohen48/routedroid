@@ -1,8 +1,11 @@
-# Phase 0 Wire Protocol Draft
+# Phase 0 Wire Protocol Draft (superseded)
+
+**Superseded by `protocol/version-1.md` (2026-09-21).** Kept only because the Phase 0
+probes (`host/phase0-tunnel`, the Android probe in git history) implement it. Nothing new
+targets this document.
 
 Throwaway-quality contract for the Phase 0 §3.1 minimal tunnel. Both the Rust host
-probe and the Kotlin Android probe MUST implement exactly this. Supersedes nothing;
-`protocol/version-1.md` will replace it in Phase 1.
+probe and the Kotlin Android probe MUST implement exactly this.
 
 ## Transport
 

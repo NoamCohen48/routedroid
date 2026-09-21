@@ -64,7 +64,7 @@ pub async fn run(adb_bin: &str, a: StartArgs) -> Result<()> {
     let host_nonce = auth::random_nonce().fault(Kind::Internal)?;
     let record = bootstrap::encode(&session, &secret).expect("session id is valid hex");
 
-    let helper = HelperSession::start(&a.helper_socket, &a.lan_if, a.phone_ip, &a.tun, a.mtu).await?;
+    let mut helper = HelperSession::start(&a.helper_socket, &a.lan_if, a.phone_ip, &a.tun, a.mtu).await?;
     info!(serial = adb.serial(), tun = %helper.tun, host_ip = %helper.host_ip, lan_prefix = helper.lan_prefix,
           phone_ip = %a.phone_ip, helper_session = %helper.session, "host network ready");
     let outcome = async {

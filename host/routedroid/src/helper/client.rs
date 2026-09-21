@@ -16,6 +16,9 @@ pub const DEFAULT_SOCKET: &str = "/run/routedroid/phase0-helper.sock";
 /// A started helper session: the TUN exists and packets can flow.
 pub struct HelperSession {
     conn: Arc<SeqPacket>,
+    /// Control replies seen by the relay's receive task (it owns the socket
+    /// once `relay()` ran, so `stop()` must read the ack from here).
+    control_rx: Option<mpsc::Receiver<Vec<u8>>>,
     pub tun: String,
     pub host_ip: Ipv4Addr,
     pub lan_prefix: u8,
@@ -53,7 +56,7 @@ impl HelperSession {
         match recv_reply(&conn, &mut buf).await.fault(Kind::Helper)? {
             Reply::Started { session, tun, host_ip, lan_prefix } => {
                 info!(%session, %tun, %host_ip, lan_prefix, "helper session started");
-                Ok(Self { conn: Arc::new(conn), tun, host_ip, lan_prefix, session })
+                Ok(Self { conn: Arc::new(conn), control_rx: None, tun, host_ip, lan_prefix, session })
             }
             Reply::Error { code, message } => Err(Fault::msg(Kind::Helper, format!("helper refused start: {code}: {message}"))),
             other => Err(Fault::msg(Kind::Helper, format!("unexpected helper reply {other:?}"))),
@@ -62,9 +65,11 @@ impl HelperSession {
 
     /// Spawn the two relay tasks and hand back the session's packet endpoints.
     /// The relay ends when the helper closes or when `to_helper` is dropped.
-    pub fn relay(&self) -> PacketEndpoints {
+    pub fn relay(&mut self) -> PacketEndpoints {
         let (to_helper, mut inject_rx) = mpsc::channel::<Vec<u8>>(QUEUE_DEPTH);
         let (from_tx, from_helper) = mpsc::channel::<Vec<u8>>(QUEUE_DEPTH);
+        let (control_tx, control_rx) = mpsc::channel::<Vec<u8>>(4);
+        self.control_rx = Some(control_rx);
         let c = self.conn.clone();
         tokio::spawn(async move {
             let mut out = vec![0u8; MAX_DATAGRAM];
@@ -85,8 +90,16 @@ impl HelperSession {
                     Ok(0) | Err(_) => break,
                     Ok(n) => n,
                 };
-                if buf[0] == KIND_PACKET && from_tx.send(buf[1..n].to_vec()).await.is_err() {
-                    break;
+                match buf[0] {
+                    KIND_PACKET => {
+                        if from_tx.send(buf[1..n].to_vec()).await.is_err() {
+                            break;
+                        }
+                    }
+                    KIND_CONTROL => {
+                        let _ = control_tx.try_send(buf[1..n].to_vec());
+                    }
+                    _ => {}
                 }
             }
         });
@@ -95,13 +108,19 @@ impl HelperSession {
 
     /// Ask the helper to undo everything. Errors are logged, not fatal: the
     /// helper's own `ExecStopPost` cleanup is the backstop.
-    pub async fn stop(self) {
+    pub async fn stop(mut self) {
         if let Err(e) = send_control(&self.conn, &Request::Stop).await {
             warn!(error = %e, "could not send Stop to helper");
             return;
         }
-        let mut buf = vec![0u8; MAX_DATAGRAM];
-        match recv_reply(&self.conn, &mut buf).await {
+        let reply = match self.control_rx.take() {
+            Some(mut rx) => match rx.recv().await {
+                Some(b) => serde_json::from_slice::<Reply>(&b).context("parse helper reply"),
+                None => Err(anyhow::anyhow!("helper closed the connection")),
+            },
+            None => recv_reply(&self.conn, &mut vec![0u8; MAX_DATAGRAM]).await,
+        };
+        match reply {
             Ok(Reply::Stopped) => info!("helper session stopped"),
             Ok(other) => warn!(?other, "unexpected reply to Stop"),
             Err(e) => warn!(error = %e, "helper did not acknowledge Stop"),

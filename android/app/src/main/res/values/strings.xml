@@ -1,13 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Routedroid Phase 0</string>
-    <string name="phase0_note">Phase 0 throwaway probe. This app exists only to prove the adb-reverse packet tunnel (implementation-plan §3.1). Bootstrap secret over adb stdin + mutual HMAC (§3.4); no rate limiting. Do not use on an unmanaged LAN.</string>
+    <string name="app_name">Routedroid</string>
+    <string name="main_note">Makes this phone reachable on the PC\'s LAN through the USB cable. The PC starts sessions; this screen only shows status and lets you stop.</string>
     <string name="stop">Stop</string>
     <string name="status_idle">idle</string>
-    <string name="notification_channel_name">Phase 0 tunnel</string>
-    <string name="notification_title">Routedroid Phase 0 tunnel</string>
-    <string name="bootstrap_missing_extras">Missing extras. Start with:\nam start -n dev.routedroid.phase0/.BootstrapActivity --es session &lt;id&gt; --ei device_port &lt;port&gt;</string>
+    <string name="notification_channel_name">Routedroid tunnel</string>
+    <string name="notification_title">Routedroid tunnel</string>
+    <string name="notification_text">Raw IP tunnel to the PC over USB</string>
+    <string name="bootstrap_missing_extras">Missing extras. Start with:\nam start -n dev.routedroid/.BootstrapActivity --es session &lt;id&gt; --ei device_port &lt;port&gt;</string>
     <string name="bootstrap_vpn_denied">VPN consent denied; nothing started.</string>
     <string name="bootstrap_no_record">No bootstrap record from the adb shell (missing, expired, or for another session). Nothing started.</string>
     <string name="bootstrap_auth_failed">Host authentication failed. Nothing started.</string>
+    <string name="bootstrap_rate_limited">Too many launches; try again in a moment.</string>
+    <string name="bootstrap_authenticating">Authenticating host…</string>
+    <string name="bootstrap_permissions">Host authenticated; requesting permissions…</string>
 </resources>

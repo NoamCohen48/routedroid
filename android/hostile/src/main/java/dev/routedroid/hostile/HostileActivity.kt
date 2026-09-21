@@ -20,7 +20,7 @@ class HostileActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val uri = Uri.parse("content://dev.routedroid.phase0.bootstrap/record")
+        val uri = Uri.parse("content://dev.routedroid.bootstrap/record")
         val lines = ArrayList<String>()
         fun result(n: Int, denied: Boolean, detail: String) {
             val line = "HOSTILE-RESULT $n ${if (denied) "PASS" else "FAIL"} $detail"
@@ -29,7 +29,7 @@ class HostileActivity : Activity() {
         // 1. forged record write
         try {
             contentResolver.openOutputStream(uri, "w").use { out ->
-                val rec = ByteArray(80); "RDB0".toByteArray().copyInto(rec, 0)
+                val rec = ByteArray(80); "RDB1".toByteArray().copyInto(rec, 0)
                 intent.getStringExtra("session").orEmpty().toByteArray().copyInto(rec, 8)
                 out!!.write(rec)
             }
@@ -50,7 +50,7 @@ class HostileActivity : Activity() {
         }
         // 3. launch the exported activity with guessed/observed extras
         try {
-            startActivity(Intent().setComponent(ComponentName("dev.routedroid.phase0", "dev.routedroid.phase0.BootstrapActivity"))
+            startActivity(Intent().setComponent(ComponentName("dev.routedroid", "dev.routedroid.BootstrapActivity"))
                 .putExtra("session", intent.getStringExtra("session") ?: "guess")
                 .putExtra("device_port", intent.getIntExtra("device_port", 9000)))
             result(3, true, "launched BootstrapActivity; check that no VPN prompt/service appeared")

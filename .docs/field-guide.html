@@ -173,11 +173,11 @@ a{color:var(--accent)}
   </div>
 
   <h2>The road ahead</h2>
-  <p>The plan is six phases. Each turns one proven idea into a dependable feature. We are at the start of Phase 1.</p>
+  <p>The plan is six phases. Each turns one proven idea into a dependable feature. Phase 1 is built and verified on an emulator and a real phone; Phase 2 is next.</p>
   <ul class="road">
     <li class="done"><span class="ph">Phase 0 · done</span><b>Feasibility gates</b><p>Every risky assumption tested on hardware; two deferred with reduced scope.</p></li>
-    <li class="now"><span class="ph">Phase 1 · next</span><b>Repository and protocol foundation</b><p>Rebuild the spikes as real components: a proper CLI, a written wire-protocol spec with shared test fixtures for both Rust and Kotlin, session state machine, secure handshake, and an Android app with a basic status screen. Goal: one phone with a manually chosen address works end to end, cleanly.</p></li>
-    <li><span class="ph">Phase 2</span><b>Safe host network configuration</b><p>Move firewall, route and interface setup into the privileged helper for good, including coexistence with Docker and firewalld (both found on the real PC during Phase 0).</p></li>
+    <li class="done"><span class="ph">Phase 1 · done</span><b>Repository and protocol foundation</b><p>Rebuild the spikes as real components: a proper CLI, a written wire-protocol spec with shared test fixtures for both Rust and Kotlin, session state machine, secure handshake, and an Android app with a basic status screen. Goal: one phone with a manually chosen address works end to end, cleanly.</p></li>
+    <li class="now"><span class="ph">Phase 2 · next</span><b>Safe host network configuration</b><p>Move firewall, route and interface setup into the privileged helper for good, including coexistence with Docker and firewalld (both found on the real PC during Phase 0).</p></li>
     <li><span class="ph">Phase 3</span><b>Automatic DHCP</b><p>The PC asks the router for the phone's address itself, renews it, and gives it back — transactionally, so a failure never leaves a half-configured network.</p></li>
     <li><span class="ph">Phase 4</span><b>Interface selection and egress policy</b><p>Pick which PC network the phone joins; decide what happens when the PC's Internet route is elsewhere; handle cable unplug and reconnect.</p></li>
     <li><span class="ph">Phase 5</span><b>Helper hardening and recovery</b><p>Lock down the root helper to a tiny typed API, reconcile state after crashes, and prove it under the full hardware matrix.</p></li>

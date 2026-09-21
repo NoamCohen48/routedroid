@@ -1,4 +1,4 @@
-package dev.routedroid.phase0
+package dev.routedroid.session
 
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,11 +32,13 @@ object StatusStore {
     val packetsIn = AtomicLong()
     val bytesOut = AtomicLong()
     val bytesIn = AtomicLong()
-    /** Locally-read packets that were dropped (non-IPv4, oversize). */
+    /** Locally read packets dropped before framing (non-IPv4, oversize). */
     val droppedOut = AtomicLong()
+    /** Host packets dropped by the §6 checks. */
+    val droppedIn = AtomicLong()
 
     fun reset(session: String, devicePort: Int) {
-        packetsOut.set(0); packetsIn.set(0); bytesOut.set(0); bytesIn.set(0); droppedOut.set(0)
+        for (c in listOf(packetsOut, packetsIn, bytesOut, bytesIn, droppedOut, droppedIn)) c.set(0)
         _status.value = Status(state = State.CONNECTING, session = session, devicePort = devicePort)
     }
 

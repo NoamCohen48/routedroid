@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "routedroid-phase0"
+rootProject.name = "routedroid"
 include(":app", ":hostile", ":protocol")
