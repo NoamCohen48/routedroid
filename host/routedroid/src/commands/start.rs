@@ -14,7 +14,7 @@ use tokio::sync::watch;
 use tracing::{info, warn};
 
 use crate::adb::{Adb, DEFAULT_TIMEOUT};
-use crate::device::DeviceSession;
+use crate::device::{DeviceSession, Transport};
 use crate::fault::{Fault, Kind, Result};
 use crate::helper::{HelperSession, DEFAULT_SOCKET};
 use crate::listener;
@@ -45,6 +45,10 @@ pub struct StartArgs {
     /// How long to wait for the app to connect after launch.
     #[arg(long, default_value = "90s", value_parser = humantime_secs)]
     pub connect_timeout: Duration,
+    /// Start over a network ADB serial (host:port or mDNS). Unverified in
+    /// version 1: the VPN default route may cut ADB itself (decision 0001, gate 5).
+    #[arg(long)]
+    pub allow_network_adb: bool,
 }
 
 fn humantime_secs(s: &str) -> std::result::Result<Duration, String> {
@@ -53,7 +57,8 @@ fn humantime_secs(s: &str) -> std::result::Result<Duration, String> {
 }
 
 pub async fn run(adb_bin: &str, args: StartArgs) -> Result<()> {
-    let adb = Adb::new(adb_bin, &args.serial, DEFAULT_TIMEOUT)?;
+    Transport::check(&args.serial, args.allow_network_adb)?;
+    let adb = Adb::new(adb_bin, DEFAULT_TIMEOUT).device(&args.serial);
     let (listener, host_port) = listener::bind_loopback().await?;
 
     // Ctrl-C from here on: everything below is undone at the bottom of `run`.

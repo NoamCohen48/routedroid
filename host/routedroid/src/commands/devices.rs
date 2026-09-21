@@ -1,10 +1,11 @@
 //! `routedroid devices`
 
-use crate::adb::{Adb, DeviceState, Transport, DEFAULT_TIMEOUT};
+use crate::adb::{Adb, Device, DeviceState, DEFAULT_TIMEOUT};
+use crate::device::Transport;
 use crate::fault::Result;
 
 pub async fn run(adb: &str, json: bool) -> Result<()> {
-    let devices = Adb::devices(adb, DEFAULT_TIMEOUT).await?;
+    let devices = Adb::new(adb, DEFAULT_TIMEOUT).devices().await?;
     if json {
         let rows: Vec<serde_json::Value> = devices
             .iter()
@@ -36,13 +37,11 @@ pub async fn run(adb: &str, json: bool) -> Result<()> {
 }
 
 /// None when Routedroid can start on this device; otherwise the reason.
-fn usable(d: &crate::adb::Device) -> Option<&'static str> {
-    match (&d.state, d.transport) {
-        (DeviceState::Unauthorized, _) => Some("USB debugging not authorized on the phone"),
-        (DeviceState::Offline, _) => Some("device is offline"),
-        (DeviceState::Other(_), _) => Some("device is not ready"),
-        (DeviceState::Device, Transport::Network) => Some("network ADB is not supported in version 1 (use USB)"),
-        (DeviceState::Device, Transport::Invalid) => Some("unrecognised serial"),
-        (DeviceState::Device, Transport::Usb | Transport::Emulator) => None,
+fn usable(d: &Device) -> Option<&'static str> {
+    match &d.state {
+        DeviceState::Unauthorized => Some("USB debugging not authorized on the phone"),
+        DeviceState::Offline => Some("device is offline"),
+        DeviceState::Other(_) => Some("device is not ready"),
+        DeviceState::Device => Transport::classify(&d.serial).refusal(false),
     }
 }

@@ -298,7 +298,7 @@ The host then launches an explicitly named exported `BootstrapActivity` using `a
 
 Every reverse mapping is recorded with its ADB serial, device port, host port, and session. Cleanup first compares `adb -s SERIAL reverse --list` with the recorded mapping and then uses `adb -s SERIAL reverse --remove tcp:DEVICE_PORT`; it never removes a mapping that no longer matches its ownership record. Port collisions retry with a new port.
 
-Version 1 supports USB ADB only. Android's TLS-based wireless debugging is a planned addition once its behaviour under the VPN default route has been verified on hardware (feasibility gate 5-wireless was deferred; see decision 0001); until then the host refuses a network serial with an explicit message. Legacy unauthenticated or unencrypted network ADB is rejected outright because the packet stream itself is not encrypted by this protocol.
+Version 1 supports USB ADB only. Android's TLS-based wireless debugging is a planned addition once its behaviour under the VPN default route has been verified on hardware (feasibility gate 5-wireless was deferred; see decision 0001); until then `routedroid start` refuses a network serial with an explicit message (`--allow-network-adb` overrides it for that verification; the adb binding itself is transport-agnostic). Legacy unauthenticated or unencrypted network ADB is rejected outright because the packet stream itself is not encrypted by this protocol.
 
 ### 8.2 Authentication
 

@@ -14,7 +14,6 @@ pub struct Device {
     pub state: DeviceState,
     /// `model:` from the `-l` columns, when present.
     pub model: Option<String>,
-    pub transport: super::Transport,
 }
 
 pub fn parse_devices(text: &str) -> Vec<Device> {
@@ -31,8 +30,7 @@ pub fn parse_devices(text: &str) -> Vec<Device> {
                 other => DeviceState::Other(other.to_string()),
             };
             let model = it.find_map(|kv| kv.strip_prefix("model:").map(str::to_string));
-            let transport = super::Transport::classify(&serial);
-            Some(Device { serial, state, model, transport })
+            Some(Device { serial, state, model })
         })
         .collect()
 }
@@ -52,8 +50,7 @@ mod tests {
         assert_eq!(d[0].serial, "R58M12345AB");
         assert_eq!(d[0].state, DeviceState::Device);
         assert_eq!(d[0].model.as_deref(), Some("SM_J810G"));
-        assert_eq!(d[0].transport, super::super::Transport::Usb);
-        assert_eq!(d[1].transport, super::super::Transport::Emulator);
+        assert_eq!(d[1].serial, "emulator-5554");
         assert_eq!(d[2].state, DeviceState::Unauthorized);
         assert!(parse_devices("").is_empty());
     }

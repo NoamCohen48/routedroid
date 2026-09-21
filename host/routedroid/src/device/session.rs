@@ -7,13 +7,13 @@ use routedroid_proto::bootstrap::{self, PROVIDER_URI};
 use tracing::info;
 
 use super::{DevicePorts, ReservedPort};
-use crate::adb::Adb;
+use crate::adb::AdbDevice;
 use crate::fault::{Fault, FaultExt, Kind, Result};
 
 pub const BOOTSTRAP_COMPONENT: &str = "dev.routedroid/.BootstrapActivity";
 
 pub struct DeviceSession {
-    adb: Adb,
+    adb: AdbDevice,
     ports: DevicePorts,
     port: ReservedPort,
     pub session: String,
@@ -25,7 +25,7 @@ pub struct DeviceSession {
 impl DeviceSession {
     /// Reserve the reverse port and generate this session's credentials.
     /// Nothing has been sent to the phone yet.
-    pub async fn open(adb: Adb, host_port: u16) -> Result<Self> {
+    pub async fn open(adb: AdbDevice, host_port: u16) -> Result<Self> {
         let seed = u16::from_le_bytes(auth::random_bytes::<2>().fault(Kind::Internal)?);
         let ports = DevicePorts::new(adb.clone());
         let port = ports.reserve(host_port, seed).await?;

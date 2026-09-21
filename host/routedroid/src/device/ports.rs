@@ -5,7 +5,7 @@
 
 use tracing::{info, warn};
 
-use crate::adb::{Adb, ReverseMapping};
+use crate::adb::{AdbDevice, ReverseMapping};
 use crate::fault::{Fault, Kind, Result};
 
 pub const DEVICE_PORT_RANGE: std::ops::RangeInclusive<u16> = 17_000..=17_999;
@@ -19,11 +19,11 @@ pub struct ReservedPort {
 }
 
 pub struct DevicePorts {
-    adb: Adb,
+    adb: AdbDevice,
 }
 
 impl DevicePorts {
-    pub fn new(adb: Adb) -> Self {
+    pub fn new(adb: AdbDevice) -> Self {
         Self { adb }
     }
 

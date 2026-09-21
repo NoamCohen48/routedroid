@@ -1,7 +1,7 @@
 //! `adb reverse`: list, add, remove. Ownership decisions live in
 //! `device::ports`; this file only speaks adb.
 
-use super::Adb;
+use super::AdbDevice;
 use crate::fault::Result;
 
 /// One line of `adb reverse --list`: `<serial-or-transport> tcp:9000 tcp:41234`.
@@ -30,7 +30,7 @@ pub fn parse_reverse_list(text: &str) -> Vec<ReverseMapping> {
         .collect()
 }
 
-impl Adb {
+impl AdbDevice {
     pub async fn reverse_list(&self) -> Result<Vec<ReverseMapping>> {
         Ok(parse_reverse_list(&self.run(&["reverse", "--list"]).await?))
     }
