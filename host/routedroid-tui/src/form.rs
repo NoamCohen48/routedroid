@@ -1,4 +1,4 @@
-//! The "start a session" form: three text fields, Tab between them, Enter to submit.
+//! The "connect a phone" form: three text fields, Tab between them, Enter to submit.
 
 use std::net::Ipv4Addr;
 

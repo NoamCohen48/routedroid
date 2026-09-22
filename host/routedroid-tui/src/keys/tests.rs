@@ -1,7 +1,7 @@
 //! Key bindings drive modes and emit the right commands.
 
 use crossterm::event::{KeyCode, KeyEvent};
-use routedroid_ipc::{DeviceInfo, SessionState};
+use routedroid_ipc::{ConnectionState, DeviceInfo};
 
 use super::handle;
 use crate::app::{App, Level, Mode};
@@ -17,10 +17,10 @@ fn type_text(app: &mut App, text: &str) {
     });
 }
 
-fn app_with(session: Option<SessionState>) -> App {
+fn app_with(connection: Option<ConnectionState>) -> App {
     let mut app = App::new();
     let device =
-        DeviceInfo { serial: "abc".into(), state: "device".into(), model: None, unusable_reason: None, session };
+        DeviceInfo { serial: "abc".into(), state: "device".into(), model: None, unusable_reason: None, connection };
     app.apply(Incoming::Devices(vec![device]));
     app
 }
@@ -67,13 +67,13 @@ fn invalid_form_stays_open_and_logs_red() {
 }
 
 #[test]
-fn stop_needs_a_session_and_a_confirmation() {
+fn stop_needs_a_connection_and_a_confirmation() {
     let mut app = app_with(None);
     press(&mut app, KeyCode::Char('x'));
     assert_eq!(app.mode, Mode::Normal);
     assert_eq!(app.log.back().unwrap().level, Level::Error);
 
-    let mut app = app_with(Some(SessionState::Active));
+    let mut app = app_with(Some(ConnectionState::Active));
     press(&mut app, KeyCode::Char('x'));
     assert_eq!(app.mode, Mode::ConfirmStop { serial: "abc".into() });
     assert!(press(&mut app, KeyCode::Char('n')).is_empty());

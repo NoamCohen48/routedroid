@@ -1,21 +1,21 @@
 //! State folding: events land on the right row and the log stays bounded.
 
-use routedroid_ipc::{DeviceInfo, Event, Outcome, SessionInfo, SessionState};
+use routedroid_ipc::{ConnectionInfo, ConnectionState, DeviceInfo, Event, Outcome};
 
-use super::{App, Connection, Level, LOG_CAPACITY};
+use super::{App, DaemonLink, Level, LOG_CAPACITY};
 use crate::messages::{Command, Incoming};
 
-fn device(serial: &str, session: Option<SessionState>) -> DeviceInfo {
-    DeviceInfo { serial: serial.into(), state: "device".into(), model: None, unusable_reason: None, session }
+fn device(serial: &str, connection: Option<ConnectionState>) -> DeviceInfo {
+    DeviceInfo { serial: serial.into(), state: "device".into(), model: None, unusable_reason: None, connection }
 }
 
-fn session(serial: &str) -> SessionInfo {
-    SessionInfo {
+fn connection(serial: &str) -> ConnectionInfo {
+    ConnectionInfo {
         serial: serial.into(),
         lan_if: "eth0".into(),
         phone_ip: "10.0.0.5".parse().unwrap(),
         tun: "phone0".into(),
-        state: SessionState::Active,
+        state: ConnectionState::Active,
         started_at: 0,
         packets_to_phone: 0,
         packets_from_phone: 0,
@@ -24,47 +24,49 @@ fn session(serial: &str) -> SessionInfo {
 
 fn app_with_two_devices() -> App {
     let mut app = App::new();
-    app.apply(Incoming::Devices(vec![device("one", Some(SessionState::Active)), device("two", None)]));
-    app.apply(Incoming::Sessions(vec![session("one")]));
+    app.apply(Incoming::Devices(vec![device("one", Some(ConnectionState::Active)), device("two", None)]));
+    app.apply(Incoming::Connections(vec![connection("one")]));
     app
 }
 
 #[test]
-fn traffic_updates_the_right_session() {
+fn traffic_updates_the_right_connection() {
     let mut app = app_with_two_devices();
     let event = Event::Traffic { serial: "one".into(), packets_to_phone: 7, packets_from_phone: 3 };
     assert!(app.apply(Incoming::Event(event)).is_empty());
-    assert_eq!(app.sessions["one"].packets_to_phone, 7);
-    assert_eq!(app.sessions["one"].packets_from_phone, 3);
-    assert!(!app.sessions.contains_key("two"));
+    assert_eq!(app.connections["one"].packets_to_phone, 7);
+    assert_eq!(app.connections["one"].packets_from_phone, 3);
+    assert!(!app.connections.contains_key("two"));
 }
 
 #[test]
-fn ended_session_clears_the_row_and_details() {
+fn ended_connection_clears_the_row_and_details() {
     let mut app = app_with_two_devices();
     let outcome = Outcome { ok: false, kind: Some(routedroid_ipc::Kind::Vpn), message: "phone refused".into() };
-    app.apply(Incoming::Event(Event::Session { serial: "one".into(), state: SessionState::Ended(outcome) }));
-    assert_eq!(app.devices[0].session, None);
-    assert!(app.sessions.is_empty());
+    app.apply(Incoming::Event(Event::Connection { serial: "one".into(), state: ConnectionState::Ended(outcome) }));
+    assert_eq!(app.devices[0].connection, None);
+    assert!(app.connections.is_empty());
     let last = app.log.back().unwrap();
     assert_eq!(last.level, Level::Error);
     assert!(last.text.contains("phone refused"));
 }
 
 #[test]
-fn unknown_session_asks_for_status() {
+fn unknown_connection_asks_for_status() {
     let mut app = app_with_two_devices();
-    let followups = app.apply(Incoming::Event(Event::Session { serial: "two".into(), state: SessionState::Starting }));
+    let followups =
+        app.apply(Incoming::Event(Event::Connection { serial: "two".into(), state: ConnectionState::Starting }));
     assert!(matches!(followups.as_slice(), [Command::RefreshStatus]));
-    assert_eq!(app.devices[1].session, Some(SessionState::Starting));
+    assert_eq!(app.devices[1].connection, Some(ConnectionState::Starting));
 }
 
 #[test]
-fn known_session_changes_state_in_place() {
+fn known_connection_changes_state_in_place() {
     let mut app = app_with_two_devices();
-    let followups = app.apply(Incoming::Event(Event::Session { serial: "one".into(), state: SessionState::Stopping }));
+    let followups =
+        app.apply(Incoming::Event(Event::Connection { serial: "one".into(), state: ConnectionState::Stopping }));
     assert!(followups.is_empty());
-    assert_eq!(app.sessions["one"].state, SessionState::Stopping);
+    assert_eq!(app.connections["one"].state, ConnectionState::Stopping);
 }
 
 #[test]
@@ -83,10 +85,10 @@ fn cursor_stays_in_range_when_devices_vanish() {
 fn connection_changes_are_tracked_and_reconnect_refreshes() {
     let mut app = App::new();
     app.apply(Incoming::Disconnected { reason: "closed".into() });
-    assert_eq!(app.connection, Connection::Disconnected { reason: "closed".into() });
+    assert_eq!(app.daemon, DaemonLink::Disconnected { reason: "closed".into() });
     let followups = app.apply(Incoming::Connected);
     assert!(matches!(followups.as_slice(), [Command::RefreshDevices, Command::RefreshStatus]));
-    assert_eq!(app.connection, Connection::Connected);
+    assert_eq!(app.daemon, DaemonLink::Connected);
 }
 
 #[test]

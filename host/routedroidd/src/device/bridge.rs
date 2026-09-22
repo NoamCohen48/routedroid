@@ -1,6 +1,7 @@
-//! One session's footprint on the phone: session id, secret and nonce are
-//! generated here; the record is delivered over adb stdin (§7.1), the app is
-//! launched (§7.2), and the reverse mapping is released at the end.
+//! The adb side of one device connection: the protocol session's id, secret
+//! and nonce are generated here; the record is delivered over adb stdin
+//! (§7.1), the app is launched (§7.2), and the reverse mapping is released
+//! at the end.
 
 use routedroid_proto::auth::{self, Nonce, Secret};
 use routedroid_proto::bootstrap::{self, PROVIDER_URI};
@@ -12,7 +13,7 @@ use routedroid_ipc::fault::{FaultExt, Kind, Result};
 
 pub const BOOTSTRAP_COMPONENT: &str = "dev.routedroid/.BootstrapActivity";
 
-pub struct DeviceSession {
+pub struct AdbBridge {
     adb: AdbDevice,
     ports: DevicePorts,
     port: ReservedPort,
@@ -22,7 +23,7 @@ pub struct DeviceSession {
     secret: Option<Secret>,
 }
 
-impl DeviceSession {
+impl AdbBridge {
     /// Reserve the reverse port and generate this session's credentials.
     /// Nothing has been sent to the phone yet.
     pub async fn open(adb: AdbDevice, host_port: u16) -> Result<Self> {

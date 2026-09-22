@@ -1,6 +1,6 @@
 //! What flows between the UI and the task that owns the daemon connection.
 
-use routedroid_ipc::{DeviceInfo, Event, SessionInfo, StartRequest};
+use routedroid_ipc::{ConnectionInfo, DeviceInfo, Event, StartRequest};
 
 /// UI → client task: something to ask the daemon.
 #[derive(Debug, Clone)]
@@ -20,7 +20,7 @@ pub enum Incoming {
     },
     Event(Event),
     Devices(Vec<DeviceInfo>),
-    Sessions(Vec<SessionInfo>),
+    Connections(Vec<ConnectionInfo>),
     Started {
         serial: String,
     },

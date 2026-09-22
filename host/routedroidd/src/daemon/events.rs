@@ -5,7 +5,7 @@ use routedroid_ipc::Event;
 use tokio::sync::broadcast;
 
 /// Enough that a client doing something slow between `recv`s still sees a
-/// session's whole life; past it the client is told it lagged.
+/// connection's whole life; past it the client is told it lagged.
 const CAPACITY: usize = 256;
 
 #[derive(Clone)]

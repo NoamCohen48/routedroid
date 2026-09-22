@@ -87,7 +87,7 @@ if [[ $STOP_MODE != early ]] && grep -q 'session Active' "$S/daemon.log"; then
 fi
 wait $RPID; rc=$?
 check "host exit 0" [ $rc -eq 0 ]
-check "daemon lists no sessions" bash -c "\"$H/routedroid\" --socket '$S/control.sock' status | grep -q 'no sessions'"
+check "daemon lists no connections" bash -c "\"$H/routedroid\" --socket '$S/control.sock' status | grep -q 'no connections'"
 check "helper acknowledged Stop" grep -q 'helper session stopped' "$S/daemon.log"
 check "reverse mapping removed" [ -z "$(adb -s "$SERIAL" reverse --list)" ]
 check "TUN gone" bash -c "! $NS ip link show phone0 >/dev/null 2>&1"

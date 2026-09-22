@@ -107,12 +107,19 @@ The application does not implement TCP, UDP, NAT, DHCP, or ARP. Android's networ
 
 Use Rust for the Linux host executables. Rust provides memory-safe packet parsing, good async and system-call support, and produces single deployable binaries.
 
-The controller is a headless per-user daemon, `routedroidd`, that owns every phone session and applies all policy; user interfaces (`routedroid` CLI, `routedroid-tui`, later a tray) are separate processes that drive it over a user-owned Unix socket with JSON lines (`routedroid-ipc`; decision 0003). The daemon is unprivileged; the privileged helper (§4.3) stays a separate system service.
+The controller is a headless per-user daemon, `routedroidd`, that owns every *device connection* and applies all policy; user interfaces (`routedroid` CLI, `routedroid-tui`, later a tray) are separate processes that drive it over a user-owned Unix socket with JSON lines (`routedroid-ipc`; decision 0003). The daemon is unprivileged; the privileged helper (§4.3) stays a separate system service.
+
+Two words, deliberately distinct (decision 0005):
+
+- a **device connection** is one phone being reachable on the LAN — the daemon owns it, it outlives the client that asked for it, and every client may watch, start or stop it;
+- a **client connection** is one CLI or TUI process attached to the control socket; it owns nothing.
+
+"Session" now means only what the wire protocols call a session: the authenticated conversation with the app (§7.3), and the helper's journaled bundle of privileged mutations (§4.3).
 
 Primary daemon modules:
 
 - `device`: ADB device discovery, package installation checks, launch, and teardown.
-- `session`: per-device state machine and lifecycle coordination.
+- `connection`: per-device connection state machine and lifecycle coordination (the protocol session it drives lives in `session`).
 - `transport`: loopback listener, ADB reverse mapping, authentication, and frames.
 - `tun`: requests helper-owned TUN sessions and exchanges whole packets over bounded `SOCK_SEQPACKET`.
 - `interfaces`: eligible interface discovery and operator selection.

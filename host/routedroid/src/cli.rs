@@ -8,7 +8,7 @@ use crate::commands::start::StartArgs;
 
 const EXIT_CODES: &str = "\
 Exit codes:
-  0   success (for `start`: the session ended cleanly)
+  0   success (for `start`: the connection ended cleanly)
   2   usage error
   3   daemon unreachable; start it with `systemctl --user start routedroid`
   10  adb          11  transport rule    12  protocol
@@ -39,13 +39,13 @@ pub enum Command {
     Devices,
     /// Connect one phone with a statically chosen address; stays attached until Ctrl-C unless --detach.
     Start(StartArgs),
-    /// Stop the session on one phone.
+    /// Disconnect one phone.
     Stop {
         /// ADB serial of the phone.
         #[arg(long, short = 's', env = "ANDROID_SERIAL")]
         serial: String,
     },
-    /// Show live sessions.
+    /// Show live device connections.
     Status,
     /// Print every daemon event as one JSON line, forever.
     Events,

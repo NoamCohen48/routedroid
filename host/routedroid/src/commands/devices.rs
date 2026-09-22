@@ -1,4 +1,4 @@
-//! `routedroid devices`: what adb sees and whether a session can start there.
+//! `routedroid devices`: what adb sees and whether each phone can be connected.
 
 use anyhow::{bail, Result};
 use routedroid_ipc::{Client, DeviceInfo, Request, Response};
@@ -22,8 +22,8 @@ pub async fn run(client: &mut Client, json: bool) -> Result<i32> {
 
 fn row(device: &DeviceInfo) -> Vec<String> {
     let model = device.model.clone().unwrap_or_else(|| "-".into());
-    let verdict = match (&device.session, &device.unusable_reason) {
-        (Some(state), _) => format!("session: {}", state_word(state)),
+    let verdict = match (&device.connection, &device.unusable_reason) {
+        (Some(state), _) => format!("connected: {}", state_word(state)),
         (None, Some(reason)) => format!("not usable: {reason}"),
         (None, None) => "usable".into(),
     };

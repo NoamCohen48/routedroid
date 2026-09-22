@@ -31,13 +31,15 @@ fn handle_normal(app: &mut App, code: KeyCode) -> Vec<Command> {
         KeyCode::Down | KeyCode::Char('j') => app.move_cursor(1),
         KeyCode::Char('r') => return vec![Command::RefreshDevices, Command::RefreshStatus],
         KeyCode::Char('s') => match app.selected_device() {
-            Some(device) if device.session.is_some() => app.error(format!("{}: already has a session", device.serial)),
+            Some(device) if device.connection.is_some() => app.error(format!("{}: already connected", device.serial)),
             Some(device) => app.mode = Mode::StartForm(StartForm::new(device.serial.clone())),
             None => app.error("no device selected"),
         },
         KeyCode::Char('x') => match app.selected_device() {
-            Some(device) if device.session.is_some() => app.mode = Mode::ConfirmStop { serial: device.serial.clone() },
-            Some(device) => app.error(format!("{}: no session to stop", device.serial)),
+            Some(device) if device.connection.is_some() => {
+                app.mode = Mode::ConfirmStop { serial: device.serial.clone() }
+            }
+            Some(device) => app.error(format!("{}: not connected", device.serial)),
             None => app.error("no device selected"),
         },
         _ => {}

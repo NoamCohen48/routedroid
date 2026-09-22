@@ -2,7 +2,7 @@
 //! an orderly shutdown on SIGINT/SIGTERM.
 
 mod bind;
-mod connection;
+mod client;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -12,7 +12,7 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::signal::unix::{signal, SignalKind};
 use tracing::{info, warn};
 
-use self::connection::Connection;
+use self::client::ClientConnection;
 use crate::adb::{Adb, DEFAULT_TIMEOUT};
 use crate::daemon::{Api, Daemon};
 use crate::Args;
@@ -39,7 +39,7 @@ impl Server {
         Ok(Self { listener, path: args.socket, daemon, api })
     }
 
-    /// Accept until a signal, then stop every session before returning.
+    /// Accept until a signal, then stop every device connection.
     pub async fn run(self) -> Result<()> {
         // Each background task owns a handle on the daemon; `Arc::clone` is a
         // refcount bump, not a copy of the daemon.
@@ -62,7 +62,7 @@ impl Server {
     }
 
     fn accept(&self, stream: UnixStream) {
-        // Only the owning user may drive sessions: the socket is 0600, and
+        // Only the owning user may drive connections: the socket is 0600, and
         // SO_PEERCRED (the uid the kernel attests for the peer, which a
         // client cannot forge) is the second line of defence.
         match stream.peer_cred() {
@@ -76,19 +76,19 @@ impl Server {
                 return;
             }
         }
-        tokio::spawn(Connection::new(self.api.clone(), stream).run());
+        tokio::spawn(ClientConnection::new(self.api.clone(), stream).run());
     }
 
     /// Unlink first so new clients get "unreachable", not a silent backlog;
-    /// then stop the sessions, unless a second signal says to give up.
+    /// then stop the connections, unless a second signal says to give up.
     async fn shutdown(self, sigterm: &mut tokio::signal::unix::Signal) {
         drop(self.listener);
         let _ = std::fs::remove_file(&self.path);
-        info!("shutting down: stopping sessions (signal again to give up waiting)");
+        info!("shutting down: disconnecting devices (signal again to give up waiting)");
         tokio::select! {
             _ = self.daemon.stop_all() => {}
-            _ = tokio::signal::ctrl_c() => warn!("second signal: leaving sessions to the helper's cleanup"),
-            _ = sigterm.recv() => warn!("second signal: leaving sessions to the helper's cleanup"),
+            _ = tokio::signal::ctrl_c() => warn!("second signal: leaving the helper's cleanup to undo them"),
+            _ = sigterm.recv() => warn!("second signal: leaving the helper's cleanup to undo them"),
         }
     }
 }

@@ -1,23 +1,28 @@
-//! One session as the daemon sees it: a task running the connect sequence
-//! and the protocol driver, a state it publishes, and a stop switch.
+//! One device connection as the daemon sees it: a task running the connect
+//! sequence and the protocol driver, a state it publishes, and a stop
+//! switch. The handle is what the daemon keeps; the task outlives any
+//! client that asked for it.
 
 use std::net::Ipv4Addr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use routedroid_ipc::{Event, Outcome, SessionInfo, SessionState, StartRequest};
+use routedroid_ipc::{ConnectionInfo, ConnectionState, Event, Outcome, StartRequest};
 use tokio::sync::watch;
 
-use super::context::SessionContext;
+mod drive;
+pub(super) mod run;
+
+use super::context::ConnectionContext;
 use crate::session::Counters;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 /// Longer than the worst orderly teardown (adb timeout 15 s + helper ack 10 s).
 const STOP_WAIT: Duration = Duration::from_secs(30);
 
-pub struct SessionHandle {
-    /// Distinguishes this handle from a later session on the same serial.
+pub struct DeviceConnection {
+    /// Distinguishes this handle from a later connection on the same serial.
     id: u64,
     pub serial: String,
     pub lan_if: String,
@@ -25,7 +30,7 @@ pub struct SessionHandle {
     pub tun: String,
     pub started_at: u64,
     pub counters: Arc<Counters>,
-    state: watch::Receiver<SessionState>,
+    state: watch::Receiver<ConnectionState>,
     stop: Arc<watch::Sender<bool>>,
 }
 
@@ -33,24 +38,24 @@ pub struct SessionHandle {
 pub(super) struct StateSink {
     serial: String,
     events: super::events::EventBus,
-    tx: watch::Sender<SessionState>,
+    tx: watch::Sender<ConnectionState>,
 }
 
 impl StateSink {
-    pub fn set(&self, state: SessionState) {
-        tracing::info!(serial = %self.serial, ?state, "session state");
+    pub fn set(&self, state: ConnectionState) {
+        tracing::info!(serial = %self.serial, ?state, "connection state");
         let _ = self.tx.send(state.clone());
-        self.events.publish(Event::Session { serial: self.serial.clone(), state });
+        self.events.publish(Event::Connection { serial: self.serial.clone(), state });
     }
 }
 
-impl SessionHandle {
-    /// Spawn the session task. The handle is live immediately in state
+impl DeviceConnection {
+    /// Spawn the connection's task. The handle is live immediately in state
     /// `Starting`; failures surface as `Ended` with a non-ok outcome. The task
     /// is never aborted: teardown (adb, helper) must always run to the end.
-    pub fn spawn(context: SessionContext, req: StartRequest, tun: String) -> Self {
+    pub fn spawn(context: ConnectionContext, req: StartRequest, tun: String) -> Self {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        let (state_tx, state) = watch::channel(SessionState::Starting);
+        let (state_tx, state) = watch::channel(ConnectionState::Starting);
         let (stop, stop_rx) = watch::channel(false);
         let stop = Arc::new(stop);
         let counters = Arc::new(Counters::default());
@@ -62,29 +67,29 @@ impl SessionHandle {
         let task_counters = counters.clone();
         let task_tun = tun.clone();
         tokio::spawn(async move {
-            sink.set(SessionState::Starting);
-            let run = super::run::SessionRun::new(&context, req, task_tun, task_counters, &sink);
+            sink.set(ConnectionState::Starting);
+            let run = run::ConnectionRun::new(&context, req, task_tun, task_counters, &sink);
             let outcome = run.run(stop_rx).await;
             // Leave the table before announcing the end, so a client reacting
             // to `Ended` with a new `start` finds the serial free.
-            context.sessions.remove(&serial, id).await;
-            sink.set(SessionState::Ended(outcome));
+            context.connections.remove(&serial, id).await;
+            sink.set(ConnectionState::Ended(outcome));
         });
         let started_at = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         Self { id, serial: handle_serial, lan_if, phone_ip, tun, started_at, counters, state, stop }
     }
 
-    /// Distinguishes this handle from a later session on the same serial.
+    /// Distinguishes this handle from a later connection on the same serial.
     pub(super) fn id(&self) -> u64 {
         self.id
     }
 
-    pub fn state(&self) -> SessionState {
+    pub fn state(&self) -> ConnectionState {
         self.state.borrow().clone()
     }
 
-    pub fn info(&self) -> SessionInfo {
-        SessionInfo {
+    pub fn info(&self) -> ConnectionInfo {
+        ConnectionInfo {
             serial: self.serial.clone(),
             lan_if: self.lan_if.clone(),
             phone_ip: self.phone_ip,
@@ -97,30 +102,33 @@ impl SessionHandle {
     }
 
     /// The stop switch and state watch, so a caller can wait for the end
-    /// without holding the session map locked (the task needs that lock).
+    /// without holding the connection table locked (the task needs that lock).
     pub fn stop_switch(&self) -> Arc<watch::Sender<bool>> {
         self.stop.clone()
     }
 
-    pub fn state_watch(&self) -> watch::Receiver<SessionState> {
+    pub fn state_watch(&self) -> watch::Receiver<ConnectionState> {
         self.state.clone()
     }
 
     /// Resolves with the final outcome once the task has ended.
-    pub async fn wait_ended(mut state: watch::Receiver<SessionState>) -> Outcome {
+    pub async fn wait_ended(mut state: watch::Receiver<ConnectionState>) -> Outcome {
         loop {
-            if let SessionState::Ended(outcome) = &*state.borrow() {
+            if let ConnectionState::Ended(outcome) = &*state.borrow() {
                 return outcome.clone();
             }
             if state.changed().await.is_err() {
-                return Outcome { ok: false, kind: None, message: "session task vanished".into() };
+                return Outcome { ok: false, kind: None, message: "connection task vanished".into() };
             }
         }
     }
 
-    /// Ask the session to stop and wait for it; `None` if it is still tearing
+    /// Ask the connection to stop and wait for it; `None` if it is still tearing
     /// down after `STOP_WAIT` (it keeps going; a later `Ended` event tells).
-    pub async fn stop_and_wait_on(stop: &watch::Sender<bool>, state: watch::Receiver<SessionState>) -> Option<Outcome> {
+    pub async fn stop_and_wait_on(
+        stop: &watch::Sender<bool>,
+        state: watch::Receiver<ConnectionState>,
+    ) -> Option<Outcome> {
         let _ = stop.send(true);
         tokio::time::timeout(STOP_WAIT, Self::wait_ended(state)).await.ok()
     }

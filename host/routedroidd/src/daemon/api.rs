@@ -1,11 +1,12 @@
-//! The client-facing handle: turns one `Request` into exactly one
-//! `Response`, and hands out event subscriptions. A connection holds this,
-//! not the daemon, so the protocol layer can reach nothing else.
+//! What a client may ask the daemon to do. A client connection holds this
+//! and nothing else: it cannot reach adb, the connection table or the
+//! shutdown path. The wire's `Request`/`Response` never appear here — that
+//! translation belongs to the connection that speaks the protocol.
 
 use std::sync::Arc;
 
-use routedroid_ipc::fault::Fault;
-use routedroid_ipc::{Event, Request, Response, API_VERSION};
+use routedroid_ipc::fault::Result;
+use routedroid_ipc::{ConnectionInfo, DeviceInfo, Event, StartRequest};
 use tokio::sync::broadcast;
 
 use super::Daemon;
@@ -24,31 +25,19 @@ impl Api {
         self.daemon.events.subscribe()
     }
 
-    pub async fn request(&self, request: Request) -> Response {
-        match request {
-            Request::Version => Response::Version { daemon: env!("CARGO_PKG_VERSION").into(), api: API_VERSION },
-            Request::Devices => match self.daemon.devices().await {
-                Ok(devices) => Response::Devices { devices },
-                Err(fault) => error(fault),
-            },
-            Request::Status => Response::Status { sessions: self.daemon.status().await },
-            Request::Start(start) => {
-                let serial = start.serial.clone();
-                match self.daemon.start(start).await {
-                    Ok(()) => Response::Started { serial },
-                    Err(fault) => error(fault),
-                }
-            }
-            Request::Stop { serial } => match self.daemon.stop(&serial).await {
-                Ok(()) => Response::Ok,
-                Err(fault) => error(fault),
-            },
-            // The connection layer turns on event forwarding; nothing to do here.
-            Request::Subscribe => Response::Ok,
-        }
+    pub async fn devices(&self) -> Result<Vec<DeviceInfo>> {
+        self.daemon.devices().await
     }
-}
 
-fn error(fault: Fault) -> Response {
-    Response::Error { kind: fault.kind(), message: fault.to_string() }
+    pub async fn status(&self) -> Vec<ConnectionInfo> {
+        self.daemon.status().await
+    }
+
+    pub async fn start(&self, request: StartRequest) -> Result<()> {
+        self.daemon.start(request).await
+    }
+
+    pub async fn stop(&self, serial: &str) -> Result<()> {
+        self.daemon.stop(serial).await
+    }
 }

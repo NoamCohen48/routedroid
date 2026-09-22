@@ -1,6 +1,6 @@
-//! Text rendering shared by the commands: aligned tables and session states.
+//! Text rendering shared by the commands: aligned tables and connection states.
 
-use routedroid_ipc::SessionState;
+use routedroid_ipc::ConnectionState;
 
 /// Prints rows as left-aligned columns, each as wide as its widest cell.
 pub fn print_table(rows: &[Vec<String>]) {
@@ -16,23 +16,23 @@ pub fn print_table(rows: &[Vec<String>]) {
 }
 
 /// Short state word for tables.
-pub fn state_word(state: &SessionState) -> String {
+pub fn state_word(state: &ConnectionState) -> String {
     match state {
-        SessionState::Starting => "starting".into(),
-        SessionState::WaitingForApp => "waiting for app".into(),
-        SessionState::Handshaking => "handshaking".into(),
-        SessionState::Active => "active".into(),
-        SessionState::Stopping => "stopping".into(),
-        SessionState::Ended(outcome) if outcome.ok => "ended".into(),
-        SessionState::Ended(outcome) => format!("ended: {}", outcome.message),
+        ConnectionState::Starting => "starting".into(),
+        ConnectionState::WaitingForApp => "waiting for app".into(),
+        ConnectionState::Handshaking => "handshaking".into(),
+        ConnectionState::Active => "active".into(),
+        ConnectionState::Stopping => "stopping".into(),
+        ConnectionState::Ended(outcome) if outcome.ok => "ended".into(),
+        ConnectionState::Ended(outcome) => format!("ended: {}", outcome.message),
     }
 }
 
 /// One status line for an attached `start`, telling the user what to do.
-pub fn state_line(state: &SessionState) -> String {
+pub fn state_line(state: &ConnectionState) -> String {
     match state {
-        SessionState::WaitingForApp => "waiting for the app to connect (answer the VPN dialog on the phone)".into(),
-        SessionState::Ended(outcome) => format!("ended: {}", outcome.message),
+        ConnectionState::WaitingForApp => "waiting for the app to connect (answer the VPN dialog on the phone)".into(),
+        ConnectionState::Ended(outcome) => format!("ended: {}", outcome.message),
         other => state_word(other),
     }
 }

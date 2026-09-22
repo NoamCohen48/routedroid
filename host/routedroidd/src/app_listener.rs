@@ -1,7 +1,7 @@
 //! The TCP endpoint the app connects to. The app dials `127.0.0.1:<device
 //! port>` on the phone; adb carries that over USB and connects to this
 //! listener on the PC's loopback. Exactly one connection is accepted per
-//! session, and only from loopback.
+//! connection, and only from loopback.
 
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::time::Duration;

@@ -10,14 +10,14 @@ use crate::describe;
 
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let header =
-        Row::new(["Serial", "Model", "ADB", "Usable", "Session"]).style(Style::new().add_modifier(Modifier::BOLD));
+        Row::new(["Serial", "Model", "ADB", "Usable", "Connection"]).style(Style::new().add_modifier(Modifier::BOLD));
     let rows: Vec<Row> = if app.devices.is_empty() {
         vec![Row::new(["(no devices attached)", "", "", "", ""]).dim()]
     } else {
         app.devices
             .iter()
             .map(|device| {
-                let session = device.session.as_ref().map(describe::session_state).unwrap_or_default();
+                let connection = device.connection.as_ref().map(describe::connection_state).unwrap_or_default();
                 let usable = describe::usable(device);
                 let usable_color = if device.unusable_reason.is_none() { Color::Green } else { Color::Yellow };
                 Row::new(vec![
@@ -25,7 +25,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                     device.model.clone().unwrap_or_default().into(),
                     device.state.clone().into(),
                     ratatui::text::Text::from(usable).fg(usable_color),
-                    session.into(),
+                    connection.into(),
                 ])
             })
             .collect()

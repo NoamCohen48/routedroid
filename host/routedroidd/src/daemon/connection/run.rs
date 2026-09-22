@@ -1,8 +1,6 @@
-//! One session's run, from `start` accepted to everything undone. Order
-//! matters for safety: host network first (so a failure leaves nothing on
-//! the phone), then the reverse mapping, then the secret, then the launch.
-
-mod drive;
+//! One device connection's run, from `start` accepted to everything undone.
+//! Order matters for safety: host network first (so a failure leaves nothing
+//! on the phone), then the reverse mapping, then the secret, then the launch.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,28 +11,28 @@ use routedroid_proto::frame::DEFAULT_MTU;
 use tokio::sync::watch;
 use tracing::info;
 
-use super::context::SessionContext;
-use super::session::StateSink;
+use super::super::context::ConnectionContext;
+use super::StateSink;
 use crate::app_listener::AppListener;
-use crate::device::{DeviceSession, Transport};
+use crate::device::{AdbBridge, Transport};
 use crate::host_network::HostNetwork;
 use crate::session::Counters;
 
 const HELPER_START_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// Everything one session needs for its whole life, in one place: the
-/// session task owns it and drops it when the session is over.
-pub(super) struct SessionRun<'a> {
-    context: &'a SessionContext,
-    request: StartRequest,
+/// Everything one device connection needs for its whole life, in one place:
+/// the connection's task owns it and drops it when the connection is over.
+pub(crate) struct ConnectionRun<'a> {
+    context: &'a ConnectionContext,
+    pub(super) request: StartRequest,
     tun: String,
-    counters: Arc<Counters>,
-    sink: &'a StateSink,
+    pub(super) counters: Arc<Counters>,
+    pub(super) sink: &'a StateSink,
 }
 
-impl<'a> SessionRun<'a> {
+impl<'a> ConnectionRun<'a> {
     pub fn new(
-        context: &'a SessionContext,
+        context: &'a ConnectionContext,
         request: StartRequest,
         tun: String,
         counters: Arc<Counters>,
@@ -43,12 +41,12 @@ impl<'a> SessionRun<'a> {
         Self { context, request, tun, counters, sink }
     }
 
-    /// Run the session to its end; every failure becomes a failed outcome.
+    /// Run the connection to its end; every failure becomes a failed outcome.
     pub async fn run(self, stop_rx: watch::Receiver<bool>) -> Outcome {
         match self.connect(stop_rx).await {
             Ok(message) => Outcome { ok: true, kind: None, message: message.into() },
             Err(fault) => {
-                tracing::warn!(kind = fault.kind().as_str(), "session failed: {fault}");
+                tracing::warn!(kind = fault.kind().as_str(), "connection failed: {fault}");
                 Outcome { ok: false, kind: Some(fault.kind()), message: fault.to_string() }
             }
         }
@@ -62,7 +60,7 @@ impl<'a> SessionRun<'a> {
         Ok(mtu)
     }
 
-    /// Bring up the host side and the phone side, drive the session, then
+    /// Bring up the host side and the phone side, drive the connection, then
     /// undo both whatever the outcome was.
     async fn connect(&self, stop_rx: watch::Receiver<bool>) -> Result<&'static str> {
         Transport::check(&self.request.serial, self.request.allow_network_adb)?;
@@ -87,16 +85,16 @@ impl<'a> SessionRun<'a> {
         info!(serial = adb.serial(), tun = %network.tun, host_ip = %network.host_ip, lan_prefix = network.lan_prefix,
               phone_ip = %self.request.phone_ip, helper_session = %network.session, "host network ready");
 
-        let mut device_session = match DeviceSession::open(adb, listener.port()).await {
-            Ok(device_session) => device_session,
+        let mut bridge = match AdbBridge::open(adb, listener.port()).await {
+            Ok(bridge) => bridge,
             Err(fault) => {
                 network.stop().await;
                 return Err(fault);
             }
         };
-        let outcome = self.drive(mtu, listener, &mut device_session, &mut network, stop_rx).await;
+        let outcome = self.drive(mtu, listener, &mut bridge, &mut network, stop_rx).await;
         // Concurrent: a hung adb must not delay releasing the host network.
-        tokio::join!(device_session.close(), network.stop());
+        tokio::join!(bridge.close(), network.stop());
         outcome
     }
 }

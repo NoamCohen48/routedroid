@@ -18,4 +18,7 @@ pub use client::Client;
 pub use fault::{Fault, FaultExt, Kind};
 
 /// Bumped on any incompatible change to the messages in `api`.
-pub const API_VERSION: u32 = 1;
+/// 2: a phone's connectivity is a *device connection* on the wire
+/// (`session` -> `connection`); "session" now only means the protocol
+/// conversation with the app, which the phone implements.
+pub const API_VERSION: u32 = 2;

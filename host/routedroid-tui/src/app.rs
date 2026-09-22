@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use routedroid_ipc::{DeviceInfo, SessionInfo};
+use routedroid_ipc::{ConnectionInfo, DeviceInfo};
 
 use crate::form::StartForm;
 use crate::messages::{Command, Incoming};
@@ -23,7 +23,7 @@ pub enum Mode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Connection {
+pub enum DaemonLink {
     Connected,
     Disconnected { reason: String },
 }
@@ -42,10 +42,10 @@ pub struct LogLine {
 
 pub struct App {
     pub devices: Vec<DeviceInfo>,
-    pub sessions: BTreeMap<String, SessionInfo>,
+    pub connections: BTreeMap<String, ConnectionInfo>,
     pub cursor: usize,
     pub log: VecDeque<LogLine>,
-    pub connection: Connection,
+    pub daemon: DaemonLink,
     pub mode: Mode,
     pub quit: bool,
 }
@@ -54,10 +54,10 @@ impl App {
     pub fn new() -> Self {
         Self {
             devices: Vec::new(),
-            sessions: BTreeMap::new(),
+            connections: BTreeMap::new(),
             cursor: 0,
             log: VecDeque::new(),
-            connection: Connection::Connected,
+            daemon: DaemonLink::Connected,
             mode: Mode::Normal,
             quit: false,
         }
@@ -67,8 +67,8 @@ impl App {
         self.devices.get(self.cursor)
     }
 
-    pub fn selected_session(&self) -> Option<&SessionInfo> {
-        self.sessions.get(&self.selected_device()?.serial)
+    pub fn selected_connection(&self) -> Option<&ConnectionInfo> {
+        self.connections.get(&self.selected_device()?.serial)
     }
 
     pub fn move_cursor(&mut self, delta: isize) {
@@ -95,13 +95,13 @@ impl App {
     pub fn apply(&mut self, incoming: Incoming) -> Vec<Command> {
         match incoming {
             Incoming::Connected => {
-                self.connection = Connection::Connected;
+                self.daemon = DaemonLink::Connected;
                 self.info("connected to routedroidd");
                 vec![Command::RefreshDevices, Command::RefreshStatus]
             }
             Incoming::Disconnected { reason } => {
                 self.error(format!("disconnected: {reason}"));
-                self.connection = Connection::Disconnected { reason };
+                self.daemon = DaemonLink::Disconnected { reason };
                 vec![]
             }
             Incoming::Event(event) => self.apply_event(event),
@@ -109,8 +109,8 @@ impl App {
                 self.set_devices(devices);
                 vec![]
             }
-            Incoming::Sessions(sessions) => {
-                self.sessions = sessions.into_iter().map(|session| (session.serial.clone(), session)).collect();
+            Incoming::Connections(connections) => {
+                self.connections = connections.into_iter().map(|c| (c.serial.clone(), c)).collect();
                 vec![]
             }
             Incoming::Started { serial } => {

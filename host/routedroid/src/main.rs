@@ -1,7 +1,7 @@
 //! `routedroid`: the command line of the routedroid daemon (`routedroidd`).
 //!
 //! Every subcommand is one short conversation over the daemon's control
-//! socket; the daemon owns the sessions, this binary only asks and prints.
+//! socket; the daemon owns the connections, this binary only asks and prints.
 //! Exit codes follow `routedroid_ipc::Kind::exit_code`, plus 3 when the
 //! daemon cannot be reached at all.
 

@@ -20,14 +20,14 @@ pub fn start_form(frame: &mut Frame, form: &StartForm) {
         lines.push(Line::from(value).fg(if focused { Color::Cyan } else { Color::Reset }));
     }
     lines.push(Line::from("Enter to start, Esc to cancel").dim());
-    let title = format!(" Start session on {} ", form.serial);
+    let title = format!(" Connect {} ", form.serial);
     frame.render_widget(Clear, area);
     frame.render_widget(Paragraph::new(lines).block(Block::bordered().title(title)), area);
 }
 
 pub fn confirm_stop(frame: &mut Frame, serial: &str) {
     let area = centered(frame.area(), 50, 3);
-    let text = Line::from(format!("Stop the session on {serial}? [y/N]"));
+    let text = Line::from(format!("Disconnect {serial}? [y/N]"));
     frame.render_widget(Clear, area);
     frame.render_widget(Paragraph::new(text).block(Block::bordered().title(" Confirm ")), area);
 }

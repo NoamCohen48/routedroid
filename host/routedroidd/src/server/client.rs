@@ -1,9 +1,12 @@
-//! One client connection: JSON lines in, responses (and, after `subscribe`,
-//! events) out. Requests are handled one at a time per connection.
+//! One client's connection to the control socket: JSON lines in, responses
+//! (and, after `subscribe`, events) out. Requests are handled one at a time
+//! per connection. Turning a `Request` into a `Response` happens here — the
+//! daemon never sees the wire types.
 
 use futures_util::StreamExt;
+use routedroid_ipc::fault::Fault;
 use routedroid_ipc::wire::{ClientMessage, ServerMessage, MAX_LINE};
-use routedroid_ipc::{Event, Request};
+use routedroid_ipc::{Event, Request, Response, API_VERSION};
 use tokio::io::AsyncWriteExt;
 use tokio::net::unix::OwnedReadHalf;
 use tokio::net::UnixStream;
@@ -17,7 +20,7 @@ use crate::daemon::Api;
 /// own connection and never the daemon.
 const WRITE_QUEUE: usize = 64;
 
-pub struct Connection {
+pub struct ClientConnection {
     api: Api,
     lines: FramedRead<OwnedReadHalf, LinesCodec>,
     out: mpsc::Sender<String>,
@@ -25,7 +28,7 @@ pub struct Connection {
     events: Option<broadcast::Receiver<Event>>,
 }
 
-impl Connection {
+impl ClientConnection {
     pub fn new(api: Api, stream: UnixStream) -> Self {
         let (read_half, mut write_half) = stream.into_split();
         // The codec refuses a line over MAX_LINE while it is being read, so a
@@ -78,8 +81,33 @@ impl Connection {
         if matches!(message.request, Request::Subscribe) && self.events.is_none() {
             self.events = Some(self.api.subscribe());
         }
-        let response = self.api.request(message.request).await;
+        let response = self.answer(message.request).await;
         self.send(ServerMessage::Response { id: message.id, response }).await
+    }
+
+    /// One request, one response: the whole protocol translation.
+    async fn answer(&self, request: Request) -> Response {
+        match request {
+            Request::Version => Response::Version { daemon: env!("CARGO_PKG_VERSION").into(), api: API_VERSION },
+            Request::Devices => match self.api.devices().await {
+                Ok(devices) => Response::Devices { devices },
+                Err(fault) => error(fault),
+            },
+            Request::Status => Response::Status { connections: self.api.status().await },
+            Request::Start(start) => {
+                let serial = start.serial.clone();
+                match self.api.start(start).await {
+                    Ok(()) => Response::Started { serial },
+                    Err(fault) => error(fault),
+                }
+            }
+            Request::Stop { serial } => match self.api.stop(&serial).await {
+                Ok(()) => Response::Ok,
+                Err(fault) => error(fault),
+            },
+            // We subscribed above; the daemon has nothing to do for this.
+            Request::Subscribe => Response::Ok,
+        }
     }
 
     async fn next_event(events: &mut Option<broadcast::Receiver<Event>>) -> Result<Event, broadcast::error::RecvError> {
@@ -100,4 +128,8 @@ impl Connection {
         drop(self.out);
         let _ = self.writer.await;
     }
+}
+
+fn error(fault: Fault) -> Response {
+    Response::Error { kind: fault.kind(), message: fault.to_string() }
 }

@@ -116,7 +116,7 @@ async fn execute(client: &mut Client, command: Command) -> Result<Incoming> {
             Incoming::Failed { what: what.into(), message: format!("{message} ({})", kind.as_str()) }
         }
         Response::Devices { devices } => Incoming::Devices(devices),
-        Response::Status { sessions } => Incoming::Sessions(sessions),
+        Response::Status { connections } => Incoming::Connections(connections),
         Response::Started { serial } => Incoming::Started { serial },
         Response::Ok => Incoming::Stopped { serial: serial_of_stop.unwrap_or_default() },
         Response::Version { .. } => Incoming::Failed { what: what.into(), message: "unexpected version reply".into() },

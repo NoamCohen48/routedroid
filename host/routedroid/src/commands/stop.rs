@@ -1,4 +1,4 @@
-//! `routedroid stop`: end the session on one phone and wait for it to be gone.
+//! `routedroid stop`: disconnect one phone and wait for it to be gone.
 
 use anyhow::Result;
 use routedroid_ipc::{Client, Request};

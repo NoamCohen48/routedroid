@@ -12,14 +12,14 @@ use crate::fault::Kind;
 pub enum Request {
     /// Daemon and API version.
     Version,
-    /// Attached devices, with whether each can be started and any live session.
+    /// Attached devices, with whether each can be connected and any live connection.
     Devices,
-    /// Start a session on one device; answered as soon as it is accepted
-    /// (progress arrives as `session` events).
+    /// Connect one device; answered as soon as the request is accepted
+    /// (progress arrives as `connection` events).
     Start(StartRequest),
-    /// Stop the session on one device; answered once the session has ended.
+    /// Disconnect one device; answered once its connection has ended.
     Stop { serial: String },
-    /// All live sessions.
+    /// Every live device connection.
     Status,
     /// Receive `Event`s on this connection from now on.
     Subscribe,
@@ -40,7 +40,7 @@ pub struct StartRequest {
     /// Seconds to wait for the app to connect after launch.
     #[serde(default)]
     pub connect_timeout_secs: Option<u64>,
-    /// Start over a network ADB serial despite decision 0001 gate 5.
+    /// Connect over a network ADB serial despite decision 0001 gate 5.
     #[serde(default)]
     pub allow_network_adb: bool,
 }
@@ -52,7 +52,7 @@ pub enum Response {
     Version { daemon: String, api: u32 },
     Devices { devices: Vec<DeviceInfo> },
     Started { serial: String },
-    Status { sessions: Vec<SessionInfo> },
+    Status { connections: Vec<ConnectionInfo> },
     Error { kind: Kind, message: String },
 }
 
@@ -62,19 +62,20 @@ pub struct DeviceInfo {
     /// adb's word: `device`, `unauthorized`, `offline`, ...
     pub state: String,
     pub model: Option<String>,
-    /// `None` when a session can be started; otherwise why not.
+    /// `None` when this device can be connected; otherwise why not.
     pub unusable_reason: Option<String>,
-    /// Live session on this device, if any.
-    pub session: Option<SessionState>,
+    /// State of this device's connection, if it has one.
+    pub connection: Option<ConnectionState>,
 }
 
+/// One device's connection: what it was asked for, and how it is doing.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SessionInfo {
+pub struct ConnectionInfo {
     pub serial: String,
     pub lan_if: String,
     pub phone_ip: Ipv4Addr,
     pub tun: String,
-    pub state: SessionState,
+    pub state: ConnectionState,
     /// Unix seconds when `start` was accepted.
     pub started_at: u64,
     pub packets_to_phone: u64,
@@ -83,19 +84,19 @@ pub struct SessionInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "state", rename_all = "snake_case")]
-pub enum SessionState {
+pub enum ConnectionState {
     /// Helper session and reverse mapping being set up.
     Starting,
-    /// App launched; waiting for it to connect (consent dialog may be up).
+    /// App launched; waiting for it to dial in (consent dialog may be up).
     WaitingForApp,
-    /// Connected; HELLO/AUTH/CONFIGURE in progress.
+    /// App connected; the HELLO/AUTH/CONFIGURE handshake is in progress.
     Handshaking,
     Active,
     Stopping,
     Ended(Outcome),
 }
 
-/// How a session ended. `kind` follows the CLI exit-code taxonomy.
+/// How a connection ended. `kind` follows the CLI exit-code taxonomy.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Outcome {
     pub ok: bool,
@@ -107,13 +108,13 @@ pub struct Outcome {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Event {
-    /// A session changed state (including its final `ended`).
-    Session { serial: String, state: SessionState },
-    /// Periodic counters for an active session.
+    /// A device connection changed state (including its final `ended`).
+    Connection { serial: String, state: ConnectionState },
+    /// Periodic counters for an active connection.
     Traffic { serial: String, packets_to_phone: u64, packets_from_phone: u64 },
     /// A device appeared or went away, or changed adb state.
     Devices { devices: Vec<DeviceInfo> },
-    /// The daemon is shutting down; sessions are being stopped.
+    /// The daemon is shutting down; every connection is being stopped.
     Shutdown,
     /// This connection fell behind and `missed` events were dropped; the
     /// client should re-query `status` (and `devices`).

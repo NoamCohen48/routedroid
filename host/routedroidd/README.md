@@ -1,6 +1,9 @@
 # routedroidd
 
-Headless daemon that owns phone sessions; `routedroid` (the CLI) is its client over a Unix socket.
+Headless daemon that owns *device connections* — one per phone that is on the LAN — while
+`routedroid` (the CLI) and `routedroid-tui` are its clients over a Unix socket. A device
+connection outlives the client that asked for it: start one and quit, and the phone stays
+reachable until someone stops it or the daemon shuts down.
 
 Install as a `systemd --user` service:
 

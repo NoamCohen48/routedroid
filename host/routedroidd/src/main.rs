@@ -1,4 +1,4 @@
-//! `routedroidd`: the long-lived, unprivileged owner of phone sessions.
+//! `routedroidd`: the long-lived, unprivileged owner of device connections.
 //!
 //! Owns ADB, one loopback listener and protocol session per phone, and the
 //! conversation with the privileged helper; never touches the network
@@ -22,7 +22,7 @@ use clap::Parser;
 #[command(
     name = "routedroidd",
     version,
-    about = "Routedroid daemon: owns phone sessions and serves the control socket"
+    about = "Routedroid daemon: owns device connections and serves the control socket"
 )]
 pub struct Args {
     #[command(flatten)]
