@@ -7,6 +7,7 @@ use futures_util::StreamExt;
 use routedroid_ipc::wire::{ClientMessage, ServerMessage, MAX_LINE};
 use routedroid_ipc::{Event, Request};
 use tokio::io::AsyncWriteExt;
+use tokio::net::unix::OwnedReadHalf;
 use tokio::net::UnixStream;
 use tokio::sync::{broadcast, mpsc};
 use tokio_util::codec::{FramedRead, LinesCodec};
@@ -14,63 +15,91 @@ use tracing::{debug, warn};
 
 use crate::daemon::Daemon;
 
-pub async fn run(daemon: Arc<Daemon>, stream: UnixStream) {
-    let (rd, mut wr) = stream.into_split();
-    // The codec refuses a line over MAX_LINE while it is being read, so a
-    // client cannot make the daemon buffer an unbounded line.
-    let mut lines = FramedRead::new(rd, LinesCodec::new_with_max_length(MAX_LINE));
-    let (out_tx, mut out_rx) = mpsc::channel::<String>(64);
-    let writer = tokio::spawn(async move {
-        while let Some(mut line) = out_rx.recv().await {
-            line.push('\n');
-            if wr.write_all(line.as_bytes()).await.is_err() {
-                break;
-            }
-        }
-    });
-    let mut events: Option<broadcast::Receiver<Event>> = None;
+/// Outbound lines are queued to a writer task, so a slow client blocks its
+/// own connection and never the daemon.
+const WRITE_QUEUE: usize = 64;
 
-    loop {
-        tokio::select! {
-            line = lines.next() => match line {
-                Some(Ok(line)) => {
-                    let msg: ClientMessage = match serde_json::from_str(&line) {
-                        Ok(msg) => msg,
-                        Err(e) => { warn!(error = %e, "bad request line; closing"); break; }
-                    };
-                    debug!(id = msg.id, request = ?msg.request, "request");
-                    if matches!(msg.request, Request::Subscribe) && events.is_none() {
-                        events = Some(daemon.subscribe());
-                    }
-                    let response = crate::daemon::handle(&daemon, msg.request).await;
-                    if send(&out_tx, ServerMessage::Response { id: msg.id, response }).await.is_err() { break; }
+pub struct Connection {
+    daemon: Arc<Daemon>,
+    lines: FramedRead<OwnedReadHalf, LinesCodec>,
+    out: mpsc::Sender<String>,
+    writer: tokio::task::JoinHandle<()>,
+    events: Option<broadcast::Receiver<Event>>,
+}
+
+impl Connection {
+    pub fn new(daemon: Arc<Daemon>, stream: UnixStream) -> Self {
+        let (read_half, mut write_half) = stream.into_split();
+        // The codec refuses a line over MAX_LINE while it is being read, so a
+        // client cannot make the daemon buffer an unbounded line.
+        let lines = FramedRead::new(read_half, LinesCodec::new_with_max_length(MAX_LINE));
+        let (out, mut queued) = mpsc::channel::<String>(WRITE_QUEUE);
+        let writer = tokio::spawn(async move {
+            while let Some(mut line) = queued.recv().await {
+                line.push('\n');
+                if write_half.write_all(line.as_bytes()).await.is_err() {
+                    break;
                 }
-                Some(Err(e)) => { warn!(error = %e, "request line rejected; closing"); break; }
-                None => break,
-            },
-            ev = recv_event(&mut events) => {
-                let event = match ev {
-                    Ok(event) => event,
-                    // Tell the client rather than silently losing (possibly) an `ended`.
-                    Err(broadcast::error::RecvError::Lagged(missed)) => Event::Lagged { missed },
-                    Err(broadcast::error::RecvError::Closed) => break,
-                };
-                if send(&out_tx, ServerMessage::Event { event }).await.is_err() { break; }
+            }
+        });
+        Self { daemon, lines, out, writer, events: None }
+    }
+
+    pub async fn run(mut self) {
+        loop {
+            tokio::select! {
+                line = self.lines.next() => match line {
+                    Some(Ok(line)) => if self.on_line(&line).await.is_err() { break },
+                    Some(Err(error)) => { warn!(%error, "request line rejected; closing"); break; }
+                    None => break,
+                },
+                event = Self::next_event(&mut self.events) => {
+                    let event = match event {
+                        Ok(event) => event,
+                        // Tell the client rather than silently losing (possibly) an `ended`.
+                        Err(broadcast::error::RecvError::Lagged(missed)) => Event::Lagged { missed },
+                        Err(broadcast::error::RecvError::Closed) => break,
+                    };
+                    if self.send(ServerMessage::Event { event }).await.is_err() { break }
+                }
             }
         }
+        self.close().await;
     }
-    drop(out_tx);
-    let _ = writer.await;
-}
 
-async fn recv_event(events: &mut Option<broadcast::Receiver<Event>>) -> Result<Event, broadcast::error::RecvError> {
-    match events {
-        Some(rx) => rx.recv().await,
-        None => std::future::pending().await,
+    /// `Err(())` means this connection is finished (bad line or dead peer).
+    async fn on_line(&mut self, line: &str) -> Result<(), ()> {
+        let message: ClientMessage = match serde_json::from_str(line) {
+            Ok(message) => message,
+            Err(error) => {
+                warn!(%error, "bad request line; closing");
+                return Err(());
+            }
+        };
+        debug!(id = message.id, request = ?message.request, "request");
+        if matches!(message.request, Request::Subscribe) && self.events.is_none() {
+            self.events = Some(self.daemon.subscribe());
+        }
+        let response = self.daemon.handle(message.request).await;
+        self.send(ServerMessage::Response { id: message.id, response }).await
     }
-}
 
-async fn send(tx: &mpsc::Sender<String>, msg: ServerMessage) -> Result<(), ()> {
-    let line = serde_json::to_string(&msg).map_err(|_| ())?;
-    tx.send(line).await.map_err(|_| ())
+    async fn next_event(events: &mut Option<broadcast::Receiver<Event>>) -> Result<Event, broadcast::error::RecvError> {
+        match events {
+            Some(events) => events.recv().await,
+            // Not subscribed: this branch of the select never completes.
+            None => std::future::pending().await,
+        }
+    }
+
+    async fn send(&self, message: ServerMessage) -> Result<(), ()> {
+        let line = serde_json::to_string(&message).map_err(|_| ())?;
+        self.out.send(line).await.map_err(|_| ())
+    }
+
+    /// Let the writer drain what is already queued, then wait for it.
+    async fn close(self) {
+        drop(self.out);
+        let _ = self.writer.await;
+    }
 }

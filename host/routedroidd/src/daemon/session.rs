@@ -63,12 +63,13 @@ impl SessionHandle {
         let task_tun = tun.clone();
         tokio::spawn(async move {
             sink.set(SessionState::Starting);
-            let outcome = super::api::run_session(&daemon, req, task_tun, stop_rx, task_counters, &sink).await;
+            let run = super::run::SessionRun::new(&daemon, req, task_tun, task_counters, &sink);
+            let outcome = run.run(stop_rx).await;
             // Leave the map before announcing the end, so a client reacting
             // to `Ended` with a new `start` finds the serial free. Only our
             // own entry: daemon shutdown may have drained the map already.
             {
-                let mut sessions = daemon.sessions.lock().await;
+                let mut sessions = daemon.sessions().await;
                 if sessions.get(&serial).is_some_and(|handle| handle.id == id) {
                     sessions.remove(&serial);
                 }
