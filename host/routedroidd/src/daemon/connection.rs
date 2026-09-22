@@ -14,7 +14,7 @@ use tokio::sync::watch;
 mod drive;
 pub(super) mod run;
 
-use super::context::ConnectionContext;
+use super::connections::DeviceConnections;
 use crate::session::Counters;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -53,13 +53,14 @@ impl DeviceConnection {
     /// Spawn the connection's task. The handle is live immediately in state
     /// `Starting`; failures surface as `Ended` with a non-ok outcome. The task
     /// is never aborted: teardown (adb, helper) must always run to the end.
-    pub fn spawn(context: ConnectionContext, req: StartRequest, tun: String) -> Self {
+    pub fn spawn(owner: &DeviceConnections, req: StartRequest, tun: String) -> Self {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         let (state_tx, state) = watch::channel(ConnectionState::Starting);
         let (stop, stop_rx) = watch::channel(false);
         let stop = Arc::new(stop);
         let counters = Arc::new(Counters::default());
-        let sink = StateSink { serial: req.serial.clone(), events: context.events.clone(), tx: state_tx };
+        let sink = StateSink { serial: req.serial.clone(), events: owner.events.clone(), tx: state_tx };
+        let connections = owner.clone();
         let serial = req.serial.clone();
         let handle_serial = serial.clone();
         let lan_if = req.lan_if.clone();
@@ -68,11 +69,18 @@ impl DeviceConnection {
         let task_tun = tun.clone();
         tokio::spawn(async move {
             sink.set(ConnectionState::Starting);
-            let run = run::ConnectionRun::new(&context, req, task_tun, task_counters, &sink);
+            let run = run::ConnectionRun::new(
+                connections.adb.clone(),
+                connections.helper_socket.clone(),
+                req,
+                task_tun,
+                task_counters,
+                &sink,
+            );
             let outcome = run.run(stop_rx).await;
             // Leave the table before announcing the end, so a client reacting
             // to `Ended` with a new `start` finds the serial free.
-            context.connections.remove(&serial, id).await;
+            connections.remove(&serial, id).await;
             sink.set(ConnectionState::Ended(outcome));
         });
         let started_at = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);

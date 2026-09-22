@@ -8,7 +8,9 @@ mod ports;
 #[cfg(test)]
 mod tests;
 mod transport;
+mod usable;
 
 pub use bridge::AdbBridge;
 pub use ports::{DevicePorts, ReservedPort};
 pub use transport::Transport;
+pub use usable::{state_name, unusable};

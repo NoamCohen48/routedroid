@@ -3,9 +3,9 @@
 
 mod bind;
 mod client;
+mod view;
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use anyhow::Result;
 use tokio::net::{UnixListener, UnixStream};
@@ -14,7 +14,7 @@ use tracing::{info, warn};
 
 use self::client::ClientConnection;
 use crate::adb::{Adb, DEFAULT_TIMEOUT};
-use crate::daemon::{Api, Daemon};
+use crate::daemon::Daemon;
 use crate::Args;
 
 /// The control socket and the daemon behind it: owns both for the process's
@@ -22,26 +22,21 @@ use crate::Args;
 pub struct Server {
     listener: UnixListener,
     path: PathBuf,
-    daemon: Arc<Daemon>,
-    api: Api,
+    daemon: Daemon,
 }
 
 impl Server {
     pub async fn bind(args: Args) -> Result<Self> {
         let listener = bind::listen(&args.socket).await?;
-        let daemon = Daemon::new(Adb::new(&args.adb, DEFAULT_TIMEOUT), args.helper_socket.clone());
+        let daemon = Daemon::start(Adb::new(&args.adb, DEFAULT_TIMEOUT), args.helper_socket.clone()).await;
         info!(socket = %args.socket.display(), "routedroidd ready");
-        let api = daemon.api();
-        Ok(Self { listener, path: args.socket, daemon, api })
+        Ok(Self { listener, path: args.socket, daemon })
     }
 
     /// Accept until a signal, then stop every device connection.
     pub async fn run(self) -> Result<()> {
-        // Each background task owns a handle on the daemon; `Arc::clone` is a
-        // refcount bump, not a copy of the daemon.
-        tokio::spawn(self.daemon.clone().watch_devices());
-        tokio::spawn(self.daemon.clone().watch_traffic());
-
+        // Polling adb and ticking traffic counters belong to the components
+        // that own that state; nothing has to be started here.
         let mut sigterm = signal(SignalKind::terminate())?;
         loop {
             tokio::select! {
@@ -72,7 +67,9 @@ impl Server {
                 return;
             }
         }
-        tokio::spawn(ClientConnection::new(self.api.clone(), stream).run());
+        let client =
+            ClientConnection::new(self.daemon.devices(), self.daemon.connections(), self.daemon.events(), stream);
+        tokio::spawn(client.run());
     }
 
     /// Unlink first so new clients get "unreachable", not a silent backlog;

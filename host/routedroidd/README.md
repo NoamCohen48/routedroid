@@ -5,6 +5,11 @@ Headless daemon that owns *device connections* — one per phone that is on the 
 connection outlives the client that asked for it: start one and quit, and the phone stays
 reachable until someone stops it or the daemon shuts down.
 
+Built from three components with no object above them (decision 0006): `AttachedDevices`
+mirrors what adb reports, `DeviceConnections` owns the phones we have put on the LAN, and
+`EventBus` carries what clients are told. A client connection holds those three and nothing
+else; `Daemon` only builds them and stops them.
+
 Install as a `systemd --user` service:
 
 1. `cargo build --release` in `host/`.

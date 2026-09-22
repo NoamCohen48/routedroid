@@ -116,6 +116,8 @@ Two words, deliberately distinct (decision 0005):
 
 "Session" now means only what the wire protocols call a session: the authenticated conversation with the app (§7.3), and the helper's journaled bundle of privileged mutations (§4.3).
 
+Inside the daemon there is no object that owns everything (decision 0006). The process is built from three components, each responsible for one thing and each holding only what that thing needs: `AttachedDevices` (what adb reports, kept current by its own poll loop), `DeviceConnections` (the phones we have put on the LAN, and everything needed to start one), and `EventBus`. A client connection is handed those three and has no handle to anything above them, so it cannot reach the daemon's own operations — shutdown and lifecycle — at all. The wire's types (`Request`, `Response`, `DeviceInfo`) exist only in the client connection, which joins the device list with the connection states to build the view it sends.
+
 Primary daemon modules:
 
 - `device`: ADB device discovery, package installation checks, launch, and teardown.

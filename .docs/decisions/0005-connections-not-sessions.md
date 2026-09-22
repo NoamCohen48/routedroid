@@ -18,8 +18,10 @@ unrelated lifetimes, and the code used one word for both.
   what `DeviceConnection` (the handle), `DeviceConnections` (the table) and `ConnectionRun`
   (its task) are.
 - A **client connection** is one CLI or TUI process attached to the control socket
-  (`ClientConnection`). It owns nothing and holds only an `Api` handle: `devices`, `status`,
-  `start`, `stop`, `subscribe`. Client connections are deliberately *not* registered anywhere
+  (`ClientConnection`). It owns nothing and holds only a handle for `devices`, `status`,
+  `start`, `stop` and `subscribe` — at first an `Api` façade, replaced in
+  [0006](0006-components-not-a-daemon-object.md) by the components themselves. Client
+  connections are deliberately *not* registered anywhere
   — nothing needs a list of them, and clients learn about shutdown from the event bus.
 - **Session** survives only where a wire protocol uses it: the app handshake and relay
   (`routedroid-proto`, the Kotlin app, `routedroidd`'s `session` module) and the helper's

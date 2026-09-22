@@ -1,35 +1,42 @@
 //! One client's connection to the control socket: JSON lines in, responses
 //! (and, after `subscribe`, events) out. Requests are handled one at a time
-//! per connection. Turning a `Request` into a `Response` happens here — the
-//! daemon never sees the wire types.
+//! per connection.
+//!
+//! It holds the three components a client may reach and nothing else: the
+//! attached devices, the device connections, and the event bus. There is no
+//! handle here to the daemon itself.
+
+mod answer;
 
 use futures_util::StreamExt;
-use routedroid_ipc::fault::Fault;
 use routedroid_ipc::wire::{ClientMessage, ServerMessage, MAX_LINE};
-use routedroid_ipc::{Event, Request, Response, API_VERSION};
+use routedroid_ipc::{Event, Request};
 use tokio::io::AsyncWriteExt;
 use tokio::net::unix::OwnedReadHalf;
 use tokio::net::UnixStream;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, watch};
 use tokio_util::codec::{FramedRead, LinesCodec};
 use tracing::{debug, warn};
 
-use crate::daemon::Api;
+use crate::daemon::{AttachedDevices, DeviceConnections, EventBus, Snapshot};
 
 /// Outbound lines are queued to a writer task, so a slow client blocks its
 /// own connection and never the daemon.
 const WRITE_QUEUE: usize = 64;
 
 pub struct ClientConnection {
-    api: Api,
+    devices: AttachedDevices,
+    connections: DeviceConnections,
+    bus: EventBus,
     lines: FramedRead<OwnedReadHalf, LinesCodec>,
     out: mpsc::Sender<String>,
     writer: tokio::task::JoinHandle<()>,
     events: Option<broadcast::Receiver<Event>>,
+    device_changes: Option<watch::Receiver<Snapshot>>,
 }
 
 impl ClientConnection {
-    pub fn new(api: Api, stream: UnixStream) -> Self {
+    pub fn new(devices: AttachedDevices, connections: DeviceConnections, bus: EventBus, stream: UnixStream) -> Self {
         let (read_half, mut write_half) = stream.into_split();
         // The codec refuses a line over MAX_LINE while it is being read, so a
         // client cannot make the daemon buffer an unbounded line.
@@ -43,7 +50,7 @@ impl ClientConnection {
                 }
             }
         });
-        Self { api, lines, out, writer, events: None }
+        Self { devices, connections, bus, lines, out, writer, events: None, device_changes: None }
     }
 
     pub async fn run(mut self) {
@@ -63,6 +70,13 @@ impl ClientConnection {
                     };
                     if self.send(ServerMessage::Event { event }).await.is_err() { break }
                 }
+                // The device list is a `watch`: this fires on the newest list,
+                // so a slow client skips intermediate ones instead of lagging.
+                changed = Self::next_device_change(&mut self.device_changes) => {
+                    if changed.is_err() { break }
+                    let devices = self.devices_view().await;
+                    if self.send(ServerMessage::Event { event: Event::Devices { devices } }).await.is_err() { break }
+                }
             }
         }
         self.close().await;
@@ -79,41 +93,26 @@ impl ClientConnection {
         };
         debug!(id = message.id, request = ?message.request, "request");
         if matches!(message.request, Request::Subscribe) && self.events.is_none() {
-            self.events = Some(self.api.subscribe());
+            self.events = Some(self.bus.subscribe());
+            self.device_changes = Some(self.devices.changes());
         }
         let response = self.answer(message.request).await;
         self.send(ServerMessage::Response { id: message.id, response }).await
-    }
-
-    /// One request, one response: the whole protocol translation.
-    async fn answer(&self, request: Request) -> Response {
-        match request {
-            Request::Version => Response::Version { daemon: env!("CARGO_PKG_VERSION").into(), api: API_VERSION },
-            Request::Devices => match self.api.devices().await {
-                Ok(devices) => Response::Devices { devices },
-                Err(fault) => error(fault),
-            },
-            Request::Status => Response::Status { connections: self.api.status().await },
-            Request::Start(start) => {
-                let serial = start.serial.clone();
-                match self.api.start(start).await {
-                    Ok(()) => Response::Started { serial },
-                    Err(fault) => error(fault),
-                }
-            }
-            Request::Stop { serial } => match self.api.stop(&serial).await {
-                Ok(()) => Response::Ok,
-                Err(fault) => error(fault),
-            },
-            // We subscribed above; the daemon has nothing to do for this.
-            Request::Subscribe => Response::Ok,
-        }
     }
 
     async fn next_event(events: &mut Option<broadcast::Receiver<Event>>) -> Result<Event, broadcast::error::RecvError> {
         match events {
             Some(events) => events.recv().await,
             // Not subscribed: this branch of the select never completes.
+            None => std::future::pending().await,
+        }
+    }
+
+    async fn next_device_change(
+        changes: &mut Option<watch::Receiver<Snapshot>>,
+    ) -> Result<(), watch::error::RecvError> {
+        match changes {
+            Some(changes) => changes.changed().await,
             None => std::future::pending().await,
         }
     }
@@ -128,8 +127,4 @@ impl ClientConnection {
         drop(self.out);
         let _ = self.writer.await;
     }
-}
-
-fn error(fault: Fault) -> Response {
-    Response::Error { kind: fault.kind(), message: fault.to_string() }
 }
