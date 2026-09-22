@@ -1,58 +1,97 @@
-//! Daemon state: the adb binding, live sessions by serial, and the event
-//! bus every subscribed connection listens to. Everything outside this
-//! module goes through `Daemon`'s methods; the fields are private and only
-//! this module's own files (`api`, `devices`, `run`, `session`) touch them.
+//! The daemon: adb, the helper socket, the live sessions and the event bus.
+//! It is the only thing that owns session state. Clients reach it through
+//! [`Api`]; sessions get a [`SessionContext`], never the daemon itself.
 
 mod api;
+mod context;
 mod devices;
+mod events;
 mod run;
 mod session;
+mod sessions;
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use routedroid_ipc::Event;
-use tokio::sync::{broadcast, Mutex, MutexGuard};
+use routedroid_ipc::fault::{Fault, Kind, Result};
+use routedroid_ipc::{SessionInfo, StartRequest};
 
+use self::context::SessionContext;
+use self::events::EventBus;
+use self::sessions::Sessions;
 use crate::adb::Adb;
+pub use api::Api;
 pub use session::SessionHandle;
 
 pub struct Daemon {
     adb: Adb,
-    helper_socket: PathBuf,
-    sessions: Mutex<HashMap<String, SessionHandle>>,
-    events: broadcast::Sender<Event>,
+    helper_socket: Arc<PathBuf>,
+    sessions: Sessions,
+    events: EventBus,
 }
 
 impl Daemon {
     pub fn new(adb: Adb, helper_socket: PathBuf) -> Arc<Self> {
-        let (events, _) = broadcast::channel(256);
-        Arc::new(Self { adb, helper_socket, sessions: Mutex::new(HashMap::new()), events })
+        Arc::new(Self {
+            adb,
+            helper_socket: Arc::new(helper_socket),
+            sessions: Sessions::default(),
+            events: EventBus::new(),
+        })
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<Event> {
-        self.events.subscribe()
+    /// The handle clients are served through.
+    pub fn api(self: &Arc<Self>) -> Api {
+        Api::new(self.clone())
     }
 
-    pub fn publish(&self, event: Event) {
-        // No subscribers is not an error.
-        let _ = self.events.send(event);
+    fn context(&self) -> SessionContext {
+        SessionContext {
+            adb: self.adb.clone(),
+            helper_socket: self.helper_socket.clone(),
+            events: self.events.clone(),
+            sessions: self.sessions.clone(),
+        }
     }
 
-    /// The live sessions. Private on purpose: callers outside this module
-    /// ask for what they need (`status`, `start`, `stop`) instead of
-    /// reaching into the map — and cannot hold the lock across an await.
-    async fn sessions(&self) -> MutexGuard<'_, HashMap<String, SessionHandle>> {
-        self.sessions.lock().await
+    pub async fn status(&self) -> Vec<SessionInfo> {
+        self.sessions.info().await
+    }
+
+    /// Start a session on `request.serial`. Returns once the session task is
+    /// running; its progress arrives as events.
+    pub async fn start(&self, request: StartRequest) -> Result<()> {
+        // Policy first, so a bad request never touches the session table.
+        crate::device::Transport::check(&request.serial, request.allow_network_adb)?;
+        let context = self.context();
+        let spawn_request = request.clone();
+        self.sessions.start(&request, move |tun| SessionHandle::spawn(context, spawn_request, tun)).await
+    }
+
+    /// Ask a session to stop and wait for its outcome. The handle stays in
+    /// the table (state `Stopping`) until its task has torn everything down,
+    /// so a concurrent `start` on the serial is refused.
+    pub async fn stop(&self, serial: &str) -> Result<()> {
+        let (stop, state) = self
+            .sessions
+            .stop_target(serial)
+            .await
+            .ok_or_else(|| Fault::msg(Kind::Usage, format!("no session on {serial}")))?;
+        match SessionHandle::stop_and_wait_on(&stop, state).await {
+            Some(outcome) if outcome.ok => Ok(()),
+            Some(outcome) => Err(Fault::msg(outcome.kind.unwrap_or(Kind::Internal), outcome.message)),
+            None => Err(Fault::msg(
+                Kind::Internal,
+                format!("session on {serial} is still stopping; watch for its ended event"),
+            )),
+        }
     }
 
     /// Stop every session and wait for each to end (daemon shutdown).
     pub async fn stop_all(&self) {
-        self.publish(Event::Shutdown);
-        let handles: Vec<SessionHandle> = self.sessions().await.drain().map(|(_, handle)| handle).collect();
+        self.events.publish(routedroid_ipc::Event::Shutdown);
         let mut stopping = tokio::task::JoinSet::new();
-        for handle in handles {
+        for handle in self.sessions.take_all().await {
             stopping.spawn(async move { handle.stop_and_wait().await });
         }
         while stopping.join_next().await.is_some() {}

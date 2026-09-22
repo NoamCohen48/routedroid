@@ -14,7 +14,7 @@ use tracing::{info, warn};
 
 use self::connection::Connection;
 use crate::adb::{Adb, DEFAULT_TIMEOUT};
-use crate::daemon::Daemon;
+use crate::daemon::{Api, Daemon};
 use crate::Args;
 
 /// The control socket and the daemon behind it: owns both for the process's
@@ -23,6 +23,7 @@ pub struct Server {
     listener: UnixListener,
     path: PathBuf,
     daemon: Arc<Daemon>,
+    api: Api,
 }
 
 pub async fn serve(args: Args) -> Result<()> {
@@ -34,7 +35,8 @@ impl Server {
         let listener = bind::listen(&args.socket).await?;
         let daemon = Daemon::new(Adb::new(&args.adb, DEFAULT_TIMEOUT), args.helper_socket.clone());
         info!(socket = %args.socket.display(), "routedroidd ready");
-        Ok(Self { listener, path: args.socket, daemon })
+        let api = daemon.api();
+        Ok(Self { listener, path: args.socket, daemon, api })
     }
 
     /// Accept until a signal, then stop every session before returning.
@@ -74,7 +76,7 @@ impl Server {
                 return;
             }
         }
-        tokio::spawn(Connection::new(self.daemon.clone(), stream).run());
+        tokio::spawn(Connection::new(self.api.clone(), stream).run());
     }
 
     /// Unlink first so new clients get "unreachable", not a silent backlog;

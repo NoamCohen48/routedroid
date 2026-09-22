@@ -18,12 +18,12 @@ impl Daemon {
     /// Every device adb knows about, with this daemon's session state on it.
     pub async fn devices(&self) -> Result<Vec<DeviceInfo>> {
         let devices = self.adb.devices().await?;
-        let sessions = self.sessions().await;
+        let sessions = self.sessions.states().await;
         Ok(devices
             .into_iter()
             .map(|device| DeviceInfo {
                 unusable_reason: unusable(&device.state, &device.serial).map(str::to_string),
-                session: sessions.get(&device.serial).map(|session| session.state()),
+                session: sessions.get(&device.serial).cloned(),
                 state: match &device.state {
                     DeviceState::Other(other) => other.clone(),
                     state => format!("{state:?}").to_lowercase(),
@@ -40,7 +40,7 @@ impl Daemon {
         loop {
             if let Ok(now) = self.devices().await {
                 if last.as_ref() != Some(&now) {
-                    self.publish(Event::Devices { devices: now.clone() });
+                    self.events.publish(Event::Devices { devices: now.clone() });
                     last = Some(now);
                 }
             }
@@ -52,19 +52,12 @@ impl Daemon {
     pub async fn watch_traffic(self: Arc<Self>) {
         loop {
             tokio::time::sleep(TRAFFIC_TICK).await;
-            let events: Vec<Event> = self
-                .sessions()
-                .await
-                .values()
-                .filter(|session| session.state() == SessionState::Active)
-                .map(|session| Event::Traffic {
-                    serial: session.serial.clone(),
-                    packets_to_phone: session.counters.packets_to_phone(),
-                    packets_from_phone: session.counters.packets_from_phone(),
-                })
-                .collect();
-            for event in events {
-                self.publish(event);
+            for session in self.sessions.info().await.into_iter().filter(|s| s.state == SessionState::Active) {
+                self.events.publish(Event::Traffic {
+                    serial: session.serial,
+                    packets_to_phone: session.packets_to_phone,
+                    packets_from_phone: session.packets_from_phone,
+                });
             }
         }
     }

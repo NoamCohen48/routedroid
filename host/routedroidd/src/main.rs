@@ -43,6 +43,7 @@ fn main() {
     logging::init(&args.log);
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
     let code = match rt.block_on(server::serve(args)) {
+        // FIX: this should probably be init server and then call server on it. if you disagree let me know.
         Ok(()) => 0,
         Err(e) => {
             tracing::error!("{e:#}");

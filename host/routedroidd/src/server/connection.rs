@@ -1,8 +1,6 @@
 //! One client connection: JSON lines in, responses (and, after `subscribe`,
 //! events) out. Requests are handled one at a time per connection.
 
-use std::sync::Arc;
-
 use futures_util::StreamExt;
 use routedroid_ipc::wire::{ClientMessage, ServerMessage, MAX_LINE};
 use routedroid_ipc::{Event, Request};
@@ -13,14 +11,14 @@ use tokio::sync::{broadcast, mpsc};
 use tokio_util::codec::{FramedRead, LinesCodec};
 use tracing::{debug, warn};
 
-use crate::daemon::Daemon;
+use crate::daemon::Api;
 
 /// Outbound lines are queued to a writer task, so a slow client blocks its
 /// own connection and never the daemon.
 const WRITE_QUEUE: usize = 64;
 
 pub struct Connection {
-    daemon: Arc<Daemon>,
+    api: Api,
     lines: FramedRead<OwnedReadHalf, LinesCodec>,
     out: mpsc::Sender<String>,
     writer: tokio::task::JoinHandle<()>,
@@ -28,7 +26,7 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn new(daemon: Arc<Daemon>, stream: UnixStream) -> Self {
+    pub fn new(api: Api, stream: UnixStream) -> Self {
         let (read_half, mut write_half) = stream.into_split();
         // The codec refuses a line over MAX_LINE while it is being read, so a
         // client cannot make the daemon buffer an unbounded line.
@@ -42,7 +40,7 @@ impl Connection {
                 }
             }
         });
-        Self { daemon, lines, out, writer, events: None }
+        Self { api, lines, out, writer, events: None }
     }
 
     pub async fn run(mut self) {
@@ -78,9 +76,9 @@ impl Connection {
         };
         debug!(id = message.id, request = ?message.request, "request");
         if matches!(message.request, Request::Subscribe) && self.events.is_none() {
-            self.events = Some(self.daemon.subscribe());
+            self.events = Some(self.api.subscribe());
         }
-        let response = self.daemon.handle(message.request).await;
+        let response = self.api.request(message.request).await;
         self.send(ServerMessage::Response { id: message.id, response }).await
     }
 

@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime};
 use routedroid_ipc::{Event, Outcome, SessionInfo, SessionState, StartRequest};
 use tokio::sync::watch;
 
-use super::Daemon;
+use super::context::SessionContext;
 use crate::session::Counters;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -32,7 +32,7 @@ pub struct SessionHandle {
 /// Publishes state changes to the handle's watch and to the event bus.
 pub(super) struct StateSink {
     serial: String,
-    daemon: Arc<Daemon>,
+    events: super::events::EventBus,
     tx: watch::Sender<SessionState>,
 }
 
@@ -40,7 +40,7 @@ impl StateSink {
     pub fn set(&self, state: SessionState) {
         tracing::info!(serial = %self.serial, ?state, "session state");
         let _ = self.tx.send(state.clone());
-        self.daemon.publish(Event::Session { serial: self.serial.clone(), state });
+        self.events.publish(Event::Session { serial: self.serial.clone(), state });
     }
 }
 
@@ -48,13 +48,13 @@ impl SessionHandle {
     /// Spawn the session task. The handle is live immediately in state
     /// `Starting`; failures surface as `Ended` with a non-ok outcome. The task
     /// is never aborted: teardown (adb, helper) must always run to the end.
-    pub fn spawn(daemon: Arc<Daemon>, req: StartRequest, tun: String) -> Self {
+    pub fn spawn(context: SessionContext, req: StartRequest, tun: String) -> Self {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         let (state_tx, state) = watch::channel(SessionState::Starting);
         let (stop, stop_rx) = watch::channel(false);
         let stop = Arc::new(stop);
         let counters = Arc::new(Counters::default());
-        let sink = StateSink { serial: req.serial.clone(), daemon: daemon.clone(), tx: state_tx };
+        let sink = StateSink { serial: req.serial.clone(), events: context.events.clone(), tx: state_tx };
         let serial = req.serial.clone();
         let handle_serial = serial.clone();
         let lan_if = req.lan_if.clone();
@@ -63,21 +63,20 @@ impl SessionHandle {
         let task_tun = tun.clone();
         tokio::spawn(async move {
             sink.set(SessionState::Starting);
-            let run = super::run::SessionRun::new(&daemon, req, task_tun, task_counters, &sink);
+            let run = super::run::SessionRun::new(&context, req, task_tun, task_counters, &sink);
             let outcome = run.run(stop_rx).await;
-            // Leave the map before announcing the end, so a client reacting
-            // to `Ended` with a new `start` finds the serial free. Only our
-            // own entry: daemon shutdown may have drained the map already.
-            {
-                let mut sessions = daemon.sessions().await;
-                if sessions.get(&serial).is_some_and(|handle| handle.id == id) {
-                    sessions.remove(&serial);
-                }
-            }
+            // Leave the table before announcing the end, so a client reacting
+            // to `Ended` with a new `start` finds the serial free.
+            context.sessions.remove(&serial, id).await;
             sink.set(SessionState::Ended(outcome));
         });
         let started_at = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         Self { id, serial: handle_serial, lan_if, phone_ip, tun, started_at, counters, state, stop }
+    }
+
+    /// Distinguishes this handle from a later session on the same serial.
+    pub(super) fn id(&self) -> u64 {
+        self.id
     }
 
     pub fn state(&self) -> SessionState {

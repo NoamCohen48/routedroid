@@ -13,8 +13,8 @@ use routedroid_proto::frame::DEFAULT_MTU;
 use tokio::sync::watch;
 use tracing::info;
 
+use super::context::SessionContext;
 use super::session::StateSink;
-use super::Daemon;
 use crate::app_listener::AppListener;
 use crate::device::{DeviceSession, Transport};
 use crate::host_network::HostNetwork;
@@ -25,7 +25,7 @@ const HELPER_START_TIMEOUT: Duration = Duration::from_secs(15);
 /// Everything one session needs for its whole life, in one place: the
 /// session task owns it and drops it when the session is over.
 pub(super) struct SessionRun<'a> {
-    daemon: &'a Daemon,
+    context: &'a SessionContext,
     request: StartRequest,
     tun: String,
     counters: Arc<Counters>,
@@ -34,13 +34,13 @@ pub(super) struct SessionRun<'a> {
 
 impl<'a> SessionRun<'a> {
     pub fn new(
-        daemon: &'a Daemon,
+        context: &'a SessionContext,
         request: StartRequest,
         tun: String,
         counters: Arc<Counters>,
         sink: &'a StateSink,
     ) -> Self {
-        Self { daemon, request, tun, counters, sink }
+        Self { context, request, tun, counters, sink }
     }
 
     /// Run the session to its end; every failure becomes a failed outcome.
@@ -67,12 +67,18 @@ impl<'a> SessionRun<'a> {
     async fn connect(&self, stop_rx: watch::Receiver<bool>) -> Result<&'static str> {
         Transport::check(&self.request.serial, self.request.allow_network_adb)?;
         let mtu = self.mtu()?;
-        let adb = self.daemon.adb.device(&self.request.serial);
+        let adb = self.context.adb.device(&self.request.serial);
         let listener = AppListener::bind().await?;
 
         let mut network = tokio::time::timeout(
             HELPER_START_TIMEOUT,
-            HostNetwork::start(&self.daemon.helper_socket, &self.request.lan_if, self.request.phone_ip, &self.tun, mtu),
+            HostNetwork::start(
+                &self.context.helper_socket,
+                &self.request.lan_if,
+                self.request.phone_ip,
+                &self.tun,
+                mtu,
+            ),
         )
         .await
         .map_err(|_| {
