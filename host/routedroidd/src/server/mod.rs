@@ -26,10 +26,6 @@ pub struct Server {
     api: Api,
 }
 
-pub async fn serve(args: Args) -> Result<()> {
-    Server::bind(args).await?.run().await
-}
-
 impl Server {
     pub async fn bind(args: Args) -> Result<Self> {
         let listener = bind::listen(&args.socket).await?;

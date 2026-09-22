@@ -18,6 +18,8 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
+use crate::server::Server;
+
 #[derive(Debug, Parser)]
 #[command(
     name = "routedroidd",
@@ -42,8 +44,9 @@ fn main() {
     let args = Args::parse();
     logging::init(&args.log);
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
-    let code = match rt.block_on(server::serve(args)) {
-        // FIX: this should probably be init server and then call server on it. if you disagree let me know.
+    // Bind first: a socket we cannot take (another daemon on it, a shared
+    // directory) must fail before anything else starts.
+    let code = match rt.block_on(async { Server::bind(args).await?.run().await }) {
         Ok(()) => 0,
         Err(e) => {
             tracing::error!("{e:#}");
