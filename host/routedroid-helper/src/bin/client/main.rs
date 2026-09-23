@@ -3,7 +3,9 @@
 //! chosen moments, and stops cleanly otherwise. Built only with `--features
 //! testing`; routedroidd is the real controller.
 
+mod bench;
 mod icmp;
+mod link;
 mod run;
 
 use std::net::Ipv4Addr;
@@ -12,7 +14,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use clap::Parser;
-use routedroid_helper_ipc::proto::DEFAULT_SOCKET;
+use routedroid_helper_ipc::{IfName, DEFAULT_SOCKET};
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
@@ -20,11 +22,11 @@ struct Cli {
     #[arg(long, default_value = DEFAULT_SOCKET)]
     socket: PathBuf,
     #[arg(long)]
-    lan_if: String,
+    lan_if: IfName,
     #[arg(long)]
     phone_ip: Ipv4Addr,
     #[arg(long, default_value = "phone0")]
-    tun: String,
+    tun: IfName,
     #[arg(long, default_value_t = 1400)]
     mtu: u32,
     /// Seconds to keep the session up before stopping.

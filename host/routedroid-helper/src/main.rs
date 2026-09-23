@@ -14,13 +14,11 @@ mod serve;
 mod session;
 mod tun;
 
-use routedroid_helper_ipc::proto;
-use routedroid_helper_ipc::seqpacket;
-
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use routedroid_helper_ipc::Activation;
 
 use crate::fault::CrashHook;
 
@@ -87,14 +85,10 @@ fn main() -> Result<()> {
     let hook = cli.hook();
     match cli.cmd {
         Cmd::Serve { socket, allow_uid, once } => {
-            let rt = tokio::runtime::Runtime::new()?;
-            rt.block_on(serve::serve(serve::ServeConfig {
-                socket,
-                journal_dir: cli.journal_dir,
-                hook,
-                allow_uid,
-                once,
-            }))
+            // Before the runtime starts its threads: this edits the environment.
+            let activation = Activation::take().context("socket activation")?;
+            let config = serve::ServeConfig { socket, journal_dir: cli.journal_dir, hook, allow_uid, once };
+            tokio::runtime::Runtime::new()?.block_on(serve::serve(config, activation))
         }
         Cmd::Check => recovery::check(&cli.journal_dir),
         Cmd::Cleanup => recovery::cleanup(&cli.journal_dir, &hook),

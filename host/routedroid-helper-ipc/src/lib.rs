@@ -1,5 +1,22 @@
-//! IPC between the unprivileged controller and the privileged helper
-//! (architecture §5.3). Shared by both binaries so the wire cannot drift.
+//! IPC between routedroidd (the controller) and the privileged helper
+//! (architecture §5.3). Both binaries build on this crate, so the wire is
+//! defined once: one SOCK_SEQPACKET connection per phone, a mandatory
+//! `Hello` version exchange, then typed control messages and raw IPv4
+//! packets (`Datagram`).
 
-pub mod proto;
-pub mod seqpacket;
+mod datagram;
+mod ifname;
+mod message;
+mod seqpacket;
+
+pub use datagram::{Datagram, DecodeError, MAX_DATAGRAM, MAX_PACKET};
+pub use ifname::{IfName, IfNameError};
+pub use message::{ErrorCode, Reply, Request};
+pub use seqpacket::{Activated, Activation, Listener, SeqPacket};
+
+/// Bumped on any incompatible change to [`Request`], [`Reply`] or the
+/// datagram layout. The helper refuses a controller that says otherwise.
+pub const VERSION: u32 = 1;
+
+/// Where the systemd socket unit listens.
+pub const DEFAULT_SOCKET: &str = "/run/routedroid/helper.sock";

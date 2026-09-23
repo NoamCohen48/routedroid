@@ -6,12 +6,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
+use routedroid_helper_ipc::{Activated, Activation, Listener, SeqPacket};
 use tracing::{info, warn};
 
 use crate::connection;
 use crate::fault::CrashHook;
 use crate::recovery;
-use crate::seqpacket::{Activated, Listener, SeqPacket};
 
 pub struct ServeConfig {
     pub socket: Option<PathBuf>,
@@ -22,11 +22,11 @@ pub struct ServeConfig {
     pub once: bool,
 }
 
-pub async fn serve(cfg: ServeConfig) -> Result<()> {
+pub async fn serve(cfg: ServeConfig, activation: Option<Activation>) -> Result<()> {
     recovery::check(&cfg.journal_dir).context("refusing to start")?;
     let cfg = Arc::new(cfg);
 
-    let listener = match Activated::from_systemd()? {
+    let listener = match activation.map(Activation::register).transpose()? {
         Some(Activated::Connection(conn)) => {
             info!("serving one connection from systemd (Accept=yes)");
             return connection::serve(&cfg, admit(&cfg, conn)?).await;
@@ -37,7 +37,7 @@ pub async fn serve(cfg: ServeConfig) -> Result<()> {
         }
         None => {
             let path = cfg.socket.as_deref().context("--socket required without systemd activation")?;
-            let listener = Listener::bind(path)?;
+            let listener = Listener::bind(path).with_context(|| format!("bind {}", path.display()))?;
             info!(path = %path.display(), "listening");
             listener
         }

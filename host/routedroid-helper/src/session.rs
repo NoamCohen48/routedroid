@@ -11,7 +11,6 @@ use tracing::{info, warn};
 use crate::fault::CrashHook;
 use crate::journal::{Journal, Op};
 use crate::ops;
-use crate::proto::valid_ifname;
 use crate::tun::Tun;
 
 pub struct Plan {
@@ -27,7 +26,7 @@ pub struct Plan {
 impl Plan {
     /// Validate the request and derive everything else from the kernel.
     pub fn build(session: &str, lan_if: &str, phone_ip: Ipv4Addr, tun: &str, mtu: u32) -> Result<Self> {
-        if !valid_ifname(lan_if) || !valid_ifname(tun) || lan_if == tun {
+        if !ops::valid_ifname(lan_if) || !ops::valid_ifname(tun) || lan_if == tun {
             bail!("bad interface name");
         }
         if !tun.starts_with("phone") {

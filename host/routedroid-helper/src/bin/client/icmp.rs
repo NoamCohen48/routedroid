@@ -35,3 +35,13 @@ fn checksum(d: &[u8]) -> u16 {
     }
     !(s as u16)
 }
+
+/// Whether `packet` is an echo reply (IPv4, protocol 1, type 0) for `id`.
+pub fn is_echo_reply(packet: &[u8], id: u16) -> bool {
+    let header = usize::from(packet.first().map_or(0, |b| b & 0x0f)) * 4;
+    packet.len() >= header + 8
+        && header >= 20
+        && packet[9] == 1
+        && packet[header] == 0
+        && u16::from_be_bytes([packet[header + 4], packet[header + 5]]) == id
+}

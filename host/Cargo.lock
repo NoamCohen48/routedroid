@@ -1293,11 +1293,11 @@ dependencies = [
 name = "routedroid-helper-ipc"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "rustix",
  "serde",
  "serde_json",
  "socket2",
+ "thiserror 2.0.20",
  "tokio",
 ]
 

@@ -1,80 +1,94 @@
-//! One controller's connection: wait for `Start`, apply the session, relay
-//! packets between the TUN and the controller until `Stop` or disconnect,
-//! then undo the session.
+//! One controller's connection: `Hello`, then wait for `Start`, apply the
+//! session, relay packets between the TUN and the controller until `Stop`
+//! or disconnect, then undo the session.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
+use routedroid_helper_ipc::{Datagram, ErrorCode, Reply, Request, SeqPacket, MAX_DATAGRAM, VERSION};
 use tracing::{info, warn};
 
-use crate::proto::{Reply, Request, KIND_CONTROL, KIND_PACKET, MAX_DATAGRAM, RECV_BUF};
-use crate::seqpacket::SeqPacket;
 use crate::serve::ServeConfig;
 use crate::session::{self, Plan};
 
-async fn send_reply(conn: &SeqPacket, reply: &Reply) -> Result<()> {
-    let mut buf = vec![KIND_CONTROL];
-    buf.extend_from_slice(&serde_json::to_vec(reply)?);
-    conn.send(&buf).await.context("send reply")
+fn error(code: ErrorCode, message: impl Into<String>) -> Reply {
+    Reply::Error { code, message: message.into() }
 }
 
 fn ipv4_ok(p: &[u8]) -> bool {
     p.len() > 20 && p[0] >> 4 == 4 && (p[0] & 15) >= 5 && u16::from_be_bytes([p[2], p[3]]) as usize == p.len()
 }
 
+/// The first datagram must be `Hello` with our version.
+async fn handshake(conn: &SeqPacket, buf: &mut [u8]) -> Result<bool> {
+    let Some(datagram) = conn.recv(buf).await? else { return Ok(false) };
+    match Datagram::<Request>::decode(datagram) {
+        Ok(Datagram::Control(Request::Hello { version })) if version == VERSION => {
+            conn.send_control(&Reply::Hello { version: VERSION }).await?;
+            Ok(true)
+        }
+        Ok(Datagram::Control(Request::Hello { version })) => {
+            let message = format!("controller speaks helper IPC {version}, helper speaks {VERSION}");
+            conn.send_control(&error(ErrorCode::VersionMismatch, message)).await?;
+            Ok(false)
+        }
+        _ => {
+            conn.send_control(&error(ErrorCode::BadRequest, "expected Hello")).await?;
+            Ok(false)
+        }
+    }
+}
+
 pub async fn serve(cfg: &ServeConfig, conn: SeqPacket) -> Result<()> {
     let hook = &cfg.hook;
-    let mut buf = vec![0u8; RECV_BUF];
+    let mut buf = vec![0u8; MAX_DATAGRAM];
+    if !handshake(&conn, &mut buf).await? {
+        info!("controller failed the handshake");
+        return Ok(());
+    }
     // Wait for Start.
     let plan = loop {
-        let n = conn.recv(&mut buf).await?;
-        if n == 0 {
+        let Some(datagram) = conn.recv(&mut buf).await? else {
             info!("controller left before Start");
             return Ok(());
-        }
-        match parse_control(&buf[..n]) {
-            Some(Request::Ping) => send_reply(&conn, &Reply::Pong).await?,
-            Some(Request::Start { lan_if, phone_ip, tun, mtu }) => {
+        };
+        match Datagram::<Request>::decode(datagram) {
+            Ok(Datagram::Control(Request::Ping)) => conn.send_control(&Reply::Pong).await?,
+            Ok(Datagram::Control(Request::Start { lan_if, phone_ip, tun, mtu })) => {
                 let session = format!("s{}-{}", std::process::id(), nanos());
-                match Plan::build(&session, &lan_if, phone_ip, &tun, mtu) {
+                match Plan::build(&session, lan_if.as_str(), phone_ip, tun.as_str(), mtu) {
                     Ok(p) => break p,
-                    Err(e) => {
-                        send_reply(&conn, &Reply::Error { code: "invalid".into(), message: e.to_string() }).await?
-                    }
+                    Err(e) => conn.send_control(&error(ErrorCode::Refused, format!("{e:#}"))).await?,
                 }
             }
-            Some(Request::Stop) => {
-                send_reply(&conn, &Reply::Stopped).await?;
+            Ok(Datagram::Control(Request::Stop)) => {
+                conn.send_control(&Reply::Stopped).await?;
                 return Ok(());
             }
-            None => {
-                send_reply(&conn, &Reply::Error { code: "bad_request".into(), message: "expected control JSON".into() })
-                    .await?
+            Ok(Datagram::Control(Request::Hello { .. }) | Datagram::Packet(_)) => {
+                conn.send_control(&error(ErrorCode::OutOfState, "expected Start")).await?
             }
+            Err(e) => conn.send_control(&error(ErrorCode::BadRequest, e.to_string())).await?,
         }
     };
 
     let active = match session::start(&plan, &cfg.journal_dir, hook) {
         Ok(a) => a,
         Err(e) => {
-            send_reply(&conn, &Reply::Error { code: "start_failed".into(), message: format!("{e:#}") }).await?;
+            conn.send_control(&error(ErrorCode::StartFailed, format!("{e:#}"))).await?;
             bail!("start failed: {e:#}");
         }
     };
-    send_reply(
-        &conn,
-        &Reply::Started {
-            session: plan.session.clone(),
-            tun: plan.tun.clone(),
-            host_ip: plan.host_ip,
-            lan_prefix: plan.lan_prefix,
-        },
-    )
+    conn.send_control(&Reply::Started {
+        session: plan.session.clone(),
+        tun: routedroid_helper_ipc::IfName::new(plan.tun.clone())?,
+        host_ip: plan.host_ip,
+        lan_prefix: plan.lan_prefix,
+    })
     .await?;
     info!(session = %plan.session, tun = %plan.tun, phone = %plan.phone_ip, "session active");
     hook.at("active");
 
     // Relay until Stop or disconnect.
     let mut tun_buf = vec![0u8; plan.mtu as usize + 1];
-    let mut pkt_out = vec![0u8; MAX_DATAGRAM];
     let mut stop_requested = false;
     let mut relayed = (0u64, 0u64);
     loop {
@@ -82,27 +96,22 @@ pub async fn serve(cfg: &ServeConfig, conn: SeqPacket) -> Result<()> {
             r = active.tun.read(&mut tun_buf) => {
                 let n = match r { Ok(n) => n, Err(e) => { warn!(error = %e, "tun read failed"); break; } };
                 if n == 0 || n > plan.mtu as usize || !ipv4_ok(&tun_buf[..n]) { continue; }
-                pkt_out[0] = KIND_PACKET;
-                pkt_out[1..=n].copy_from_slice(&tun_buf[..n]);
-                if conn.send(&pkt_out[..=n]).await.is_err() { break; }
+                if conn.send_packet(&tun_buf[..n]).await.is_err() { break; }
                 relayed.0 += 1;
             }
             r = conn.recv(&mut buf) => {
-                let n = match r { Ok(0) => { info!("controller disconnected"); break; } Ok(n) => n, Err(e) => { warn!(error = %e, "recv failed"); break; } };
-                match buf[0] {
-                    KIND_PACKET => {
-                        let p = &buf[1..n];
+                let datagram = match r { Ok(Some(d)) => d, Ok(None) => { info!("controller disconnected"); break; } Err(e) => { warn!(error = %e, "recv failed"); break; } };
+                match Datagram::<Request>::decode(datagram) {
+                    Ok(Datagram::Packet(p)) => {
                         if p.len() <= plan.mtu as usize && ipv4_ok(p) {
                             if let Err(e) = active.tun.write(p).await { warn!(error = %e, "tun write failed"); break; }
                             relayed.1 += 1;
                         }
                     }
-                    KIND_CONTROL => match parse_control(&buf[..n]) {
-                        Some(Request::Stop) => { stop_requested = true; break; }
-                        Some(Request::Ping) => send_reply(&conn, &Reply::Pong).await?,
-                        _ => send_reply(&conn, &Reply::Error { code: "out_of_state".into(), message: "session active".into() }).await?,
-                    },
-                    _ => {}
+                    Ok(Datagram::Control(Request::Stop)) => { stop_requested = true; break; }
+                    Ok(Datagram::Control(Request::Ping)) => conn.send_control(&Reply::Pong).await?,
+                    Ok(Datagram::Control(_)) => conn.send_control(&error(ErrorCode::OutOfState, "session active")).await?,
+                    Err(e) => conn.send_control(&error(ErrorCode::BadRequest, e.to_string())).await?,
                 }
             }
         }
@@ -110,23 +119,13 @@ pub async fn serve(cfg: &ServeConfig, conn: SeqPacket) -> Result<()> {
     info!(tun_to_controller = relayed.0, controller_to_tun = relayed.1, "relay ended");
     let r = active.stop(hook);
     if stop_requested {
-        let _ = send_reply(
-            &conn,
-            &match &r {
-                Ok(()) => Reply::Stopped,
-                Err(e) => Reply::Error { code: "stop_failed".into(), message: e.to_string() },
-            },
-        )
-        .await;
+        let reply = match &r {
+            Ok(()) => Reply::Stopped,
+            Err(e) => error(ErrorCode::StopFailed, format!("{e:#}")),
+        };
+        let _ = conn.send_control(&reply).await;
     }
     r
-}
-
-fn parse_control(d: &[u8]) -> Option<Request> {
-    if d.first() != Some(&KIND_CONTROL) {
-        return None;
-    }
-    serde_json::from_slice(&d[1..]).ok()
 }
 
 fn nanos() -> u128 {

@@ -1,134 +1,94 @@
-//! Minimal async Unix SOCK_SEQPACKET (tokio has no native type for it).
-//! Message boundaries are preserved by the kernel. Sockets come from
-//! `socket2`; the only raw descriptor handled here is the one systemd
-//! passes to the helper.
+//! Async Unix SOCK_SEQPACKET (tokio has no native type for it). The kernel
+//! keeps message boundaries, so one `send` is one [`Datagram`](crate::Datagram).
 
-use std::io::{self, Read, Write};
-use std::os::fd::{FromRawFd, OwnedFd};
+mod activation;
+mod listener;
+
+use std::io::{self, IoSlice};
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use rustix::net::RecvFlags;
+use serde::Serialize;
 use socket2::{Domain, SockAddr, Socket, Type};
 use tokio::io::unix::AsyncFd;
+
+pub use activation::{Activated, Activation};
+pub use listener::Listener;
+
+use crate::datagram::{encode_control, KIND_PACKET};
+use crate::MAX_PACKET;
 
 pub struct SeqPacket {
     socket: AsyncFd<Socket>,
 }
 
-fn new_socket() -> io::Result<Socket> {
-    // `Socket::new` sets CLOEXEC on Linux.
-    let socket = Socket::new(Domain::UNIX, Type::SEQPACKET, None)?;
-    socket.set_nonblocking(true)?;
-    Ok(socket)
-}
-
 impl SeqPacket {
-    /// Wrap an already-connected SOCK_SEQPACKET socket (e.g. from accept).
-    pub fn from_socket(socket: Socket) -> Result<Self> {
+    /// Wrap a connected socket (from `accept`, `connect` or systemd).
+    fn from_socket(socket: Socket) -> io::Result<Self> {
         socket.set_nonblocking(true)?;
         Ok(Self { socket: AsyncFd::new(socket)? })
     }
 
-    pub async fn connect(path: &Path) -> Result<Self> {
-        let socket = new_socket().context("socket")?;
-        socket.connect(&SockAddr::unix(path)?).with_context(|| format!("connect {}", path.display()))?;
+    /// Connect in blocking mode, so a full backlog waits instead of failing
+    /// with EAGAIN, then switch to non-blocking I/O.
+    pub fn connect(path: &Path) -> io::Result<Self> {
+        // `Socket::new` sets CLOEXEC on Linux.
+        let socket = Socket::new(Domain::UNIX, Type::SEQPACKET, None)?;
+        socket.connect(&SockAddr::unix(path)?)?;
         Self::from_socket(socket)
     }
 
-    pub async fn send(&self, msg: &[u8]) -> io::Result<()> {
+    pub async fn send_control<M: Serialize>(&self, message: &M) -> io::Result<()> {
+        self.send(&[IoSlice::new(&encode_control(message))]).await
+    }
+
+    /// Send one IPv4 packet; the kind byte and the packet go out as one
+    /// datagram without copying the packet.
+    pub async fn send_packet(&self, packet: &[u8]) -> io::Result<()> {
+        if packet.len() > MAX_PACKET {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("{}-byte packet", packet.len())));
+        }
+        self.send(&[IoSlice::new(&[KIND_PACKET]), IoSlice::new(packet)]).await
+    }
+
+    async fn send(&self, parts: &[IoSlice<'_>]) -> io::Result<()> {
+        let total: usize = parts.iter().map(|part| part.len()).sum();
         loop {
             let mut guard = self.socket.writable().await?;
-            match guard.try_io(|inner| inner.get_ref().write(msg)) {
-                Ok(Ok(n)) if n == msg.len() => return Ok(()),
-                Ok(Ok(n)) => return Err(io::Error::other(format!("short seqpacket send {n}/{}", msg.len()))),
+            match guard.try_io(|inner| inner.get_ref().send_vectored(parts)) {
+                Ok(Ok(sent)) if sent == total => return Ok(()),
+                Ok(Ok(sent)) => return Err(io::Error::other(format!("short seqpacket send {sent}/{total}"))),
                 Ok(Err(e)) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Ok(Err(e)) => return Err(e),
-                Err(_) => continue,
+                Err(_would_block) => continue,
             }
         }
     }
 
-    /// Receive one datagram; `Ok(0)` means the peer closed. A datagram that
-    /// fills `buf` completely was (or may have been) truncated and is an
-    /// error, so callers size `buf` one byte above the largest legal datagram
-    /// (`proto::RECV_BUF`).
-    pub async fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-        loop {
+    /// Receive one datagram into `buf`; `None` means the peer closed. A
+    /// datagram longer than `buf` is an error (`MSG_TRUNC` reports its real
+    /// length), never a silently shortened message.
+    pub async fn recv<'b>(&self, buf: &'b mut [u8]) -> io::Result<Option<&'b [u8]>> {
+        let len = loop {
             let mut guard = self.socket.readable().await?;
-            match guard.try_io(|inner| inner.get_ref().read(buf)) {
-                Ok(Ok(n)) if n == buf.len() => {
-                    return Err(io::Error::other(format!("datagram of {n}+ bytes truncated")));
-                }
-                Ok(Ok(n)) => return Ok(n),
+            match guard.try_io(|inner| Ok(rustix::net::recv(inner.get_ref(), &mut *buf, RecvFlags::TRUNC)?)) {
+                Ok(Ok((_, len))) => break len,
                 Ok(Err(e)) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Ok(Err(e)) => return Err(e),
-                Err(_) => continue,
+                Err(_would_block) => continue,
             }
+        };
+        if len > buf.len() {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("{len}-byte datagram truncated")));
         }
+        Ok((len > 0).then(|| &buf[..len]))
     }
 
-    /// Peer credentials (SO_PEERCRED) of a connected socket.
+    /// Peer credentials (SO_PEERCRED) of the connected socket.
     pub fn peer_uid(&self) -> io::Result<u32> {
         Ok(rustix::net::sockopt::socket_peercred(self.socket.get_ref())?.uid.as_raw())
     }
 }
 
-/// What systemd socket activation handed over on fd 3.
-pub enum Activated {
-    /// `Accept=no`: the listening socket; we accept ourselves.
-    Listener(Listener),
-    /// `Accept=yes`: one already-accepted connection; one process per client.
-    Connection(SeqPacket),
-}
-
-impl Activated {
-    pub fn from_systemd() -> Result<Option<Self>> {
-        let pid: u32 = match std::env::var("LISTEN_PID") {
-            Ok(p) => p.parse().unwrap_or(0),
-            Err(_) => return Ok(None),
-        };
-        if pid != std::process::id() {
-            return Ok(None);
-        }
-        let n: u32 = std::env::var("LISTEN_FDS").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
-        if n != 1 {
-            anyhow::bail!("expected exactly one socket from systemd, got {n}");
-        }
-        // SAFETY: fd 3 is handed to us by systemd (sd_listen_fds convention)
-        // and is owned by this process; nothing else wraps it.
-        let socket = Socket::from(unsafe { OwnedFd::from_raw_fd(3) });
-        socket.set_nonblocking(true)?;
-        if rustix::net::sockopt::socket_acceptconn(&socket)? {
-            Ok(Some(Self::Listener(Listener { socket: AsyncFd::new(socket)? })))
-        } else {
-            Ok(Some(Self::Connection(SeqPacket::from_socket(socket)?)))
-        }
-    }
-}
-
-/// Listening socket: from systemd (`Activated`) or bound here.
-pub struct Listener {
-    socket: AsyncFd<Socket>,
-}
-
-impl Listener {
-    pub fn bind(path: &Path) -> Result<Self> {
-        let _ = std::fs::remove_file(path);
-        let socket = new_socket().context("socket")?;
-        socket.bind(&SockAddr::unix(path)?).with_context(|| format!("bind {}", path.display()))?;
-        socket.listen(4).context("listen")?;
-        Ok(Self { socket: AsyncFd::new(socket)? })
-    }
-
-    pub async fn accept(&self) -> Result<SeqPacket> {
-        loop {
-            let mut guard = self.socket.readable().await?;
-            match guard.try_io(|inner| inner.get_ref().accept()) {
-                Ok(Ok((socket, _peer))) => return SeqPacket::from_socket(socket),
-                Ok(Err(e)) if e.kind() == io::ErrorKind::Interrupted => continue,
-                Ok(Err(e)) => return Err(e).context("accept"),
-                Err(_) => continue,
-            }
-        }
-    }
-}
+#[cfg(test)]
+mod tests;
