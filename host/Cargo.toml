@@ -6,9 +6,9 @@ members = [
     "routedroid-ipc",
     "routedroid-tui",
     "routedroid-proto",
-    "helper-ipc",
-    "phase0-dhcp",
-    "phase0-helper",
+    "routedroid-helper-ipc",
+    "routedroid-dhcp",
+    "routedroid-helper",
 ]
 
 [workspace.package]

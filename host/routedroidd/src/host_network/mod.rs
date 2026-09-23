@@ -4,4 +4,5 @@
 
 mod client;
 
-pub use client::{HostNetwork, DEFAULT_SOCKET};
+pub use client::HostNetwork;
+pub use routedroid_helper_ipc::proto::DEFAULT_SOCKET;

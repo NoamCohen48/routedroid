@@ -11,7 +11,7 @@ name = "routedroidd"
 path = "src/main.rs"
 
 [dependencies]
-routedroid-helper-ipc = { path = "../helper-ipc" }
+routedroid-helper-ipc = { path = "../routedroid-helper-ipc" }
 routedroid-ipc = { path = "../routedroid-ipc" }
 routedroid-proto = { path = "../routedroid-proto" }
 anyhow = "1"

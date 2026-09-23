@@ -1,0 +1,33 @@
+[package]
+name = "routedroid-helper"
+version = "0.1.0"
+description = "Routedroid privileged helper: one socket-activated instance per phone connection, write-ahead journal, systemd cleanup, and a SOCK_SEQPACKET packet relay"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Test rigs only: the SIGKILL crash hook and the stand-in controller binary.
+# Never enabled in an installed build.
+testing = []
+
+[[bin]]
+name = "routedroid-helper"
+path = "src/main.rs"
+
+[[bin]]
+name = "routedroid-helper-client"
+path = "src/bin/client/main.rs"
+required-features = ["testing"]
+
+[dependencies]
+routedroid-helper-ipc = { path = "../routedroid-helper-ipc" }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+libc = "0.2"
+rustix = { version = "1", features = ["fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

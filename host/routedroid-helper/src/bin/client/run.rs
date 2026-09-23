@@ -1,0 +1,147 @@
+//! The session script: starts a session, optionally pushes
+//! ICMP echo requests through the relay (the host kernel answers them), can
+//! kill itself at chosen moments, and stops cleanly otherwise.
+
+use std::net::Ipv4Addr;
+use std::path::Path;
+use std::time::{Duration, Instant};
+
+use anyhow::{bail, Context, Result};
+use routedroid_helper_ipc::proto::{Reply, Request, KIND_CONTROL, KIND_PACKET, MAX_DATAGRAM, RECV_BUF};
+use routedroid_helper_ipc::seqpacket::SeqPacket;
+use tracing::{info, warn};
+
+use crate::icmp;
+
+pub struct ClientArgs {
+    pub lan_if: String,
+    pub phone_ip: Ipv4Addr,
+    pub tun: String,
+    pub mtu: u32,
+    pub hold: Duration,
+    pub bench: u32,
+    /// Echo target for `bench`; the host itself when unset.
+    pub bench_target: Option<Ipv4Addr>,
+    pub crash_at: Option<String>,
+    pub no_stop: bool,
+}
+
+fn crash(stage: &str, want: &Option<String>) {
+    if want.as_deref() == Some(stage) {
+        warn!(stage, "client crash hook: SIGKILL self");
+        // SAFETY: signal to our own pid.
+        unsafe { libc::kill(libc::getpid(), libc::SIGKILL) };
+    }
+}
+
+async fn send_control(c: &SeqPacket, req: &Request) -> Result<()> {
+    let mut b = vec![KIND_CONTROL];
+    b.extend_from_slice(&serde_json::to_vec(req)?);
+    c.send(&b).await.context("send")
+}
+
+async fn recv_reply(c: &SeqPacket, buf: &mut [u8]) -> Result<Reply> {
+    loop {
+        let n = c.recv(buf).await?;
+        if n == 0 {
+            bail!("helper closed the connection");
+        }
+        if buf[0] == KIND_CONTROL {
+            return serde_json::from_slice(&buf[1..n]).context("parse reply");
+        }
+    }
+}
+
+pub async fn run(socket: &Path, a: ClientArgs) -> Result<()> {
+    let c = SeqPacket::connect(socket).await?;
+    let mut buf = vec![0u8; RECV_BUF];
+    send_control(&c, &Request::Ping).await?;
+    if recv_reply(&c, &mut buf).await? != Reply::Pong {
+        bail!("no PONG");
+    }
+    crash("before_start", &a.crash_at);
+    send_control(
+        &c,
+        &Request::Start { lan_if: a.lan_if.clone(), phone_ip: a.phone_ip, tun: a.tun.clone(), mtu: a.mtu },
+    )
+    .await?;
+    let (host_ip, tun) = match recv_reply(&c, &mut buf).await? {
+        Reply::Started { session, tun, host_ip, lan_prefix } => {
+            info!(session, tun, %host_ip, lan_prefix, "started");
+            println!("STARTED session={session} tun={tun} host_ip={host_ip}/{lan_prefix}");
+            (host_ip, tun)
+        }
+        Reply::Error { code, message } => bail!("start refused: {code}: {message}"),
+        other => bail!("unexpected {other:?}"),
+    };
+    let _ = tun;
+    crash("after_start", &a.crash_at);
+
+    if a.bench > 0 {
+        // Wait for the kernel to finish bringing the TUN up before timing.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let id = (std::process::id() & 0xffff) as u16;
+        let t0 = Instant::now();
+        let mut replies = 0u32;
+        let deadline = tokio::time::sleep(Duration::from_secs(5 + a.bench as u64 / 2000));
+        tokio::pin!(deadline);
+        let mut sent = 0u32;
+        let mut pkt = vec![0u8; MAX_DATAGRAM];
+        loop {
+            if sent < a.bench {
+                let echo = icmp::echo_request(a.phone_ip, a.bench_target.unwrap_or(host_ip), id, sent as u16);
+                pkt[0] = KIND_PACKET;
+                pkt[1..=echo.len()].copy_from_slice(&echo);
+                c.send(&pkt[..=echo.len()]).await?;
+                sent += 1;
+                if sent == a.bench / 2 {
+                    crash("during_traffic", &a.crash_at);
+                }
+            }
+            tokio::select! {
+                biased;
+                n = c.recv(&mut buf), if replies < a.bench => {
+                    let n = n?;
+                    if n == 0 { bail!("helper closed during bench"); }
+                    if buf[0] == KIND_PACKET && n > 28 && buf[1 + 9] == 1 && buf[1 + 20] == 0 && u16::from_be_bytes([buf[1 + 24], buf[1 + 25]]) == id { replies += 1; }
+                }
+                _ = &mut deadline => break,
+                _ = std::future::ready(()), if sent < a.bench => {}
+            }
+            if replies >= a.bench {
+                break;
+            }
+        }
+        let dt = t0.elapsed();
+        println!(
+            "BENCH sent={sent} replies={replies} elapsed_ms={} rtt_avg_us={}",
+            dt.as_millis(),
+            if replies > 0 { dt.as_micros() / replies as u128 } else { 0 }
+        );
+        if replies < a.bench {
+            bail!("bench: {replies}/{} echo replies", a.bench);
+        }
+    }
+
+    if !a.hold.is_zero() {
+        info!(secs = a.hold.as_secs(), "holding session (Ctrl-C stops early)");
+        tokio::select! {
+            _ = tokio::time::sleep(a.hold) => {}
+            _ = tokio::signal::ctrl_c() => info!("interrupted; stopping"),
+        }
+    }
+    crash("before_stop", &a.crash_at);
+    if a.no_stop {
+        println!("DISCONNECTING without Stop");
+        return Ok(());
+    }
+    send_control(&c, &Request::Stop).await?;
+    match recv_reply(&c, &mut buf).await? {
+        Reply::Stopped => {
+            println!("STOPPED");
+            Ok(())
+        }
+        Reply::Error { code, message } => bail!("stop failed: {code}: {message}"),
+        other => bail!("unexpected {other:?}"),
+    }
+}
