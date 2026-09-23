@@ -1024,25 +1024,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "phase0-tunnel"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "clap",
- "getrandom 0.2.17",
- "hex",
- "hmac",
- "libc",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "zeroize",
-]
-
-[[package]]
 name = "phf"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

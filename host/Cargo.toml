@@ -7,7 +7,6 @@ members = [
     "routedroid-tui",
     "routedroid-proto",
     "helper-ipc",
-    "phase0-tunnel",
     "phase0-dhcp",
     "phase0-helper",
 ]
