@@ -10,6 +10,8 @@ use crate::icmp;
 use crate::link::{Incoming, Link};
 use crate::run::ClientArgs;
 
+const WINDOW: u32 = 64;
+
 /// Returns the number of echo replies seen before the deadline.
 pub async fn run(link: &mut Link, args: &ClientArgs, target: Ipv4Addr) -> Result<u32> {
     // Let the kernel finish bringing the TUN up before timing.
@@ -19,15 +21,16 @@ pub async fn run(link: &mut Link, args: &ClientArgs, target: Ipv4Addr) -> Result
     tokio::pin!(deadline);
     let started = Instant::now();
     let (mut sent, mut replies) = (0u32, 0u32);
+    // At most WINDOW requests in flight: the helper drops replies it cannot
+    // queue towards us, so an unbounded burst would measure its queue, not
+    // the relay. A lost reply keeps its slot; the deadline ends the run.
     while replies < args.bench {
-        if sent < args.bench {
+        if sent < args.bench && sent - replies < WINDOW {
             link.send_packet(&icmp::echo_request(args.phone_ip, target, id, sent as u16)).await?;
             sent += 1;
             if sent == args.bench / 2 {
                 args.crash("during_traffic");
             }
-            // Keep sending until everything is out, reading only what is already there.
-            tokio::task::yield_now().await;
             continue;
         }
         tokio::select! {

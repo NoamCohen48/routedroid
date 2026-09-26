@@ -1,18 +1,8 @@
 //! Routedroid privileged helper (architecture §5.3): owns the phone's TUN,
-//! its /32 route, proxy ARP and the per-connection firewall, journals every
-//! mutation before making it, and undoes everything when the controller
-//! stops, disconnects or dies. systemd runs `check` before and `cleanup`
-//! after every instance.
-
-mod claims;
-mod connection;
-mod fault;
-mod journal;
-mod ops;
-mod recovery;
-mod serve;
-mod session;
-mod tun;
+//! its /32 route, proxy ARP and the per-connection firewall, within the
+//! bounds of the operator's policy file. Every mutation is journaled before
+//! it is made and undone when the controller stops, disconnects or dies.
+//! `cleanup` runs after every instance (systemd `ExecStopPost`).
 
 use std::path::PathBuf;
 
@@ -20,18 +10,36 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use routedroid_helper_ipc::Activation;
 
+use crate::env::{Env, DEFAULT_STATE_DIR};
 use crate::fault::CrashHook;
+use crate::kernel::System;
 
-pub const DEFAULT_JOURNAL: &str = "/var/lib/routedroid/journal";
+mod claims;
+mod connection;
+mod env;
+mod fault;
+mod journal;
+mod kernel;
+mod op;
+mod plan;
+mod policy;
+mod recovery;
+mod serve;
+mod session;
+mod session_id;
+mod storage;
+#[cfg(test)]
+mod test_util;
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
 struct Cli {
-    #[arg(long, default_value = DEFAULT_JOURNAL, global = true)]
-    journal_dir: PathBuf,
-    /// Where sysctl baselines shared between sessions are reference-counted.
-    #[arg(long, default_value = claims::DEFAULT_DIR, global = true)]
-    claims_dir: PathBuf,
+    /// Journals (`journal/`) and shared sysctl claims (`sysctl/`).
+    #[arg(long, default_value = DEFAULT_STATE_DIR, global = true)]
+    state_dir: PathBuf,
+    /// Which interfaces and phone addresses the operator allows.
+    #[arg(long, default_value = policy::DEFAULT_PATH, global = true)]
+    policy: PathBuf,
     /// Test hook file: if its content equals a stage name, the helper SIGKILLs itself there.
     #[cfg(feature = "testing")]
     #[arg(long, default_value = fault::DEFAULT_CRASH_FILE, global = true)]
@@ -53,9 +61,9 @@ enum Cmd {
         #[arg(long)]
         allow_uid: Option<u32>,
     },
-    /// ExecStartPre: exit 1 while any unresolved journal exists.
+    /// Exit 1 while any orphaned or unreadable journal exists.
     Check,
-    /// ExecStopPost: replay unresolved journals; exit 1 if anything remains.
+    /// Undo every orphaned session; exit 1 if anything remains.
     Cleanup,
 }
 
@@ -81,16 +89,16 @@ fn main() -> Result<()> {
         .with_writer(std::io::stderr)
         .init();
     let cli = Cli::parse();
-    claims::init(cli.claims_dir.clone());
     let hook = cli.hook();
-    match cli.cmd {
-        Cmd::Serve { socket, allow_uid, once } => {
+    let env = || -> Result<Env<System>> { Ok(Env::new(System::new()?, &cli.state_dir, cli.policy.clone(), hook)) };
+    match &cli.cmd {
+        Cmd::Serve { socket, once, allow_uid } => {
             // Before the runtime starts its threads: this edits the environment.
             let activation = Activation::take().context("socket activation")?;
-            let config = serve::ServeConfig { socket, journal_dir: cli.journal_dir, hook, allow_uid, once };
-            tokio::runtime::Runtime::new()?.block_on(serve::serve(config, activation))
+            let options = serve::Options { socket: socket.clone(), allow_uid: *allow_uid, once: *once };
+            tokio::runtime::Runtime::new()?.block_on(serve::serve(env()?, options, activation))
         }
-        Cmd::Check => recovery::check(&cli.journal_dir),
-        Cmd::Cleanup => recovery::cleanup(&cli.journal_dir, &hook),
+        Cmd::Check => recovery::check(&cli.state_dir.join("journal")),
+        Cmd::Cleanup => recovery::cleanup(&env()?),
     }
 }

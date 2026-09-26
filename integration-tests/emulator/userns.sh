@@ -24,7 +24,8 @@ unshare -Urn --propagation unchanged sh -c 'ip link set lo up; exec sleep infini
 NSPID=$!; sleep 0.5
 NS="nsenter -t $NSPID -U -n --preserve-credentials"
 $NS ip link add lan0 type dummy; $NS ip addr add $HOST_IP/24 dev lan0; $NS ip link set lan0 up
-$NS "$H/routedroid-helper" --journal-dir "$S/journal" --claims-dir "$S/claims" serve --socket "$S/helper.sock" > "$S/helper.log" 2>&1 &
+printf '[[interface]]\nname = "lan0"\nphone_addresses = ["%s/32"]\n' $PHONE_IP > "$S/helper.toml"
+$NS "$H/routedroid-helper" --state-dir "$S/state" --policy "$S/helper.toml" serve --socket "$S/helper.sock" > "$S/helper.log" 2>&1 &
 HPID=$!
 for _ in $(seq 1 30); do [[ -S $S/helper.sock ]] && break; sleep 0.1; done
 "$H/routedroidd" --log debug --socket "$S/control.sock" --helper-socket "$S/helper.sock" > "$S/daemon.log" 2>&1 &

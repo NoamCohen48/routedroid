@@ -5,6 +5,7 @@
 #   ./kill-matrix.sh userns              # no root: lab netns, helper run directly,
 #                                        #   cleanup invoked the way ExecStopPost would
 #   sudo ./kill-matrix.sh systemd LAN_IF PHONE_IP   # real units on the real host netns
+#                                        #   (/etc/routedroid/helper.toml must allow both)
 #
 # For every crash stage the helper (or client) is SIGKILLed there, cleanup runs,
 # and route / nft / sysctl / link state is compared with the baseline snapshot.
@@ -26,10 +27,12 @@ if [[ $MODE == userns ]]; then
     NSPID=$!; sleep 0.5
     NS="nsenter -t $NSPID -U -n --preserve-credentials"
     $NS ip link add $LAN_IF type dummy; $NS ip addr add 10.90.0.1/24 dev $LAN_IF; $NS ip link set $LAN_IF up
-    JOURNAL=$S/journal; SOCK=$S/helper.sock; CRASH=$S/crash-at
-    HELPER="$NS $BIN --journal-dir $JOURNAL --claims-dir $S/claims --crash-file $CRASH"
+    SOCK=$S/helper.sock; CRASH=$S/crash-at
+    printf '[[interface]]\nname = "%s"\nphone_addresses = ["%s/32"]\n' $LAN_IF $PHONE_IP > "$S/helper.toml"
+    HELPER="$NS $BIN --state-dir $S/state --policy $S/helper.toml --crash-file $CRASH"
     SUDO=""
-    start_helper() { $HELPER serve --once --socket "$SOCK" > "$S/helper-$1.log" 2>&1 & HPID=$!; for _ in $(seq 1 30); do [[ -S $SOCK ]] && break; sleep 0.1; done; }
+    # A killed helper leaves its socket file; wait for the new one, not that.
+    start_helper() { rm -f "$SOCK"; $HELPER serve --once --socket "$SOCK" > "$S/helper-$1.log" 2>&1 & HPID=$!; for _ in $(seq 1 30); do [[ -S $SOCK ]] && break; sleep 0.1; done; }
     wait_helper_exit() { for _ in $(seq 1 100); do kill -0 "$HPID" 2>/dev/null || break; sleep 0.1; done; ! kill -0 "$HPID" 2>/dev/null; }
     run_cleanup() { $HELPER cleanup >> "$S/cleanup-$1.log" 2>&1; }
     run_check() { $HELPER check >/dev/null 2>&1; }
@@ -42,10 +45,10 @@ else
     [[ $EUID -eq 0 ]] || { echo "systemd mode needs root"; exit 2; }
     LAN_IF=${2:?lan if}; PHONE_IP=${3:?phone ip}
     UNIT=routedroid-helper
-    JOURNAL=/var/lib/routedroid/journal; SOCK=/run/routedroid/helper.sock; CRASH=/run/routedroid/crash-at
+    SOCK=/run/routedroid/helper.sock; CRASH=/run/routedroid/crash-at
     CLIENT_USER=${SUDO_USER:-$USER}
     systemctl is-active --quiet $UNIT.socket || { echo "$UNIT.socket not active; run host/routedroid-helper/install.sh"; exit 2; }
-    HELPER="$BIN --journal-dir $JOURNAL --crash-file $CRASH"
+    HELPER="$BIN --crash-file $CRASH"
     NS=""
     start_helper() { systemctl reset-failed $UNIT.service $UNIT.socket 2>/dev/null || true; :; }   # socket activation starts it on connect
     # "deactivating" still counts as running: ExecStopPost=cleanup is in flight.
@@ -125,18 +128,18 @@ for stage in "${STAGES[@]}"; do
     check "baseline restored"                     baseline_ok "$tag"
     check "tun gone"                              tun_absent
     if [[ $stage == active || $stage == undo* || $stage == done:route* ]]; then
-        check "client saw the helper vanish"     bash -c "grep -qE 'helper closed|STARTED' '$S/client-$tag.log'"
+        check "client saw the helper vanish"     grep -q 'helper closed' "$S/client-$tag.log"
     fi
 done
 
-# ---------------------------------------- check blocks a start while unresolved
-log "check refuses to start while a journal is unresolved"
+# ------------------------------------ an unresolved journal until serve starts
+log "check fails while a journal is unresolved; the next serve cleans it up"
 echo "applied:route:$PHONE_IP/32@$TUN" > "$CRASH"; [[ $MODE == systemd ]] && chmod 600 "$CRASH"
 start_helper blocked; client blocked --hold 1 || true; wait_helper_exit || true; rm -f "$CRASH"
 if [[ $MODE == userns ]]; then
     check "check fails before cleanup"           bash -c "! $HELPER check >/dev/null 2>&1"
-    check "serve refuses before cleanup"         bash -c "! $HELPER serve --socket '$SOCK' >/dev/null 2>&1"
-    run_cleanup blocked
+    start_helper recovered; kill -TERM "$HPID"
+    check "serve cleaned up and stopped"         wait_helper_exit
 fi
 check "check passes after cleanup"               run_check
 check "baseline restored"                        baseline_ok blocked

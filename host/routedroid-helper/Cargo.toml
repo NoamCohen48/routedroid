@@ -25,9 +25,14 @@ routedroid-helper-ipc = { path = "../routedroid-helper-ipc" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 libc = "0.2"
-rustix = { version = "1", features = ["fs"] }
+rustix = { version = "1", features = ["fs", "net", "process", "rand"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+netlink-packet-route = "0.33.0"
+netlink-packet-core = "0.9.0"
+netlink-sys = "0.9.0"
+toml = { version = "0.9", default-features = false, features = ["parse", "serde"] }
+routedroid-proto = { version = "0.1.0", path = "../routedroid-proto" }

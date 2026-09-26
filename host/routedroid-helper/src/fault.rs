@@ -32,4 +32,13 @@ impl CrashHook {
 
     #[cfg(not(feature = "testing"))]
     pub fn at(&self, _stage: &str) {}
+
+    /// A hook that never fires, whatever the build.
+    #[cfg(test)]
+    pub fn disabled() -> Self {
+        #[cfg(feature = "testing")]
+        return CrashHook(PathBuf::new());
+        #[cfg(not(feature = "testing"))]
+        return CrashHook;
+    }
 }

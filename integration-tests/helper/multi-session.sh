@@ -24,7 +24,8 @@ unshare -Urn --propagation unchanged sh -c 'ip link set lo up; exec sleep infini
 NSPID=$!; sleep 0.5
 NS="nsenter -t $NSPID -U -n --preserve-credentials"
 $NS ip link add $LAN_IF type dummy; $NS ip addr add $HOST_IP/24 dev $LAN_IF; $NS ip link set $LAN_IF up
-HELPER="$NS $BIN --journal-dir $S/journal --claims-dir $S/claims --crash-file $S/crash-at"
+printf '[[interface]]\nname = "%s"\nphone_addresses = ["10.90.0.0/24"]\n' $LAN_IF > "$S/helper.toml"
+HELPER="$NS $BIN --state-dir $S/state --policy $S/helper.toml --crash-file $S/crash-at"
 $HELPER serve --socket "$S/helper.sock" > "$S/helper.log" 2>&1 &
 HPID=$!
 for _ in $(seq 1 30); do [[ -S $S/helper.sock ]] && break; sleep 0.1; done
@@ -41,7 +42,7 @@ client() { # client NAME TUN PHONE_IP args...
 # Background client whose pid ($!) is the client process itself (nsenter execs it), so it can be signalled.
 client_bg() { local name=$1 tun=$2 ip=$3; shift 3; ( exec $NS "$CLIENT" --socket "$S/helper.sock" --lan-if $LAN_IF --phone-ip "$ip" --tun "$tun" "$@" > "$S/client-$name.log" 2>&1 ) & }
 started() { for _ in $(seq 1 50); do grep -q ^STARTED "$S/client-$1.log" && return 0; sleep 0.1; done; return 1; }
-claim_holders() { python3 -c "import json,sys; print(len(json.load(open(sys.argv[1]))['holders']))" "$S/claims/net.ipv4.conf.$LAN_IF.proxy_arp.json" 2>/dev/null || echo 0; }
+claim_holders() { python3 -c "import json,sys; print(len(json.load(open(sys.argv[1]))['holders']))" "$S/state/sysctl/net.ipv4.conf.$LAN_IF.proxy_arp.json" 2>/dev/null || echo 0; }
 
 echo "== two sessions up"
 client_bg a phone0 $A_IP --hold 60; APID=$!
@@ -61,7 +62,7 @@ check "probe session torn down"    bash -c "! $NS ip link show phone2 >/dev/null
 
 echo "== refusals"
 client dup-tun phone0 10.90.0.10; check "duplicate TUN refused" grep -q "already exists" "$S/client-dup-tun.log"
-client dup-ip phone3 $A_IP;      check "duplicate phone address refused" grep -q "already served" "$S/client-dup-ip.log"
+client dup-ip phone3 $A_IP;      check "duplicate phone address refused" grep -q "already has a host route" "$S/client-dup-ip.log"
 
 echo "== first session ends; shared sysctls stay for the survivor"
 kill -INT $BPID; wait $BPID; check "B stopped cleanly" grep -q ^STOPPED "$S/client-b.log"
@@ -74,8 +75,8 @@ echo "== last session ends; baseline restored"
 kill -INT $APID; wait $APID; check "A stopped cleanly" grep -q ^STOPPED "$S/client-a.log"
 check "proxy_arp restored"         sysctl_is proxy_arp "$BASE_ARP"
 check "forwarding restored"        sysctl_is forwarding "$BASE_FWD"
-check "no claims left"             bash -c "! ls $S/claims/*.json >/dev/null 2>&1"
-check "no journals left"           bash -c "! ls $S/journal/*.journal >/dev/null 2>&1"
+check "no claims left"             bash -c "! ls $S/state/sysctl/*.json >/dev/null 2>&1"
+check "no journals left"           bash -c "! ls $S/state/journal/*.journal >/dev/null 2>&1"
 check "no tables left"             bash -c "! $NS nft list tables | grep -q routedroid_"
 
 echo "== one session's crash leaves the other intact"
