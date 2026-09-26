@@ -13,7 +13,7 @@ use tokio::sync::watch;
 use tracing::info;
 
 use super::run::ConnectionRun;
-use crate::app_listener::AppListener;
+use crate::app_listener::{AppListener, Expected};
 use crate::device::AdbBridge;
 use crate::host_network::HostNetwork;
 use crate::session::{Machine, Progress, SessionConfig, SessionDriver, SessionEnd};
@@ -36,8 +36,9 @@ impl ConnectionRun<'_> {
         let connect_timeout =
             self.request.connect_timeout_secs.map(Duration::from_secs).unwrap_or(DEFAULT_CONNECT_TIMEOUT);
         let host_port = listener.port();
-        let stream = tokio::select! {
-            accepted = listener.accept(connect_timeout) => accepted?,
+        let expected = Expected { session: bridge.session.clone(), device_port: bridge.device_port(), mtu };
+        let app = tokio::select! {
+            accepted = listener.accept(connect_timeout, &expected) => accepted?,
             _ = stop_rx.changed() => return Ok("stopped before the app connected"),
         };
         info!(host_port, device_port = bridge.device_port(), "app connected");
@@ -55,7 +56,7 @@ impl ConnectionRun<'_> {
         };
         let (progress, mut active_rx) = Progress::new(self.counters.clone());
         let machine = Machine::new(config, bridge.host_nonce);
-        let driver = SessionDriver::run(stream, machine, network.relay(), stop_rx, progress);
+        let driver = SessionDriver::run(app.stream, Some(app.hello), machine, network.relay(), stop_rx, progress);
         tokio::pin!(driver);
         // Publish Active the moment the driver flips it; then wait for the end.
         let mut watch_active = true;

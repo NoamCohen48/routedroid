@@ -17,7 +17,7 @@ use tracing::{info, warn};
 use super::downlink;
 use super::progress::Progress;
 use super::timers::{Keepalive, LastRx, PhaseTimer};
-use super::uplink::{reader_task, Inject, Uplink};
+use super::uplink::{reader_task, Inbound, Inject, Uplink};
 use super::writer::{writer_task, QUEUE_DEPTH};
 use super::{Machine, SessionEnd};
 
@@ -51,9 +51,11 @@ pub struct SessionDriver {
 }
 
 impl SessionDriver {
-    /// Drive `machine` over `stream` until either side ends the session.
+    /// Drive `machine` over `stream` until either side ends the session;
+    /// `first` is a frame already read from it (the listener's HELLO).
     pub async fn run(
         stream: TcpStream,
+        first: Option<Frame>,
         machine: Machine,
         packets: PacketEndpoints,
         mut shutdown: watch::Receiver<bool>,
@@ -63,6 +65,9 @@ impl SessionDriver {
         let (out_tx, out_rx) = mpsc::channel::<Frame>(QUEUE_DEPTH);
         let (in_tx, mut in_rx) = mpsc::channel(QUEUE_DEPTH);
         let last_rx = Arc::new(LastRx::new());
+        if let Some(first) = first {
+            in_tx.try_send(Inbound::Frame(first)).expect("an empty queue has room");
+        }
         let uplink = Uplink { inject: packets.inject, counters: progress.counters.clone() };
         let reader = tokio::spawn(reader_task(rd, machine.mtu(), uplink.clone(), last_rx.clone(), in_tx));
         let active_rx = progress.active.subscribe();

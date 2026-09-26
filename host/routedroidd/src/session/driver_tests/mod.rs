@@ -49,7 +49,9 @@ async fn start_with(packets: PacketEndpoints) -> (TcpStream, tokio::task::JoinHa
     let (stream, _) = listener.accept().await.unwrap();
     let (stop_tx, stop_rx) = watch::channel(false);
     let handle = tokio::spawn(async move {
-        SessionDriver::run(stream, Machine::new(cfg(), [0xbb; 32]), packets, stop_rx, Progress::detached()).await.end
+        SessionDriver::run(stream, None, Machine::new(cfg(), [0xbb; 32]), packets, stop_rx, Progress::detached())
+            .await
+            .end
     });
     (peer, handle, stop_tx)
 }

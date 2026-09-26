@@ -6,6 +6,9 @@
 # Unix path, so it crosses the namespace boundary.
 #
 #   userns.sh [SERIAL] [sigint|app|early]   # how the session is ended
+#   SQUAT=N userns.sh ...    # N silent local connections take the app port
+#                            # as soon as it exists (any local user or phone
+#                            # app can); the app must still get through
 #   (early: Ctrl-C as soon as the app is launched; on an emulator with consent
 #   already granted the app usually connects first, so this mostly proves a stop
 #   right after Active with no traffic — a real early stop needs a fresh install)
@@ -40,6 +43,17 @@ trap cleanup EXIT
     --dns $HOST_IP > "$S/host.log" 2>&1 &
 RPID=$!
 
+if [[ ${SQUAT:-0} -gt 0 ]]; then
+    (
+        for _ in $(seq 1 200); do
+            port=$(sed 's/\x1b\[[0-9;]*m//g' "$S/daemon.log" | grep -o 'host_port=[0-9]*' | head -1 | cut -d= -f2)
+            [[ -n $port ]] && break; sleep 0.02
+        done
+        for _ in $(seq 1 "$SQUAT"); do sleep 20 | socat - "TCP4:127.0.0.1:$port" >/dev/null 2>&1 & done
+        wait
+    ) &
+fi
+
 # Tap the notification / VPN consent dialogs if they appear.
 tap_button() { # tap_button TEXT -> 0 if tapped
     adb -s "$SERIAL" shell rm -f /sdcard/ui.xml
@@ -62,6 +76,8 @@ for _ in $(seq 1 40); do
     for txt in Allow OK; do tap_button "$txt" && { echo "tapped $txt"; sleep 1; }; done
 done
 [[ $STOP_MODE == early ]] || check "session Active" grep -q 'session Active' "$S/daemon.log"
+[[ ${SQUAT:-0} -gt 0 ]] && check "app got through past $SQUAT squatters" \
+    bash -c "sed 's/\x1b\[[0-9;]*m//g' '$S/daemon.log' | grep -q 'past other connections others=$SQUAT'"
 
 if [[ $STOP_MODE != early ]] && grep -q 'session Active' "$S/daemon.log"; then
     check "ping PC -> phone" $NS ping -c 3 -W 2 $PHONE_IP
