@@ -42,6 +42,19 @@ async fn an_oversized_datagram_is_an_error_not_a_short_read() {
 }
 
 #[tokio::test]
+async fn a_full_peer_refuses_a_packet_instead_of_blocking() {
+    let (client, server) = pair("full").await;
+    let mut sent = 0;
+    while server.try_send_packet(&[0x45; 1400]).unwrap() {
+        sent += 1;
+        assert!(sent < 100_000, "the peer never filled up");
+    }
+    let mut buf = vec![0; MAX_DATAGRAM];
+    client.recv(&mut buf).await.unwrap().unwrap();
+    assert!(server.try_send_packet(&[0x45; 1400]).unwrap(), "room again after one receive");
+}
+
+#[tokio::test]
 async fn close_is_reported_as_none() {
     let (client, server) = pair("close").await;
     drop(client);

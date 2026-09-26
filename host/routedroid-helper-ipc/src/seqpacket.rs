@@ -51,6 +51,26 @@ impl SeqPacket {
         self.send(&[IoSlice::new(&[KIND_PACKET]), IoSlice::new(packet)]).await
     }
 
+    /// Send one IPv4 packet only if the peer has room now; `false` means its
+    /// queue is full and nothing was sent. A packet relay drops rather than
+    /// waits, so one slow direction never stalls the other.
+    pub fn try_send_packet(&self, packet: &[u8]) -> io::Result<bool> {
+        if packet.len() > MAX_PACKET {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("{}-byte packet", packet.len())));
+        }
+        let parts = [IoSlice::new(&[KIND_PACKET]), IoSlice::new(packet)];
+        let total = 1 + packet.len();
+        loop {
+            match self.socket.get_ref().send_vectored(&parts) {
+                Ok(sent) if sent == total => return Ok(true),
+                Ok(sent) => return Err(io::Error::other(format!("short seqpacket send {sent}/{total}"))),
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(false),
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
     async fn send(&self, parts: &[IoSlice<'_>]) -> io::Result<()> {
         let total: usize = parts.iter().map(|part| part.len()).sum();
         loop {
