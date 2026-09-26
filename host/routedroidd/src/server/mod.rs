@@ -12,7 +12,7 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::signal::unix::{signal, SignalKind};
 use tracing::{info, warn};
 
-use self::client::ClientConnection;
+use self::client::{ClientConnection, Handles};
 use crate::adb::{Adb, DEFAULT_TIMEOUT};
 use crate::daemon::Daemon;
 use crate::Args;
@@ -67,8 +67,8 @@ impl Server {
                 return;
             }
         }
-        let client =
-            ClientConnection::new(self.daemon.devices(), self.daemon.connections(), self.daemon.events(), stream);
+        let handles = Handles { devices: self.daemon.devices(), connections: self.daemon.connections() };
+        let client = ClientConnection::new(handles, self.daemon.events(), stream);
         tokio::spawn(client.run());
     }
 
