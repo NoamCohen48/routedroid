@@ -4,9 +4,11 @@ use crate::adb::parse_reverse_list;
 
 #[test]
 fn picks_first_free_from_seed_and_wraps() {
-    assert_eq!(pick_device_port(&[], 0), Some(17_000));
-    assert_eq!(pick_device_port(&[17_000], 0), Some(17_001));
-    assert_eq!(pick_device_port(&[17_999], 999), Some(17_000));
+    let (first, last) = (*DEVICE_PORT_RANGE.start(), *DEVICE_PORT_RANGE.end());
+    assert_eq!(pick_device_port(&[], 0), Some(first));
+    assert_eq!(pick_device_port(&[first], 0), Some(first + 1));
+    assert_eq!(pick_device_port(&[last], last - first), Some(first));
+    assert!(last < 32_768, "stays below Android's ephemeral ports");
     let all: Vec<u16> = DEVICE_PORT_RANGE.collect();
     assert_eq!(pick_device_port(&all, 5), None);
 }

@@ -35,8 +35,9 @@ impl AdbDevice {
         Ok(parse_reverse_list(&self.run(&["reverse", "--list"]).await?))
     }
 
+    /// Add a mapping; fails, never replaces, if the device port is taken.
     pub async fn reverse_add(&self, device_port: u16, host_port: u16) -> Result<()> {
-        self.run(&["reverse", &format!("tcp:{device_port}"), &format!("tcp:{host_port}")]).await?;
+        self.run(&["reverse", "--no-rebind", &format!("tcp:{device_port}"), &format!("tcp:{host_port}")]).await?;
         Ok(())
     }
 
