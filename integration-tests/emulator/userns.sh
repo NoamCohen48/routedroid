@@ -82,6 +82,9 @@ if [[ $STOP_MODE != early ]] && grep -q 'session Active' "$S/daemon.log"; then
         adb -s "$SERIAL" shell am start -n dev.routedroid/.ui.MainActivity >/dev/null; sleep 2
         tap_button Stop || tap_button STOP || echo "could not find the Stop button"
         check "app STOP reaches host" bash -c "for _ in \$(seq 1 20); do grep -q 'peer sent STOP' '$S/daemon.log' && exit 0; sleep 0.5; done; exit 1"
+        # A locked screen or a missing button fails the check above; end the
+        # session anyway so the teardown checks still run.
+        grep -q 'peer sent STOP' "$S/daemon.log" || kill -INT $RPID
     else
         kill -INT $RPID
     fi
