@@ -74,9 +74,6 @@ fn happy_path_consumes_secret_and_forwards_packets() {
     assert!(m.secret_consumed());
     let pkt = vec![0x45, 0, 0, 21, 0, 0, 0, 0, 64, 0xfd, 0, 0, 10, 0, 0, 2, 10, 0, 0, 1, 0];
     assert_eq!(m.handle(Frame::ip_packet(pkt.clone())).unwrap(), vec![Outbound::ToHelper(pkt)]);
-    let bad = vec![0x65; 21];
-    assert!(m.handle(Frame::ip_packet(bad)).unwrap().is_empty());
-    assert_eq!(m.bad_packets, 1);
     assert_eq!(
         m.handle(Frame::empty(MessageType::Ping)).unwrap(),
         vec![Outbound::ToPeer(Frame::empty(MessageType::Pong))]

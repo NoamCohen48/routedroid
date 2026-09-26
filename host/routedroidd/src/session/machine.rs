@@ -3,7 +3,6 @@
 
 use routedroid_proto::auth::{self, Nonce, Secret};
 use routedroid_proto::frame::{Frame, MessageType};
-use routedroid_proto::ipv4;
 use routedroid_proto::messages::{self, Auth, BodyError, ErrorBody, ErrorCode, Hello, HelloAck, VpnReady};
 use routedroid_proto::state::{self, Role, State};
 use routedroid_proto::PROTOCOL_VERSION;
@@ -25,14 +24,12 @@ pub struct Machine {
     transcript: Option<Vec<u8>>,
     /// `Some` until AUTH is decided, then dropped (zeroized).
     secret: Option<Secret>,
-    /// Packets dropped by the §6 checks (not violations).
-    pub bad_packets: u64,
 }
 
 impl Machine {
     pub fn new(mut cfg: SessionConfig, host_nonce: Nonce) -> Self {
         let secret = Some(std::mem::replace(&mut cfg.secret, Secret::new([0; auth::SECRET_LEN])));
-        Self { state: State::Connected, cfg, host_nonce, transcript: None, secret, bad_packets: 0 }
+        Self { state: State::Connected, cfg, host_nonce, transcript: None, secret }
     }
 
     pub fn state(&self) -> State {
@@ -80,13 +77,9 @@ impl Machine {
                 self.state = State::Closed;
                 Err(Close::VpnError(body))
             }
-            MessageType::IpPacket => {
-                if ipv4::check(&frame.body).is_err() {
-                    self.bad_packets += 1;
-                    return Ok(Vec::new());
-                }
-                Ok(vec![Outbound::ToHelper(frame.body)])
-            }
+            // The allowlist admitted it, so the session is Active; the
+            // §6 packet checks belong to the uplink.
+            MessageType::IpPacket => Ok(vec![Outbound::ToHelper(frame.body)]),
             // Never in the host allowlist; kept exhaustive on purpose.
             MessageType::HelloAck | MessageType::ConfigureVpn | MessageType::Error => {
                 Err(self.refuse(ErrorCode::ProtocolError, format!("{t} is host-to-android only")))

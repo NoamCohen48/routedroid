@@ -1,23 +1,27 @@
 //! Host-side session: a pure state machine (`machine.rs`) fed validated
-//! frames, and an async driver (`driver.rs`) that connects it to the phone's
-//! TCP stream and the helper's packet channel.
+//! frames; an async driver (`driver.rs`) for control, timers and shutdown;
+//! and one pump per packet direction (`uplink.rs`, `downlink.rs`) between
+//! the phone's TCP stream and the helper.
 
 mod close;
 mod config;
+mod downlink;
 mod driver;
 #[cfg(test)]
 mod driver_tests;
 mod handlers;
 mod machine;
 mod progress;
-mod tasks;
 #[cfg(test)]
 mod tests;
 mod timers;
+mod uplink;
+mod writer;
 
 pub use close::{Close, SessionEnd};
 pub use config::SessionConfig;
 pub use driver::{PacketEndpoints, SessionDriver};
 pub use machine::{Machine, Outbound};
 pub use progress::{Counters, Progress};
-pub use tasks::QUEUE_DEPTH;
+pub use uplink::Inject;
+pub use writer::QUEUE_DEPTH;

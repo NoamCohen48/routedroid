@@ -25,18 +25,30 @@ fn cfg() -> SessionConfig {
     }
 }
 
+mod active;
+
 /// Spawns the driver on one end of a loopback pair; returns the peer socket
 /// and the join handle. Time is paused, so deadlines elapse instantly when idle.
 async fn start() -> (TcpStream, tokio::task::JoinHandle<SessionEnd>, watch::Sender<bool>) {
+    let inject: Inject = std::sync::Arc::new(|_: &[u8]| Ok(true));
+    let (from_tx, from_helper) = mpsc::channel(4);
+    let (peer, handle, stop) = start_with(PacketEndpoints { inject, from_helper }).await;
+    // A helper that stays connected and quiet for the driver's whole life.
+    let handle = tokio::spawn(async move {
+        let end = handle.await.unwrap();
+        drop(from_tx);
+        end
+    });
+    (peer, handle, stop)
+}
+
+async fn start_with(packets: PacketEndpoints) -> (TcpStream, tokio::task::JoinHandle<SessionEnd>, watch::Sender<bool>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let peer = TcpStream::connect(addr).await.unwrap();
     let (stream, _) = listener.accept().await.unwrap();
-    let (to_helper, _keep) = mpsc::channel(4);
-    let (_from_tx, from_helper) = mpsc::channel(4);
     let (stop_tx, stop_rx) = watch::channel(false);
     let handle = tokio::spawn(async move {
-        let packets = PacketEndpoints { to_helper, from_helper };
         SessionDriver::run(stream, Machine::new(cfg(), [0xbb; 32]), packets, stop_rx, Progress::detached()).await.end
     });
     (peer, handle, stop_tx)

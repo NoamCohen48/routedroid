@@ -72,7 +72,8 @@ impl ConnectionRun<'_> {
         info!(
             to_phone = summary.packets_to_phone,
             from_phone = summary.packets_from_phone,
-            dropped = summary.bad_packets,
+            malformed = summary.malformed,
+            congested = summary.congested,
             "traffic"
         );
         self.sink.set(ConnectionState::Stopping);

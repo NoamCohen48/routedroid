@@ -12,6 +12,10 @@ pub struct Counters {
     pub reached_active: AtomicBool,
     pub to_phone: AtomicU64,
     pub from_phone: AtomicU64,
+    /// Phone packets that failed the §6 checks (dropped, not violations).
+    pub malformed: AtomicU64,
+    /// Phone packets dropped because the helper's queue was full.
+    pub congested: AtomicU64,
 }
 
 impl Counters {
@@ -23,8 +27,20 @@ impl Counters {
         self.from_phone.load(Ordering::Relaxed)
     }
 
+    pub fn malformed(&self) -> u64 {
+        self.malformed.load(Ordering::Relaxed)
+    }
+
+    pub fn congested(&self) -> u64 {
+        self.congested.load(Ordering::Relaxed)
+    }
+
     pub fn reached_active(&self) -> bool {
         self.reached_active.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn bump(counter: &AtomicU64) {
+        counter.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -44,14 +60,6 @@ impl Progress {
     #[cfg(test)]
     pub fn detached() -> Self {
         Self::new(Arc::default()).0
-    }
-
-    pub(super) fn bump_to_phone(&self) {
-        self.counters.to_phone.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub(super) fn bump_from_phone(&self) {
-        self.counters.from_phone.fetch_add(1, Ordering::Relaxed);
     }
 
     pub(super) fn set_active(&self) {

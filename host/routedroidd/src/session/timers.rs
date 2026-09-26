@@ -1,5 +1,7 @@
 //! The driver's two clocks: keepalive (§5.1) and the pre-Active phase deadline.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use routedroid_proto::state::State;
@@ -14,39 +16,67 @@ pub const HANDSHAKE_DEADLINE: Duration = Duration::from_secs(15);
 /// Configuring → Active includes the user answering the VPN consent dialog.
 pub const CONSENT_DEADLINE: Duration = Duration::from_secs(120);
 
-/// Silence detector: one PING after `KEEPALIVE_IDLE`, dead at `KEEPALIVE_DEAD`.
-pub struct Keepalive {
-    last_rx: Instant,
-    pinged: bool,
+/// When the reader last received a frame; written per frame by the reader
+/// task, read by the driver when its keepalive timer fires.
+pub struct LastRx {
+    base: Instant,
+    nanos: AtomicU64,
 }
 
+impl LastRx {
+    pub fn new() -> Self {
+        Self { base: Instant::now(), nanos: AtomicU64::new(0) }
+    }
+
+    pub fn touch(&self) {
+        let nanos = u64::try_from(self.base.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        self.nanos.fetch_max(nanos, Ordering::Relaxed);
+    }
+
+    pub fn get(&self) -> Instant {
+        self.base + Duration::from_nanos(self.nanos.load(Ordering::Relaxed))
+    }
+}
+
+/// Silence detector: one PING after `KEEPALIVE_IDLE` of silence, dead at
+/// `KEEPALIVE_DEAD`. Anything received counts as life, packets included.
+pub struct Keepalive {
+    last_rx: Arc<LastRx>,
+    pinged_at: Option<Instant>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Idle {
+    /// Something arrived since the deadline was computed.
+    Wait,
     SendPing,
     Dead,
 }
 
 impl Keepalive {
-    pub fn new() -> Self {
-        Self { last_rx: Instant::now(), pinged: false }
+    pub fn new(last_rx: Arc<LastRx>) -> Self {
+        Self { last_rx, pinged_at: None }
+    }
+
+    fn pinged_since_rx(&self, last: Instant) -> bool {
+        self.pinged_at.is_some_and(|pinged| pinged >= last)
     }
 
     /// When to act next if nothing arrives.
     pub fn deadline(&self) -> Instant {
-        self.last_rx + if self.pinged { KEEPALIVE_DEAD } else { KEEPALIVE_IDLE }
+        let last = self.last_rx.get();
+        last + if self.pinged_since_rx(last) { KEEPALIVE_DEAD } else { KEEPALIVE_IDLE }
     }
 
-    /// Anything from the peer counts as life, including PONG and packets.
-    pub fn on_rx(&mut self) {
-        self.last_rx = Instant::now();
-        self.pinged = false;
-    }
-
-    /// The deadline passed with nothing received.
+    /// The timer fired; decide against the latest receive time.
     pub fn on_idle(&mut self) -> Idle {
-        if self.pinged {
+        let now = Instant::now();
+        if now < self.deadline() {
+            Idle::Wait
+        } else if self.pinged_since_rx(self.last_rx.get()) {
             Idle::Dead
         } else {
-            self.pinged = true;
+            self.pinged_at = Some(now);
             Idle::SendPing
         }
     }
@@ -82,28 +112,4 @@ impl PhaseTimer {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test(start_paused = true)]
-    async fn keepalive_pings_once_then_declares_dead() {
-        let mut k = Keepalive::new();
-        assert_eq!(k.deadline() - Instant::now(), KEEPALIVE_IDLE);
-        assert!(matches!(k.on_idle(), Idle::SendPing));
-        assert_eq!(k.deadline() - Instant::now(), KEEPALIVE_DEAD);
-        assert!(matches!(k.on_idle(), Idle::Dead));
-        k.on_rx();
-        assert!(matches!(k.on_idle(), Idle::SendPing));
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn phase_deadline_follows_state_and_reset() {
-        let mut p = PhaseTimer::new();
-        assert_eq!(p.deadline(State::Connected), Some(Instant::now() + HANDSHAKE_DEADLINE));
-        assert_eq!(p.deadline(State::Configuring), Some(Instant::now() + CONSENT_DEADLINE));
-        assert_eq!(p.deadline(State::Active), None);
-        tokio::time::advance(Duration::from_secs(5)).await;
-        p.reset();
-        assert_eq!(p.deadline(State::Negotiated), Some(Instant::now() + HANDSHAKE_DEADLINE));
-    }
-}
+mod tests;

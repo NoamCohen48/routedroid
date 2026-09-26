@@ -7,7 +7,7 @@ use routedroid_helper_ipc::{Datagram, IfName, Reply, Request, SeqPacket, MAX_DAT
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-use crate::session::{PacketEndpoints, QUEUE_DEPTH};
+use crate::session::{Inject, PacketEndpoints, QUEUE_DEPTH};
 use routedroid_ipc::fault::{Fault, FaultExt, Kind, Result};
 
 const STOP_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
@@ -71,31 +71,26 @@ impl HostNetwork {
         }
     }
 
-    /// Spawn the two relay tasks and hand back the session's packet endpoints.
-    /// The relay ends when the helper closes or when `to_helper` is dropped.
+    /// Hand back the session's packet endpoints: injection straight into
+    /// the socket (never waiting; a full helper queue drops), and a receive
+    /// task for packets from the TUN and control replies. The task ends when
+    /// the helper closes, or once both the session and `stop` are done with it.
     pub fn relay(&mut self) -> PacketEndpoints {
-        let (to_helper, mut inject_rx) = mpsc::channel::<Vec<u8>>(QUEUE_DEPTH);
         let (from_tx, from_helper) = mpsc::channel::<Vec<u8>>(QUEUE_DEPTH);
         let (control_tx, control_rx) = mpsc::channel::<Reply>(4);
         self.control_rx = Some(control_rx);
         let conn = self.conn.clone();
-        tokio::spawn(async move {
-            while let Some(packet) = inject_rx.recv().await {
-                if let Err(e) = conn.send_packet(&packet).await {
-                    warn!(error = %e, "send to helper failed");
-                    break;
-                }
-            }
-        });
+        let inject: Inject = Arc::new(move |packet: &[u8]| conn.try_send_packet(packet));
         let conn = self.conn.clone();
         tokio::spawn(async move {
             let mut buf = vec![0u8; MAX_DATAGRAM];
             while let Ok(Some(datagram)) = conn.recv(&mut buf).await {
                 match Datagram::<Reply>::decode(datagram) {
-                    // After the session ended the receiver is gone; drop late packets
-                    // but keep reading so the Stop ack still gets through.
+                    // Never wait on the session: a full queue drops, as the helper
+                    // does; after the session ended the packet has nowhere to go,
+                    // but reading goes on so the Stop ack still gets through.
                     Ok(Datagram::Packet(packet)) => {
-                        let _ = from_tx.send(packet.to_vec()).await;
+                        let _ = from_tx.try_send(packet.to_vec());
                     }
                     Ok(Datagram::Control(reply)) => {
                         let _ = control_tx.try_send(reply);
@@ -109,7 +104,7 @@ impl HostNetwork {
                 }
             }
         });
-        PacketEndpoints { to_helper, from_helper }
+        PacketEndpoints { inject, from_helper }
     }
 
     /// Ask the helper to undo everything. Errors are logged, not fatal: the
