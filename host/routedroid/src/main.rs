@@ -3,7 +3,7 @@
 //! Every subcommand is one short conversation over the daemon's control
 //! socket; the daemon owns the connections, this binary only asks and prints.
 //! Exit codes follow `routedroid_ipc::Kind::exit_code`, plus 3 when the
-//! daemon cannot be reached at all.
+//! daemon cannot be reached at all and 4 when it speaks another API.
 
 mod cli;
 mod commands;
@@ -12,8 +12,6 @@ mod output;
 
 use clap::Parser;
 use routedroid_ipc::Fault;
-
-use crate::connect::DaemonUnreachable;
 
 fn main() {
     let cli = cli::Cli::parse();
@@ -27,10 +25,8 @@ fn main() {
 
 /// Prints the error the way scripts and humans expect and picks its exit code.
 fn exit_code_for(error: &anyhow::Error) -> i32 {
-    if let Some(unreachable) = error.downcast_ref::<DaemonUnreachable>() {
-        eprintln!("error: {unreachable}");
-        eprintln!("hint: start the daemon with `systemctl --user start routedroid`");
-        return connect::EXIT_DAEMON_UNREACHABLE;
+    if let Some(code) = connect::report(error) {
+        return code;
     }
     if let Some(fault) = error.downcast_ref::<Fault>() {
         eprintln!("error: {fault}");

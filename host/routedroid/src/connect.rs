@@ -1,27 +1,33 @@
-//! Opening the control socket, with a distinct error when nobody listens.
+//! Opening the control socket. Why it failed decides the advice and the
+//! exit code: nobody listening is not the same as an outdated daemon.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Result;
-use routedroid_ipc::Client;
+use routedroid_ipc::{Client, ConnectError};
 
 /// Exit code when the daemon socket cannot be reached.
 pub const EXIT_DAEMON_UNREACHABLE: i32 = 3;
-
-#[derive(Debug)]
-pub struct DaemonUnreachable {
-    path: PathBuf,
-    source: anyhow::Error,
-}
-
-impl std::fmt::Display for DaemonUnreachable {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "cannot reach routedroidd at {}: {}", self.path.display(), self.source.root_cause())
-    }
-}
-
-impl std::error::Error for DaemonUnreachable {}
+/// Exit code when the daemon speaks another API version.
+pub const EXIT_DAEMON_INCOMPATIBLE: i32 = 4;
 
 pub async fn connect(path: &Path) -> Result<Client> {
-    Client::connect(path).await.map_err(|source| DaemonUnreachable { path: path.to_path_buf(), source }.into())
+    Ok(Client::connect(path).await?)
+}
+
+/// Prints the error and a hint; `None` if `error` is not a connect error.
+pub fn report(error: &anyhow::Error) -> Option<i32> {
+    let error = error.downcast_ref::<ConnectError>()?;
+    eprintln!("error: {error}");
+    Some(match error {
+        ConnectError::Unreachable { .. } => {
+            eprintln!("hint: start the daemon with `systemctl --user start routedroid`");
+            EXIT_DAEMON_UNREACHABLE
+        }
+        ConnectError::Incompatible { .. } => {
+            eprintln!("hint: routedroid and routedroidd are from different releases; restart the daemon after an upgrade (`systemctl --user restart routedroid`)");
+            EXIT_DAEMON_INCOMPATIBLE
+        }
+        ConnectError::Handshake(_) => routedroid_ipc::Kind::Internal.exit_code(),
+    })
 }

@@ -18,14 +18,16 @@ use clap::Parser;
 use crossterm::event::{Event as TerminalEvent, EventStream};
 use futures_util::StreamExt;
 use ratatui::DefaultTerminal;
-use routedroid_ipc::Client;
+use routedroid_ipc::{Client, ConnectError};
 use tokio::sync::mpsc;
 
 use app::{App, Level};
 use messages::{Command, Incoming};
 
-/// Exit code when the daemon is not reachable at start.
+/// Exit codes when the daemon is not reachable at start, or speaks another
+/// API (the same as `routedroid`'s).
 const EXIT_NO_DAEMON: i32 = 3;
+const EXIT_INCOMPATIBLE: i32 = 4;
 
 #[derive(Debug, Parser)]
 #[command(name = "routedroid-tui", version, about = "Routedroid terminal UI: control routedroidd from the keyboard")]
@@ -40,9 +42,17 @@ async fn main() {
     let args = Args::parse();
     let client = match Client::connect(&args.socket).await {
         Ok(client) => client,
-        Err(_) => {
-            eprintln!("routedroidd is not running: systemctl --user start routedroid");
+        Err(error @ ConnectError::Incompatible { .. }) => {
+            eprintln!("{error}: restart it after an upgrade (systemctl --user restart routedroid)");
+            std::process::exit(EXIT_INCOMPATIBLE);
+        }
+        Err(error @ ConnectError::Unreachable { .. }) => {
+            eprintln!("{error}: systemctl --user start routedroid");
             std::process::exit(EXIT_NO_DAEMON);
+        }
+        Err(error) => {
+            eprintln!("routedroid-tui: {error}");
+            std::process::exit(1);
         }
     };
 
@@ -82,7 +92,7 @@ async fn run_ui(
             },
         };
         for command in followups {
-            // Never block rendering on the connection task (a `stop` can take seconds).
+            // Never block rendering on the connection task.
             match commands.try_send(command) {
                 Ok(()) => {}
                 Err(mpsc::error::TrySendError::Full(_)) => app.push_log(Level::Error, "busy; try again".into()),

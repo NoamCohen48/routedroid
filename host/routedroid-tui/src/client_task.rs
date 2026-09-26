@@ -1,12 +1,15 @@
-//! The one task that owns the daemon connection: runs UI commands as calls,
-//! forwards events, and reconnects every few seconds when the daemon goes away.
+//! The one task that owns the daemon connection: runs each UI command as its
+//! own call (a `stop` that waits for a teardown holds up neither events nor
+//! other commands), forwards events, and reconnects every few seconds when
+//! the daemon goes away.
 
 use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Result;
-use routedroid_ipc::{Client, Request, Response};
+use routedroid_ipc::{Calls, Client, Request, Response};
 use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 
 use crate::messages::{Command, Incoming};
 
@@ -70,18 +73,22 @@ async fn wait_disconnected(commands: &mut mpsc::Receiver<Command>, incoming: &mp
 
 /// `Ok(())` when the UI quit; `Err` when the connection broke.
 async fn serve(
-    mut client: Client,
+    client: Client,
     commands: &mut mpsc::Receiver<Command>,
     incoming: &mpsc::Sender<Incoming>,
 ) -> Result<()> {
-    client.call_ok(Request::Subscribe).await?;
+    let (calls, mut events) = client.into_parts();
+    calls.call_ok(Request::Subscribe).await?;
     for command in [Command::RefreshDevices, Command::RefreshStatus] {
-        let outcome = execute(&mut client, command).await?;
+        let outcome = execute(&calls, command).await?;
         incoming.send(outcome).await.ok();
     }
+    // Dropped (aborting what is still running) when the connection breaks:
+    // their answers could not arrive anyway.
+    let mut running = JoinSet::new();
     loop {
         tokio::select! {
-            event = client.next_event() => match event? {
+            event = events.next() => match event? {
                 Some(event) => {
                     incoming.send(Incoming::Event(event)).await.ok();
                 }
@@ -90,16 +97,25 @@ async fn serve(
             command = commands.recv() => match command {
                 None => return Ok(()),
                 Some(command) => {
-                    let outcome = execute(&mut client, command).await?;
-                    incoming.send(outcome).await.ok();
+                    let (calls, incoming) = (calls.clone(), incoming.clone());
+                    running.spawn(async move {
+                        let what = name(&command);
+                        // A broken connection also ends `events`, which reconnects.
+                        let outcome = execute(&calls, command).await.unwrap_or_else(|error| Incoming::Failed {
+                            what: what.into(),
+                            message: format!("{error:#}"),
+                        });
+                        incoming.send(outcome).await.ok();
+                    });
                 }
             },
+            Some(_) = running.join_next() => {}
         };
     }
 }
 
 /// One call; a daemon `Error` becomes `Incoming::Failed`, a transport error propagates.
-async fn execute(client: &mut Client, command: Command) -> Result<Incoming> {
+async fn execute(calls: &Calls, command: Command) -> Result<Incoming> {
     let what = name(&command);
     let request = match command {
         Command::RefreshDevices => Request::Devices,
@@ -111,7 +127,7 @@ async fn execute(client: &mut Client, command: Command) -> Result<Incoming> {
         Request::Stop { serial } => Some(serial.clone()),
         _ => None,
     };
-    Ok(match client.call(request).await? {
+    Ok(match calls.call(request).await? {
         Response::Error { kind, message } => {
             Incoming::Failed { what: what.into(), message: format!("{message} ({})", kind.as_str()) }
         }

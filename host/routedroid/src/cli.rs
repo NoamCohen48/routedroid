@@ -11,6 +11,7 @@ Exit codes:
   0   success (for `start`: the connection ended cleanly)
   2   usage error
   3   daemon unreachable; start it with `systemctl --user start routedroid`
+  4   daemon speaks another API version; restart it after an upgrade
   10  adb          11  transport rule    12  protocol
   13  auth         14  vpn               15  helper
   70  internal";

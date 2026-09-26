@@ -14,7 +14,7 @@ pub mod socket;
 pub mod wire;
 
 pub use api::*;
-pub use client::Client;
+pub use client::{Calls, Client, ConnectError, Events};
 pub use fault::{Fault, FaultExt, Kind};
 
 /// Bumped on any incompatible change to the messages in `api`.

@@ -13,6 +13,10 @@ use crate::cli::{Cli, Command};
 use crate::connect::connect;
 
 pub async fn run(cli: Cli) -> Result<i32> {
+    if let Command::Version = cli.command {
+        // Our own version needs no daemon.
+        println!("routedroid {}", env!("CARGO_PKG_VERSION"));
+    }
     let mut client = connect(&cli.socket).await?;
     match cli.command {
         Command::Devices => devices::run(&mut client, cli.json).await,

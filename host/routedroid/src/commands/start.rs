@@ -122,7 +122,7 @@ async fn stop_on_ctrl_c(socket: PathBuf, serial: String) {
     }
     eprintln!("stopping (press Ctrl-C again to abandon the session)");
     tokio::spawn(async move {
-        if let Ok(mut stopper) = connect(&socket).await {
+        if let Ok(stopper) = connect(&socket).await {
             let _ = stopper.call(Request::Stop { serial }).await;
         }
     });

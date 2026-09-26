@@ -1,97 +1,111 @@
-//! Async client: one connection, sequential calls, optional event stream.
-//! Reads go through `Lines::next_line`, which is cancel-safe, so callers may
-//! use `next_event` inside `select!`.
+//! Async client over one connection. A reader task routes each response to
+//! the call waiting for its id and queues events, so calls may overlap each
+//! other and the event stream: a `stop` that waits for a teardown does not
+//! hold up anything else on the connection.
+//!
+//! [`Client::into_parts`] splits it for a caller that must read events while
+//! calls are in flight; [`Events::next`] is cancel-safe, so it may sit in a
+//! `select!`.
 
-use std::path::Path;
+mod connect;
+mod reader;
 
-use anyhow::{bail, Context, Result};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
-use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
-use tokio::net::UnixStream;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
+use anyhow::{Context, Result};
+use tokio::io::AsyncWriteExt;
+use tokio::net::unix::OwnedWriteHalf;
+use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::api::{Event, Request, Response};
-use crate::wire::{ClientMessage, ServerMessage};
-use crate::API_VERSION;
+use crate::wire::ClientMessage;
+
+pub use connect::ConnectError;
+pub use reader::Closed;
+use reader::{Reader, Shared};
 
 pub struct Client {
-    lines: Lines<BufReader<OwnedReadHalf>>,
-    writer: OwnedWriteHalf,
-    next_id: u64,
-    /// Events read while waiting for a response; drained by `next_event`.
-    pending: std::collections::VecDeque<Event>,
+    calls: Calls,
+    events: Events,
+}
+
+/// Makes calls; cheap to clone, and clones may call concurrently.
+#[derive(Clone)]
+pub struct Calls {
+    writer: Arc<Mutex<OwnedWriteHalf>>,
+    next_id: Arc<AtomicU64>,
+    shared: Arc<Shared>,
+    _reader: Arc<Reader>,
+}
+
+/// The events of a subscribed connection, in order.
+pub struct Events {
+    queue: mpsc::UnboundedReceiver<Event>,
+    shared: Arc<Shared>,
+    _reader: Arc<Reader>,
 }
 
 impl Client {
-    pub async fn connect(path: &Path) -> Result<Self> {
-        let stream = UnixStream::connect(path)
-            .await
-            .with_context(|| format!("connect to routedroidd at {} (is it running?)", path.display()))?;
-        let (rd, writer) = stream.into_split();
-        let mut client = Self { lines: BufReader::new(rd).lines(), writer, next_id: 1, pending: Default::default() };
-        match client.call(Request::Version).await? {
-            Response::Version { api, .. } if api == API_VERSION => Ok(client),
-            Response::Version { daemon, api } => {
-                bail!("routedroidd {daemon} speaks API {api}; this client needs {API_VERSION}")
-            }
-            other => bail!("unexpected answer to version: {other:?}"),
-        }
+    pub fn into_parts(self) -> (Calls, Events) {
+        (self.calls, self.events)
     }
 
-    /// Send one request and wait for its response. Events that arrive in
-    /// between are queued for [`Self::next_event`].
-    pub async fn call(&mut self, request: Request) -> Result<Response> {
-        let id = self.next_id;
-        self.next_id += 1;
+    pub async fn call(&self, request: Request) -> Result<Response> {
+        self.calls.call(request).await
+    }
+
+    pub async fn call_ok(&self, request: Request) -> Result<Response> {
+        self.calls.call_ok(request).await
+    }
+
+    /// Next event (after `Request::Subscribe`); `None` when the daemon closed.
+    pub async fn next_event(&mut self) -> Result<Option<Event>> {
+        self.events.next().await
+    }
+}
+
+impl Calls {
+    /// Send one request and wait for its response.
+    pub async fn call(&self, request: Request) -> Result<Response> {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let (answer, answered) = oneshot::channel();
+        self.shared.expect(id, answer)?;
         let mut line = serde_json::to_string(&ClientMessage { id, request })?;
         line.push('\n');
-        self.writer.write_all(line.as_bytes()).await.context("send to routedroidd")?;
-        loop {
-            match self.read_message().await? {
-                ServerMessage::Response { id: got, response } if got == id => return Ok(response),
-                ServerMessage::Response { id: got, .. } => bail!("response for unknown request id {got}"),
-                ServerMessage::Event { event } => self.pending.push_back(event),
-            }
+        let sent = self.writer.lock().await.write_all(line.as_bytes()).await;
+        if let Err(error) = sent {
+            self.shared.forget(id);
+            return Err(error).context("send to routedroidd");
         }
+        answered.await.map_err(|_| self.shared.why_closed())
     }
 
     /// Like `call`, but an `Error` response becomes an `Err`.
-    pub async fn call_ok(&mut self, request: Request) -> Result<Response> {
+    pub async fn call_ok(&self, request: Request) -> Result<Response> {
         match self.call(request).await? {
             Response::Error { kind, message } => Err(crate::fault::Fault::msg(kind, message).into()),
             other => Ok(other),
         }
     }
+}
 
-    /// Next event (after `Request::Subscribe`); `None` when the daemon closed.
-    pub async fn next_event(&mut self) -> Result<Option<Event>> {
-        if let Some(e) = self.pending.pop_front() {
-            return Ok(Some(e));
-        }
-        loop {
-            match self.read_message().await {
-                Ok(ServerMessage::Event { event }) => return Ok(Some(event)),
-                Ok(ServerMessage::Response { .. }) => continue,
-                Err(e) if e.downcast_ref::<Closed>().is_some() => return Ok(None),
-                Err(e) => return Err(e),
+impl Events {
+    /// `None` when the daemon closed the connection; `Err` when it broke.
+    pub async fn next(&mut self) -> Result<Option<Event>> {
+        match self.queue.recv().await {
+            Some(event) => Ok(Some(event)),
+            None => {
+                let why = self.shared.why_closed();
+                if why.downcast_ref::<Closed>().is_some() {
+                    Ok(None)
+                } else {
+                    Err(why)
+                }
             }
         }
     }
-
-    async fn read_message(&mut self) -> Result<ServerMessage> {
-        let Some(line) = self.lines.next_line().await.context("read from routedroidd")? else {
-            return Err(Closed.into());
-        };
-        serde_json::from_str(&line).with_context(|| format!("bad line from routedroidd: {}", line.trim()))
-    }
 }
 
-#[derive(Debug)]
-pub struct Closed;
-
-impl std::fmt::Display for Closed {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("routedroidd closed the connection")
-    }
-}
-
-impl std::error::Error for Closed {}
+#[cfg(test)]
+mod tests;
