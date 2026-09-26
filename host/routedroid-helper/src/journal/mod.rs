@@ -16,8 +16,8 @@ use anyhow::{bail, ensure, Context, Result};
 use rustix::fs::{FlockOperation, RenameFlags, CWD};
 
 use crate::op::Op;
-use crate::storage;
 use crate::session_id::SessionId;
+use crate::storage;
 
 mod dir;
 mod record;

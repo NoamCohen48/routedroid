@@ -117,7 +117,8 @@ impl Lab {
 
     pub fn journals(&self) -> Vec<PathBuf> {
         let dir = &self.env.journal_dir;
-        let mut out: Vec<_> = std::fs::read_dir(dir).map(|d| d.map(|e| e.unwrap().path()).collect()).unwrap_or_default();
+        let mut out: Vec<_> =
+            std::fs::read_dir(dir).map(|d| d.map(|e| e.unwrap().path()).collect()).unwrap_or_default();
         out.retain(|p| p.extension().is_some_and(|e| e == "journal"));
         out
     }

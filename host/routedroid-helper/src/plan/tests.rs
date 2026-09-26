@@ -12,7 +12,12 @@ fn ip(s: &str) -> Ipv4Addr {
 }
 
 fn request(phone_ip: &str) -> Request {
-    Request { lan_if: IfName::new("lan0").unwrap(), phone_ip: ip(phone_ip), tun: IfName::new("phone0").unwrap(), mtu: 1400 }
+    Request {
+        lan_if: IfName::new("lan0").unwrap(),
+        phone_ip: ip(phone_ip),
+        tun: IfName::new("phone0").unwrap(),
+        mtu: 1400,
+    }
 }
 
 /// lan0 (#2) is 10.0.0.2/24 with a gateway at .1 and a neighbour at .9;

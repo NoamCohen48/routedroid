@@ -89,7 +89,8 @@ mod tests {
 
     #[test]
     fn labels_name_the_kernel_object() {
-        let route = Op::Route { dst: "10.0.0.5".parse().unwrap(), tun: name("phone0"), src: "10.0.0.2".parse().unwrap() };
+        let route =
+            Op::Route { dst: "10.0.0.5".parse().unwrap(), tun: name("phone0"), src: "10.0.0.2".parse().unwrap() };
         assert_eq!(route.label(), "route:10.0.0.5/32@phone0");
         assert_eq!(Op::NftTable { tun: name("phone0") }.label(), "nft:inet:routedroid_phone0");
         let vlan = Op::Sysctl { ifname: name("eth0.100"), leaf: Leaf::ProxyArp };

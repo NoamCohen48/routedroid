@@ -49,10 +49,8 @@ impl Plan {
         ensure!(!facts.tun_exists, "{tun} already exists");
 
         let subnet = |a: &crate::kernel::Address| u32::from(a.addr) & mask(a.prefix);
-        let Some(host) = facts
-            .addresses
-            .iter()
-            .find(|a| a.index == lan && subnet(a) == u32::from(phone_ip) & mask(a.prefix))
+        let Some(host) =
+            facts.addresses.iter().find(|a| a.index == lan && subnet(a) == u32::from(phone_ip) & mask(a.prefix))
         else {
             bail!("{phone_ip} is not inside any IPv4 subnet of {lan_if}");
         };

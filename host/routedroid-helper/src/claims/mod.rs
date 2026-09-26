@@ -79,7 +79,11 @@ impl Claims {
     /// Drop holders with no journal left (a record lost to a bug or by hand),
     /// so no key stays claimed forever. `sessions` must be read from the
     /// journal directory after this call started; see `recovery`.
-    pub fn collect_garbage(&self, kernel: &impl Kernel, sessions: impl Fn() -> Result<BTreeSet<SessionId>>) -> Result<()> {
+    pub fn collect_garbage(
+        &self,
+        kernel: &impl Kernel,
+        sessions: impl Fn() -> Result<BTreeSet<SessionId>>,
+    ) -> Result<()> {
         let _lock = storage::lock(&self.dir)?;
         let live = sessions()?;
         let mut failed = 0;
