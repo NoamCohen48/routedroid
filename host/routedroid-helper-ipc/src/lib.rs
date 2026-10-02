@@ -18,5 +18,8 @@ pub use seqpacket::{Activated, Activation, Listener, SeqPacket};
 /// datagram layout. The helper refuses a controller that says otherwise.
 pub const VERSION: u32 = 1;
 
+/// The TUN MTUs a `Start` may ask for; the helper refuses others.
+pub const MTU_RANGE: std::ops::RangeInclusive<u32> = 576..=9000;
+
 /// Where the systemd socket unit listens.
 pub const DEFAULT_SOCKET: &str = "/run/routedroid/helper.sock";

@@ -18,7 +18,7 @@ mod facts;
 pub use facts::Facts;
 
 pub const TUN_PREFIX: &str = "phone";
-pub const MTU_RANGE: std::ops::RangeInclusive<u32> = 576..=9000;
+pub use routedroid_helper_ipc::MTU_RANGE;
 
 /// The controller's `Start`, already type-checked by the IPC layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
