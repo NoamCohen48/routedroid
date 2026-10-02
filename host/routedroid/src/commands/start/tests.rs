@@ -1,0 +1,58 @@
+use clap::Parser;
+
+use super::*;
+
+#[derive(Parser)]
+struct Wrapper {
+    #[command(flatten)]
+    args: StartArgs,
+}
+
+fn parse(extra: &[&str]) -> Result<StartRequest, clap::Error> {
+    let argv = ["routedroid", "-s", "R58M", "--lan-if", "eno1"]
+        .iter()
+        .chain(extra);
+    Wrapper::try_parse_from(argv).map(|wrapper| wrapper.args.request())
+}
+
+#[test]
+fn options_left_out_are_not_sent() {
+    let request = parse(&[]).unwrap();
+    assert_eq!(
+        (request.phone_ip, request.mtu, request.tun),
+        (None, None, None)
+    );
+    assert_eq!(request.connect_timeout_secs, None);
+    assert_eq!(request.dns, DnsChoice::Auto);
+}
+
+#[test]
+fn dns_is_auto_listed_or_none() {
+    let listed = parse(&["--dns", "9.9.9.9", "--dns", "1.1.1.1"]).unwrap();
+    assert!(matches!(listed.dns, DnsChoice::Servers(servers) if servers.len() == 2));
+    assert_eq!(parse(&["--no-dns"]).unwrap().dns, DnsChoice::None);
+    assert!(parse(&["--no-dns", "--dns", "9.9.9.9"]).is_err());
+}
+
+#[test]
+fn timeouts_read_like_durations() {
+    assert_eq!(
+        parse(&["--connect-timeout", "2m"])
+            .unwrap()
+            .connect_timeout_secs,
+        Some(120)
+    );
+    assert_eq!(
+        parse(&["--connect-timeout", "90s"])
+            .unwrap()
+            .connect_timeout_secs,
+        Some(90)
+    );
+    assert_eq!(
+        parse(&["--connect-timeout", "500ms"])
+            .unwrap()
+            .connect_timeout_secs,
+        Some(1)
+    );
+    assert!(parse(&["--connect-timeout", "90sss"]).is_err());
+}
