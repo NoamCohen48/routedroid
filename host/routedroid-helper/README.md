@@ -45,10 +45,11 @@ TUN. A phone address that is already routed anywhere on the host is refused.
 ## Run
 
 ```sh
-cargo build --release -p routedroid-helper
-sudo host/routedroid-helper/install.sh              # units, group, deny-all policy; re-login or use `sg routedroid`
+cargo build --release                               # in host/
+sudo host/install.sh                                # binaries, units, group, deny-all policy; re-login or use `sg routedroid`
+routedroid interfaces                               # which links could carry phones, and why not
 sudoedit /etc/routedroid/helper.toml                # allow your LAN interface and phone addresses
-sudo host/routedroid-helper/install.sh --uninstall
+sudo host/install.sh --uninstall
 ```
 
 The test rigs need the crash hook and the stand-in controller, which exist only

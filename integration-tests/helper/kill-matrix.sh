@@ -47,7 +47,7 @@ else
     UNIT=routedroid-helper
     SOCK=/run/routedroid/helper.sock; CRASH=/run/routedroid/crash-at
     CLIENT_USER=${SUDO_USER:-$USER}
-    systemctl is-active --quiet $UNIT.socket || { echo "$UNIT.socket not active; run host/routedroid-helper/install.sh"; exit 2; }
+    systemctl is-active --quiet $UNIT.socket || { echo "$UNIT.socket not active; run host/install.sh"; exit 2; }
     HELPER="$BIN --crash-file $CRASH"
     NS=""
     start_helper() { systemctl reset-failed $UNIT.service $UNIT.socket 2>/dev/null || true; :; }   # socket activation starts it on connect

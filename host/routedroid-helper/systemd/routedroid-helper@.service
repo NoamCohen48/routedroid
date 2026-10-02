@@ -18,9 +18,9 @@ Type=simple
 Restart=no
 # The accepted connection arrives as LISTEN_FDS (Accept=yes).
 NonBlocking=yes
-ExecStart=/usr/local/libexec/routedroid/routedroid-helper serve
+ExecStart=@LIBEXECDIR@/routedroid-helper serve
 # Runs after ExecStart exits for ANY reason, including SIGKILL. Failure -> unit failed.
-ExecStopPost=/usr/local/libexec/routedroid/routedroid-helper cleanup
+ExecStopPost=@LIBEXECDIR@/routedroid-helper cleanup
 # SIGTERM ends the relay and the helper undoes the session itself; the whole
 # cgroup (an `nft` child included) is killed only if that overruns.
 TimeoutStopSec=10
