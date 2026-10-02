@@ -1,8 +1,8 @@
 //! What the driver reports while it runs, for whoever owns the session
 //! (the daemon publishes it as status and events).
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use tokio::sync::watch;
 

@@ -1,5 +1,5 @@
 use super::*;
-use crate::fixtures::{unhex, BODIES, FRAMES};
+use crate::fixtures::{BODIES, FRAMES, unhex};
 use crate::frame::MessageType;
 
 fn body(name: &str) -> (MessageType, Vec<u8>) {
@@ -11,7 +11,7 @@ fn body(name: &str) -> (MessageType, Vec<u8>) {
         .find(|v| v["name"] == name)
         .unwrap();
     (
-        MessageType::from_u8(v["type"].as_u64().unwrap() as u8).unwrap(),
+        MessageType::from_u8(u8::try_from(v["type"].as_u64().unwrap()).unwrap()).unwrap(),
         unhex(v["body_hex"].as_str().unwrap()),
     )
 }
@@ -119,12 +119,14 @@ fn field_rules() {
     };
     assert!(ready(32).validate().is_ok());
     assert!(ready(33).validate().is_err());
-    assert!(VpnReady {
-        addresses: vec![],
-        mtu: 1400
-    }
-    .validate()
-    .is_err());
+    assert!(
+        VpnReady {
+            addresses: vec![],
+            mtu: 1400
+        }
+        .validate()
+        .is_err()
+    );
 }
 
 /// The cases where JSON libraries disagree (bodies.json); the app must agree
@@ -132,7 +134,7 @@ fn field_rules() {
 #[test]
 fn body_fixtures() {
     let f: serde_json::Value = serde_json::from_str(BODIES).unwrap();
-    let mtu = f["mtu"].as_u64().unwrap() as u32;
+    let mtu = u32::try_from(f["mtu"].as_u64().unwrap()).unwrap();
     let accept = |kind: &str, b: &[u8]| -> Result<(), BodyError> {
         match kind {
             "configure_vpn" => {
@@ -184,7 +186,7 @@ fn prefix_canonical_and_unicast() {
         "240.0.0.1",
         "255.255.255.255",
     ] {
-        assert!(!vpn::is_unicast_host(bad.parse().unwrap()), "{bad}");
+        assert!(!is_unicast_host(bad.parse().unwrap()), "{bad}");
     }
-    assert!(vpn::is_unicast_host(Ipv4Addr::new(10, 0, 0, 1)));
+    assert!(is_unicast_host(Ipv4Addr::new(10, 0, 0, 1)));
 }

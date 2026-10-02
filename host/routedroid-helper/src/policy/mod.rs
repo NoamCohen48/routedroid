@@ -14,13 +14,13 @@ use std::net::Ipv4Addr;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{Context, Result, bail, ensure};
 use routedroid_helper_ipc::IfName;
 use serde::Deserialize;
 
 mod cidr;
 
-pub use cidr::{mask, Cidr};
+pub use cidr::{Cidr, mask};
 
 pub const DEFAULT_PATH: &str = "/etc/routedroid/helper.toml";
 

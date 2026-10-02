@@ -1,8 +1,8 @@
 //! Screen layout: devices on top, the selected connection in the middle, the
 //! event log below, a status/key-hint bar at the bottom, popups over it all.
 
-use ratatui::layout::{Constraint, Layout};
 use ratatui::Frame;
+use ratatui::layout::{Constraint, Layout};
 
 use crate::app::{App, Mode};
 
@@ -17,7 +17,7 @@ mod text;
 const MAX_DEVICE_ROWS: u16 = 8;
 
 pub fn draw(frame: &mut Frame, app: &App) {
-    let device_rows = (app.devices.len().max(1) as u16).min(MAX_DEVICE_ROWS);
+    let device_rows = text::cells(app.devices.len().max(1)).min(MAX_DEVICE_ROWS);
     let [devices_area, connection_area, log_area, status_area] = Layout::vertical([
         Constraint::Length(device_rows + 3),
         Constraint::Length(connection::HEIGHT),

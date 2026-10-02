@@ -9,7 +9,7 @@ use tracing::{info, warn};
 
 use crate::env::Env;
 use crate::kernel::{HostRoute, Kernel, Link};
-use crate::op::{nft_table_name, Op, SysctlKey};
+use crate::op::{Op, SysctlKey, nft_table_name};
 use crate::plan::Plan;
 use crate::session_id::SessionId;
 

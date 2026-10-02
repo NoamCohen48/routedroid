@@ -2,8 +2,8 @@
 //! JSON control message ([`Request`](crate::Request) or
 //! [`Reply`](crate::Reply)), kind 0x10 exactly one raw IPv4 packet.
 
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 /// The largest IPv4 packet.
 pub const MAX_PACKET: usize = 65_535;

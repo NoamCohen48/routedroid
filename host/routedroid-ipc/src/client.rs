@@ -10,13 +10,13 @@
 mod connect;
 mod reader;
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, Result};
 use tokio::io::AsyncWriteExt;
 use tokio::net::unix::OwnedWriteHalf;
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{Mutex, mpsc, oneshot};
 
 use crate::wire::ClientMessage;
 use crate::{Event, Kind, Request, Response};

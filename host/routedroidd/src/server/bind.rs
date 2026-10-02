@@ -5,8 +5,8 @@ use std::fs::{DirBuilder, File, OpenOptions};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
-use anyhow::{bail, Context, Result};
-use rustix::fs::{flock, FlockOperation, Mode};
+use anyhow::{Context, Result, bail};
+use rustix::fs::{FlockOperation, Mode, flock};
 use tokio::net::UnixListener;
 
 pub fn current_uid() -> u32 {

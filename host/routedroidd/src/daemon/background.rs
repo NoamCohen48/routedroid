@@ -6,7 +6,7 @@ use tokio::task::JoinHandle;
 pub struct Background(JoinHandle<()>);
 
 impl Background {
-    pub fn spawn(loop_body: impl std::future::Future<Output = ()> + Send + 'static) -> Self {
+    pub fn spawn(loop_body: impl Future<Output = ()> + Send + 'static) -> Self {
         Self(tokio::spawn(loop_body))
     }
 }

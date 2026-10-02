@@ -2,8 +2,8 @@
 //! lowercase hex characters on the wire, `[u8; 32]` in memory, so a decoded
 //! body cannot hold a value that still needs checking.
 
-use serde::de::{Deserializer, Error, Visitor};
 use serde::Serializer;
+use serde::de::{Deserializer, Error, Visitor};
 
 pub fn serialize<S: Serializer>(bytes: &[u8; 32], s: S) -> Result<S::Ok, S::Error> {
     s.serialize_str(&hex::encode(bytes))

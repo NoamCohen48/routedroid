@@ -2,7 +2,7 @@
 
 use std::process::Stdio;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use tokio::process::Command;
 
 use super::Adb;

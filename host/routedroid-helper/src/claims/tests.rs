@@ -72,9 +72,11 @@ fn a_vanished_interface_releases_quietly() {
 fn a_missing_interface_is_never_claimed() {
     let (_scratch, claims, kernel, _) = setup();
     let key = SysctlKey::new(IfName::new("nosuch0").unwrap(), Leaf::Forwarding);
-    assert!(claims
-        .acquire(&kernel, SessionId::from_raw(1), &key)
-        .is_err());
+    assert!(
+        claims
+            .acquire(&kernel, SessionId::from_raw(1), &key)
+            .is_err()
+    );
     assert!(claims.list().unwrap().is_empty());
 }
 
@@ -82,9 +84,11 @@ fn a_missing_interface_is_never_claimed() {
 fn a_failed_sysctl_write_still_leaves_the_claim_recorded() {
     let (_scratch, claims, kernel, key) = setup();
     kernel.lock().failing.insert("sysctl_write");
-    assert!(claims
-        .acquire(&kernel, SessionId::from_raw(1), &key)
-        .is_err());
+    assert!(
+        claims
+            .acquire(&kernel, SessionId::from_raw(1), &key)
+            .is_err()
+    );
     assert!(
         claims.holds(SessionId::from_raw(1), &key).unwrap(),
         "undo must find it"

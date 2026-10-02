@@ -15,8 +15,8 @@ use tokio::io::unix::AsyncFd;
 pub use activation::{Activated, Activation};
 pub use listener::Listener;
 
-use crate::datagram::{encode_control, KIND_PACKET};
 use crate::MAX_PACKET;
+use crate::datagram::{KIND_PACKET, encode_control};
 
 pub struct SeqPacket {
     socket: AsyncFd<Socket>,
@@ -75,7 +75,7 @@ impl SeqPacket {
                 Ok(sent) => {
                     return Err(io::Error::other(format!(
                         "short seqpacket send {sent}/{total}"
-                    )))
+                    )));
                 }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(false),
@@ -93,7 +93,7 @@ impl SeqPacket {
                 Ok(Ok(sent)) => {
                     return Err(io::Error::other(format!(
                         "short seqpacket send {sent}/{total}"
-                    )))
+                    )));
                 }
                 Ok(Err(e)) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Ok(Err(e)) => return Err(e),

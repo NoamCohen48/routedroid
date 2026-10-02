@@ -1,11 +1,11 @@
 //! The event log: newest lines at the bottom, errors in red, long lines
 //! wrapped; PageUp/PageDown scroll back and forth.
 
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph, Wrap};
-use ratatui::Frame;
 
 use crate::app::{App, Level};
 

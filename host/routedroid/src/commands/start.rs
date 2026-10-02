@@ -65,7 +65,9 @@ impl StartArgs {
             mtu: self.mtu,
             dns,
             // Rounded up: a sub-second timeout still means "a moment", not "none".
-            connect_timeout_secs: self.connect_timeout.map(|d| d.as_secs_f64().ceil() as u64),
+            connect_timeout_secs: self
+                .connect_timeout
+                .map(|d| d.as_secs() + u64::from(d.subsec_nanos() > 0)),
             allow_network_adb: self.allow_network_adb,
         }
     }

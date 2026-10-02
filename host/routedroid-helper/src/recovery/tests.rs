@@ -48,12 +48,13 @@ fn a_crash_leaves_other_sessions_alone() {
     }
     check(&lab.env.journal_dir).unwrap();
     live.stop().unwrap();
-    assert!(lab
-        .kernel
-        .lock()
-        .sysctls
-        .get(&key("lan0", Leaf::ProxyArp))
-        .is_none_or(|v| v == "0"));
+    assert!(
+        lab.kernel
+            .lock()
+            .sysctls
+            .get(&key("lan0", Leaf::ProxyArp))
+            .is_none_or(|v| v == "0")
+    );
 }
 
 #[test]

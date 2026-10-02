@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use clap::Parser;
-use routedroid_helper_ipc::{IfName, DEFAULT_SOCKET};
+use routedroid_helper_ipc::{DEFAULT_SOCKET, IfName};
 
 #[derive(Parser, Debug)]
 #[command(version, about)]

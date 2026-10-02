@@ -1,8 +1,8 @@
 //! The client's end of the helper connection: requests that wait for
 //! their reply, packets out, and packets or replies in.
 
-use anyhow::{bail, Context, Result};
-use routedroid_helper_ipc::{Datagram, Reply, Request, SeqPacket, MAX_DATAGRAM};
+use anyhow::{Context, Result, bail};
+use routedroid_helper_ipc::{Datagram, MAX_DATAGRAM, Reply, Request, SeqPacket};
 
 pub struct Link {
     conn: SeqPacket,

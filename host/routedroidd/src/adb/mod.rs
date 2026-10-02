@@ -15,10 +15,10 @@ mod reverse;
 mod track;
 
 pub use device::AdbDevice;
-pub use devices::{parse_devices, Device, DeviceState};
+pub use devices::{Device, DeviceState, parse_devices};
+pub use reverse::ReverseMapping;
 #[cfg(test)]
 pub use reverse::parse_reverse_list;
-pub use reverse::ReverseMapping;
 
 use std::process::Stdio;
 use std::time::Duration;

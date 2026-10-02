@@ -6,8 +6,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
-use routedroid_helper_ipc::{ErrorCode, Reply, SeqPacket, MAX_DATAGRAM};
+use anyhow::{Context, Result, bail};
+use routedroid_helper_ipc::{ErrorCode, MAX_DATAGRAM, Reply, SeqPacket};
 use tokio::sync::watch;
 use tokio::task::spawn_blocking;
 use tokio::time::Instant;

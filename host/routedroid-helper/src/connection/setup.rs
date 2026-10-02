@@ -6,7 +6,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use routedroid_helper_ipc::{Datagram, ErrorCode, Reply, Request, SeqPacket, VERSION};
 use tokio::task::spawn_blocking;
-use tokio::time::{timeout_at, Instant};
+use tokio::time::{Instant, timeout_at};
 use tracing::warn;
 
 use super::error;

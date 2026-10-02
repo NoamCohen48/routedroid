@@ -107,12 +107,13 @@ fn a_refused_start_is_kept_on_its_row() {
         message,
     });
     assert!(app.last_end["two"].text.contains("phone_ip is required"));
-    assert!(app
-        .log
-        .last()
-        .unwrap()
-        .text
-        .starts_with("two: start failed"));
+    assert!(
+        app.log
+            .last()
+            .unwrap()
+            .text
+            .starts_with("two: start failed")
+    );
 }
 
 #[test]

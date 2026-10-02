@@ -80,12 +80,14 @@ async fn a_closed_daemon_fails_waiting_calls_and_ends_events() {
     let error = waiting.await.unwrap().unwrap_err();
     assert!(error.downcast_ref::<Closed>().is_some(), "{error:#}");
     assert!(events.next().await.unwrap().is_none());
-    assert!(calls
-        .call(Request::Status)
-        .await
-        .unwrap_err()
-        .downcast_ref::<Closed>()
-        .is_some());
+    assert!(
+        calls
+            .call(Request::Status)
+            .await
+            .unwrap_err()
+            .downcast_ref::<Closed>()
+            .is_some()
+    );
 }
 
 #[tokio::test]

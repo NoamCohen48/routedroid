@@ -127,14 +127,14 @@ mod tests {
             r#"{"kind":"sysctl","ifname":"lan0","leaf":"forwarding"}"#
         );
         assert_eq!(serde_json::from_str::<Op>(&json).unwrap(), op);
-        assert!(serde_json::from_str::<Op>(
-            r#"{"kind":"sysctl","ifname":"all","leaf":"forwarding"}"#
-        )
-        .is_err());
-        assert!(serde_json::from_str::<Op>(
-            r#"{"kind":"sysctl","ifname":"lan0","leaf":"rp_filter"}"#
-        )
-        .is_err());
+        assert!(
+            serde_json::from_str::<Op>(r#"{"kind":"sysctl","ifname":"all","leaf":"forwarding"}"#)
+                .is_err()
+        );
+        assert!(
+            serde_json::from_str::<Op>(r#"{"kind":"sysctl","ifname":"lan0","leaf":"rp_filter"}"#)
+                .is_err()
+        );
         assert!(serde_json::from_str::<Op>(r#"{"kind":"tun","name":"phone0","extra":1}"#).is_err());
     }
 }

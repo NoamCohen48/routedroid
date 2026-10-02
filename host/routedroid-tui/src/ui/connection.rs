@@ -1,10 +1,10 @@
 //! Details of the selected device's connection, or how its last one ended.
 
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph, Wrap};
-use ratatui::Frame;
 use routedroid_ipc::ConnectionInfo;
 
 use crate::app::App;

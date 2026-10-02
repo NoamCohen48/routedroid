@@ -36,3 +36,6 @@ netlink-packet-core = "0.9.0"
 netlink-sys = "0.9.0"
 toml = { version = "0.9", default-features = false, features = ["parse", "serde"] }
 routedroid-proto = { version = "0.1.0", path = "../routedroid-proto" }
+
+[lints]
+workspace = true

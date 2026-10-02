@@ -1,5 +1,5 @@
 use super::*;
-use crate::fixtures::{unhex, FRAMES};
+use crate::fixtures::{FRAMES, unhex};
 
 fn packets() -> Vec<(String, Vec<u8>)> {
     let f: serde_json::Value = serde_json::from_str(FRAMES).unwrap();

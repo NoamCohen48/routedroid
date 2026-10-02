@@ -6,6 +6,14 @@
 //!
 //! Exit codes: 0 ok, 1 error, 3 server NAK, 4 timeout / lease expired.
 
+// The probe predates the workspace lints; the casts are audited when it
+// becomes the helper's DHCP library.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap
+)]
+
 mod client;
 mod dhcp;
 mod packet;
@@ -190,11 +198,11 @@ async fn acquire(a: AcquireArgs) -> Result<u8> {
             HoldEnd::Expired => return Ok(EXIT_TIMEOUT),
         }
     }
-    if a.release_on_exit {
-        if let Err(e) = client.release(&current).await {
-            warn!(error = %e, "RELEASE failed (best effort)");
-            code = 1;
-        }
+    if a.release_on_exit
+        && let Err(e) = client.release(&current).await
+    {
+        warn!(error = %e, "RELEASE failed (best effort)");
+        code = 1;
     }
     Ok(code)
 }

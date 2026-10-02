@@ -27,9 +27,12 @@ pub enum Activated {
 impl Activation {
     /// Take the socket systemd passed, if any. Marks it close-on-exec and
     /// removes the `LISTEN_*` variables, so child processes neither inherit
-    /// the controller's connection nor believe they were activated. Call
-    /// it before any other thread exists: it changes the environment.
-    pub fn take() -> io::Result<Option<Self>> {
+    /// the controller's connection nor believe they were activated.
+    ///
+    /// # Safety
+    ///
+    /// No other thread may exist yet: this changes the environment.
+    pub unsafe fn take() -> io::Result<Option<Self>> {
         let Some(pid) = std::env::var_os("LISTEN_PID") else {
             return Ok(None);
         };
@@ -47,7 +50,8 @@ impl Activation {
             )));
         }
         for var in LISTEN_VARS {
-            std::env::remove_var(var);
+            // SAFETY: single-threaded, per this function's contract.
+            unsafe { std::env::remove_var(var) };
         }
         // SAFETY: fd 3 was handed to this process by systemd (LISTEN_PID is
         // ours) and nothing else in the process has wrapped it.

@@ -10,9 +10,9 @@
 
 use zeroize::Zeroizing;
 
-use crate::auth::{Secret, SECRET_LEN};
-use crate::messages::valid_session;
 use crate::PROTOCOL_VERSION;
+use crate::auth::{SECRET_LEN, Secret};
+use crate::messages::valid_session;
 
 pub const RECORD_LEN: usize = 80;
 pub const MAGIC: &[u8; 4] = b"RDB1";

@@ -7,11 +7,11 @@ use std::io;
 use std::time::Duration;
 
 use netlink_packet_core::{
-    NetlinkHeader, NetlinkMessage, NetlinkPayload, NLM_F_ACK, NLM_F_DUMP, NLM_F_DUMP_INTR,
-    NLM_F_REQUEST,
+    NLM_F_ACK, NLM_F_DUMP, NLM_F_DUMP_INTR, NLM_F_REQUEST, NetlinkHeader, NetlinkMessage,
+    NetlinkPayload,
 };
 use netlink_packet_route::RouteNetlinkMessage;
-use netlink_sys::{protocols::NETLINK_ROUTE, Socket, SocketAddr};
+use netlink_sys::{Socket, SocketAddr, protocols::NETLINK_ROUTE};
 use rustix::net::RecvFlags;
 
 /// A dump the kernel reports as interrupted (the table changed mid-dump) is

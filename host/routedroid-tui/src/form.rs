@@ -126,9 +126,9 @@ impl StartForm {
         self.focused == Field::LanIf && !self.choices.is_empty()
     }
 
-    /// Cycle the picked interface by `step`.
-    pub fn pick(&mut self, step: isize) {
-        let count = self.choices.len() as isize;
+    /// Pick the next interface, or the previous one, wrapping around.
+    pub fn pick(&mut self, forward: bool) {
+        let count = self.choices.len();
         if count == 0 {
             return;
         }
@@ -136,7 +136,11 @@ impl StartForm {
             .choices
             .iter()
             .position(|i| i.name == self.lan_if.value());
-        let next = at.map_or(0, |at| (at as isize + step).rem_euclid(count)) as usize;
+        let next = match at {
+            None => 0,
+            Some(at) if forward => (at + 1) % count,
+            Some(at) => (at + count - 1) % count,
+        };
         self.lan_if = LineInput::new(&self.choices[next].name);
     }
 

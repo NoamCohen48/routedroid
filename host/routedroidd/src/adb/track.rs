@@ -8,8 +8,8 @@ use anyhow::Context;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::{Child, ChildStdout, Command};
 
-use super::devices::{parse_list, Device};
 use super::Adb;
+use super::devices::{Device, parse_list};
 use crate::fault::{Fault, FaultExt, Kind, Result};
 
 /// adb's own limit on one message; a longer length is not adb talking.

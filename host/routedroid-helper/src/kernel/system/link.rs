@@ -1,10 +1,10 @@
 //! Links over rtnetlink: look up by name, list, configure, delete by index.
 
 use anyhow::{Context, Result};
+use netlink_packet_route::RouteNetlinkMessage;
 use netlink_packet_route::link::{
     InfoKind, LinkAttribute, LinkFlags, LinkInfo, LinkLayerType, LinkMessage,
 };
-use netlink_packet_route::RouteNetlinkMessage;
 use routedroid_helper_ipc::IfName;
 
 use super::netlink;

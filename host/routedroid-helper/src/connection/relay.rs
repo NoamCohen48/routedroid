@@ -14,7 +14,7 @@
 
 use std::net::Ipv4Addr;
 
-use routedroid_helper_ipc::{Datagram, ErrorCode, Reply, Request, SeqPacket, MAX_DATAGRAM};
+use routedroid_helper_ipc::{Datagram, ErrorCode, MAX_DATAGRAM, Reply, Request, SeqPacket};
 use routedroid_proto::ipv4;
 use tokio::sync::watch;
 use tracing::{debug, info};

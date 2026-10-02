@@ -10,11 +10,11 @@
 mod answer;
 
 use futures_util::StreamExt;
-use routedroid_ipc::wire::{ServerMessage, MAX_LINE};
+use routedroid_ipc::wire::{MAX_LINE, ServerMessage};
 use routedroid_ipc::{Event, Request, Response};
 use tokio::io::AsyncWriteExt;
-use tokio::net::unix::OwnedReadHalf;
 use tokio::net::UnixStream;
+use tokio::net::unix::OwnedReadHalf;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::JoinSet;
 use tokio_util::codec::{FramedRead, LinesCodec};

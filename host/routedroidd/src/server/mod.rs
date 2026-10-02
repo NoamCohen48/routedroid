@@ -9,13 +9,13 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use tokio::net::UnixStream;
-use tokio::signal::unix::{signal, SignalKind};
+use tokio::signal::unix::{SignalKind, signal};
 use tracing::{info, warn};
 
 use self::client::{ClientConnection, Handles};
+use crate::Args;
 use crate::adb::{Adb, DEFAULT_TIMEOUT};
 use crate::daemon::Daemon;
-use crate::Args;
 
 /// The control socket and the daemon behind it: owns both for the process's
 /// life and takes both down together.

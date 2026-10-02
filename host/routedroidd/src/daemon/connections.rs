@@ -12,11 +12,11 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use routedroid_helper_ipc::{IfName, TUN_PREFIX};
 use routedroid_ipc::{ConnectionInfo, ConnectionState, InterfaceInfo, Outcome, StartRequest};
 
+use super::DeviceConnection;
 use super::background::Background;
 use super::devices::AttachedDevices;
 use super::events::EventBus;
 use super::spec::{ConnectionSpec, StartSpec};
-use super::DeviceConnection;
 use crate::adb::{Adb, DeviceState};
 use crate::device::unusable;
 use crate::fault::{Fault, Kind, Result};
@@ -79,7 +79,7 @@ impl DeviceConnections {
             Some(name) if taken(name) => {
                 return Err(usage(format!(
                     "TUN {name} is already used by another connection"
-                )))
+                )));
             }
             Some(name) => name.clone(),
             None => (0..)

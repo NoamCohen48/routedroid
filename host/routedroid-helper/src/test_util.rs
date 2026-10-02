@@ -8,8 +8,8 @@ use routedroid_helper_ipc::IfName;
 
 use crate::env::Env;
 use crate::fault::CrashHook;
-use crate::kernel::fake::Fake;
 use crate::kernel::Address;
+use crate::kernel::fake::Fake;
 use crate::plan::{Facts, Plan, Request};
 use crate::policy::Policy;
 use crate::session_id::SessionId;

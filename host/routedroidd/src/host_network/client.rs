@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context;
-use routedroid_helper_ipc::{Datagram, IfName, Reply, Request, SeqPacket, MAX_DATAGRAM};
+use routedroid_helper_ipc::{Datagram, IfName, MAX_DATAGRAM, Reply, Request, SeqPacket};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 

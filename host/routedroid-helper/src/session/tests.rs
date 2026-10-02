@@ -25,10 +25,12 @@ fn start_applies_tagged_state_and_stop_restores_the_baseline() {
             state.tables["routedroid_phone0"].0.comment.as_deref(),
             Some("routedroid:0000000000000001")
         );
-        assert!(state
-            .routes
-            .iter()
-            .any(|r| r.dst.to_string() == "10.0.0.5" && r.oif == Some(tun.index)));
+        assert!(
+            state
+                .routes
+                .iter()
+                .any(|r| r.dst.to_string() == "10.0.0.5" && r.oif == Some(tun.index))
+        );
         assert_eq!(state.sysctls[&key("lan0", Leaf::ProxyArp)], ENABLED);
         assert_eq!(state.sysctls[&key("phone0", Leaf::Forwarding)], ENABLED);
     }

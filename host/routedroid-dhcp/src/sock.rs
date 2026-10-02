@@ -6,7 +6,7 @@ use std::io;
 use std::mem;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use tokio::io::unix::AsyncFd;
 use tracing::debug;
 
@@ -139,7 +139,7 @@ pub fn lookup_iface(name: &str) -> Result<Iface> {
     }
     // SAFETY: the kernel filled ifru_hwaddr for SIOCGIFHWADDR.
     let hw = unsafe { req.ifr_ifru.ifru_hwaddr };
-    if i32::from(hw.sa_family) != libc::ARPHRD_ETHER as i32 {
+    if i32::from(hw.sa_family) != i32::from(libc::ARPHRD_ETHER) {
         bail!(
             "{name}: hardware type {} is not Ethernet (ARPHRD_ETHER); only Ethernet-like netdevices are supported",
             hw.sa_family
@@ -189,7 +189,9 @@ impl PacketSocket {
         if raw < 0 {
             let e = io::Error::last_os_error();
             if e.raw_os_error() == Some(libc::EPERM) || e.raw_os_error() == Some(libc::EACCES) {
-                bail!("socket(AF_PACKET, SOCK_RAW): {e}. This needs CAP_NET_RAW: run under sudo, or `setcap cap_net_raw+ep` on the binary");
+                bail!(
+                    "socket(AF_PACKET, SOCK_RAW): {e}. This needs CAP_NET_RAW: run under sudo, or `setcap cap_net_raw+ep` on the binary"
+                );
             }
             return Err(e).context("socket(AF_PACKET, SOCK_RAW)");
         }
@@ -208,7 +210,7 @@ impl PacketSocket {
                 libc::SOL_SOCKET,
                 libc::SO_ATTACH_FILTER,
                 &fprog as *const libc::sock_fprog as *const libc::c_void,
-                mem::size_of::<libc::sock_fprog>() as libc::socklen_t,
+                size_of::<libc::sock_fprog>() as libc::socklen_t,
             )
         };
         if rc < 0 {
@@ -223,7 +225,7 @@ impl PacketSocket {
                 libc::SOL_PACKET,
                 PACKET_AUXDATA,
                 &one as *const libc::c_int as *const libc::c_void,
-                mem::size_of::<libc::c_int>() as libc::socklen_t,
+                size_of::<libc::c_int>() as libc::socklen_t,
             )
         };
         if rc < 0 {
@@ -240,7 +242,7 @@ impl PacketSocket {
             libc::bind(
                 fd.as_raw_fd(),
                 &sll as *const libc::sockaddr_ll as *const libc::sockaddr,
-                mem::size_of::<libc::sockaddr_ll>() as libc::socklen_t,
+                size_of::<libc::sockaddr_ll>() as libc::socklen_t,
             )
         };
         if rc < 0 {
@@ -286,7 +288,7 @@ impl PacketSocket {
                         frame.len(),
                         0,
                         &sll as *const libc::sockaddr_ll as *const libc::sockaddr,
-                        mem::size_of::<libc::sockaddr_ll>() as libc::socklen_t,
+                        size_of::<libc::sockaddr_ll>() as libc::socklen_t,
                     )
                 };
                 if n < 0 {
@@ -316,7 +318,7 @@ fn recvmsg_once(fd: libc::c_int, buf: &mut [u8]) -> io::Result<(usize, RecvMeta)
     // SAFETY: msghdr is a plain C struct; zeroed is a valid value.
     let mut msg: libc::msghdr = unsafe { mem::zeroed() };
     msg.msg_name = &mut from as *mut libc::sockaddr_ll as *mut libc::c_void;
-    msg.msg_namelen = mem::size_of::<libc::sockaddr_ll>() as libc::socklen_t;
+    msg.msg_namelen = size_of::<libc::sockaddr_ll>() as libc::socklen_t;
     msg.msg_iov = &mut iov;
     msg.msg_iovlen = 1;
     msg.msg_control = cmsg_buf.as_mut_ptr() as *mut libc::c_void;

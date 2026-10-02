@@ -1,6 +1,6 @@
 //! Header rejection reasons (§2, §8).
 
-use super::{MessageType, MAX_CONTROL_BODY, MIN_PACKET_BODY};
+use super::{MAX_CONTROL_BODY, MIN_PACKET_BODY, MessageType};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum FrameError {

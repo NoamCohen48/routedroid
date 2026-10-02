@@ -8,8 +8,8 @@ use std::sync::Arc;
 use routedroid_proto::frame::Frame;
 use tokio::sync::{mpsc, watch};
 
-use super::progress::Counters;
 use super::SessionEnd;
+use super::progress::Counters;
 
 /// Runs until the helper's channel closes or the writer is gone.
 pub async fn pump(

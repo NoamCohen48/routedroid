@@ -2,8 +2,8 @@
 //! which of the two failed: the advice for each is different.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 use tokio::net::UnixStream;
 use tokio::sync::Mutex;

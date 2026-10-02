@@ -93,18 +93,22 @@ fn reservations_are_exclusive_until_resolved() {
         reservation("phone0", "10.0.0.5"),
     )
     .unwrap();
-    assert!(Journal::create(
-        dir,
-        SessionId::from_raw(2),
-        reservation("phone0", "10.0.0.6")
-    )
-    .is_err());
-    assert!(Journal::create(
-        dir,
-        SessionId::from_raw(3),
-        reservation("phone1", "10.0.0.5")
-    )
-    .is_err());
+    assert!(
+        Journal::create(
+            dir,
+            SessionId::from_raw(2),
+            reservation("phone0", "10.0.0.6")
+        )
+        .is_err()
+    );
+    assert!(
+        Journal::create(
+            dir,
+            SessionId::from_raw(3),
+            reservation("phone1", "10.0.0.5")
+        )
+        .is_err()
+    );
     let other = Journal::create(
         dir,
         SessionId::from_raw(4),
@@ -121,12 +125,14 @@ fn reservations_are_exclusive_until_resolved() {
         "same id"
     );
     drop(j); // orphaned journals still reserve
-    assert!(Journal::create(
-        dir,
-        SessionId::from_raw(5),
-        reservation("phone0", "10.0.0.8")
-    )
-    .is_err());
+    assert!(
+        Journal::create(
+            dir,
+            SessionId::from_raw(5),
+            reservation("phone0", "10.0.0.8")
+        )
+        .is_err()
+    );
     orphan(&dir.join("0000000000000001.journal"))
         .resolve()
         .unwrap();
@@ -153,12 +159,14 @@ fn an_unreadable_journal_blocks_reservations_but_not_other_recovery() {
     );
     fs::write(dir.join("0000000000000002.journal"), "garbage\n").unwrap();
     fs::write(dir.join("0000000000000003.journal.tmp"), "").unwrap();
-    assert!(Journal::create(
-        dir,
-        SessionId::from_raw(4),
-        reservation("phone9", "10.0.0.9")
-    )
-    .is_err());
+    assert!(
+        Journal::create(
+            dir,
+            SessionId::from_raw(4),
+            reservation("phone9", "10.0.0.9")
+        )
+        .is_err()
+    );
 
     let taken = take_all(dir).unwrap();
     assert_eq!(taken.len(), 2);

@@ -27,12 +27,16 @@ fn allows_only_listed_interfaces_and_addresses() {
     policy
         .check(&name("eno1"), "192.168.1.250".parse().unwrap())
         .unwrap();
-    assert!(policy
-        .check(&name("eno1"), "192.168.1.1".parse().unwrap())
-        .is_err());
-    assert!(policy
-        .check(&name("eth0.100"), "192.168.1.203".parse().unwrap())
-        .is_err());
+    assert!(
+        policy
+            .check(&name("eno1"), "192.168.1.1".parse().unwrap())
+            .is_err()
+    );
+    assert!(
+        policy
+            .check(&name("eth0.100"), "192.168.1.203".parse().unwrap())
+            .is_err()
+    );
     let err = policy
         .check(&name("docker0"), "192.168.1.203".parse().unwrap())
         .unwrap_err();
@@ -45,9 +49,11 @@ fn allows_only_listed_interfaces_and_addresses() {
 #[test]
 fn an_empty_policy_allows_nothing() {
     let policy: Policy = "".parse().unwrap();
-    assert!(policy
-        .check(&name("eno1"), "192.168.1.203".parse().unwrap())
-        .is_err());
+    assert!(
+        policy
+            .check(&name("eno1"), "192.168.1.203".parse().unwrap())
+            .is_err()
+    );
 }
 
 #[test]

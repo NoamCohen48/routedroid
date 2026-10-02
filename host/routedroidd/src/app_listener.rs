@@ -14,7 +14,7 @@ use routedroid_proto::messages::{self, ErrorBody, ErrorCode, Hello};
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
-use tokio::time::{sleep_until, timeout, Instant};
+use tokio::time::{Instant, sleep_until, timeout};
 use tracing::{debug, info, warn};
 
 use crate::fault::{Fault, FaultExt, Kind, Result};

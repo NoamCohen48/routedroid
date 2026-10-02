@@ -5,7 +5,7 @@ use std::net::Ipv4Addr;
 use std::path::Path;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use routedroid_helper_ipc::{IfName, Reply, Request, SeqPacket, VERSION};
 use tracing::{info, warn};
 

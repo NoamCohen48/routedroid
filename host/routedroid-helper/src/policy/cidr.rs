@@ -4,7 +4,7 @@ use std::fmt;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -83,10 +83,12 @@ mod tests {
             host.contains("10.0.0.5".parse().unwrap())
                 && !host.contains("10.0.0.4".parse().unwrap())
         );
-        assert!("0.0.0.0/0"
-            .parse::<Cidr>()
-            .unwrap()
-            .contains("8.8.8.8".parse().unwrap()));
+        assert!(
+            "0.0.0.0/0"
+                .parse::<Cidr>()
+                .unwrap()
+                .contains("8.8.8.8".parse().unwrap())
+        );
     }
 
     #[test]

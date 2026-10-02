@@ -1,18 +1,19 @@
 //! Centered popups: the start form and the stop confirmation. The form puts
 //! the terminal's own cursor in the focused field.
 
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Flex, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph};
-use ratatui::Frame;
 
+use super::text::cells;
 use crate::form::{Field, StartForm};
 
 const WIDTH: u16 = 64;
 
 pub fn start_form(frame: &mut Frame, form: &StartForm) {
-    let area = centered(frame.area(), WIDTH, Field::ALL.len() as u16 * 2 + 3);
+    let area = centered(frame.area(), WIDTH, cells(Field::ALL.len()) * 2 + 3);
     let mut lines = Vec::new();
     let mut cursor = None;
     for field in Field::ALL {
@@ -45,9 +46,9 @@ pub fn start_form(frame: &mut Frame, form: &StartForm) {
         }
         lines.push(line);
         if focused {
-            let row = area.y + 1 + lines.len() as u16 - 1;
+            let row = area.y + cells(lines.len());
             if let Some(input) = form.editable(field) {
-                cursor = Some(Position::new(area.x + 3 + input.cursor() as u16, row));
+                cursor = Some(Position::new(area.x + 3 + cells(input.cursor()), row));
             }
         }
     }

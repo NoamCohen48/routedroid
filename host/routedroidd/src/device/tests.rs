@@ -1,5 +1,5 @@
-use super::ports::*;
 use super::Transport;
+use super::ports::*;
 use crate::adb::parse_reverse_list;
 
 #[test]

@@ -10,14 +10,14 @@
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use routedroid_helper_ipc::IfName;
 use rustix::fs::{Mode, OFlags};
 use tokio::io::unix::AsyncFd;
 
 const IFF_TUN: libc::c_short = 0x0001;
 const IFF_NO_PI: libc::c_short = 0x1000;
-const IFF_TUN_EXCL: libc::c_short = 0x8000_u16 as libc::c_short;
+const IFF_TUN_EXCL: libc::c_short = 0x8000_u16.cast_signed();
 /// `_IOW('T', 202, int)`.
 const TUNSETIFF: libc::c_ulong = 0x4004_54ca;
 
@@ -32,7 +32,7 @@ impl Device {
         let mut request: libc::ifreq = unsafe { std::mem::zeroed() };
         // IfName guarantees 1..=15 ASCII bytes, so the name stays NUL-terminated.
         for (dst, src) in request.ifr_name.iter_mut().zip(name.as_str().bytes()) {
-            *dst = src as libc::c_char;
+            *dst = libc::c_char::from_ne_bytes([src]);
         }
         request.ifr_ifru.ifru_flags = IFF_TUN | IFF_NO_PI | IFF_TUN_EXCL;
         // SAFETY: TUNSETIFF reads and writes the ifreq we own for the whole call.
@@ -87,7 +87,7 @@ impl AsyncTun {
                     return Err(io::Error::other(format!(
                         "short TUN write: {n} of {} bytes",
                         packet.len()
-                    )))
+                    )));
                 }
                 Ok(Err(e)) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Ok(Err(e)) => return Err(e),

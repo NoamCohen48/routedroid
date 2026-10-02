@@ -2,8 +2,8 @@ use anyhow::anyhow;
 use routedroid_helper_ipc::Net;
 
 use super::*;
-use crate::kernel::fake::Fake;
 use crate::kernel::Route;
+use crate::kernel::fake::Fake;
 
 const POLICY: &str = r#"
 [[interface]]

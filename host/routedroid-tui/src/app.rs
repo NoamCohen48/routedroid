@@ -78,8 +78,8 @@ impl App {
     }
 
     pub fn move_cursor(&mut self, delta: isize) {
-        let last = self.devices.len().saturating_sub(1) as isize;
-        self.cursor = (self.cursor as isize + delta).clamp(0, last) as usize;
+        let last = self.devices.len().saturating_sub(1);
+        self.cursor = self.cursor.saturating_add_signed(delta).min(last);
     }
 
     pub fn info(&mut self, text: impl Into<String>) {

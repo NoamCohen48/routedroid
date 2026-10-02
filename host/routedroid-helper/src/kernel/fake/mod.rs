@@ -6,13 +6,13 @@
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use routedroid_helper_ipc::IfName;
 
 use super::{
-    Address, Firewall, HostRoute, Kernel, Link, LinkKind, NftTable, Route, ROUTE_PROTOCOL,
+    Address, Firewall, HostRoute, Kernel, Link, LinkKind, NftTable, ROUTE_PROTOCOL, Route,
 };
-use crate::op::{nft_table_name, SysctlKey};
+use crate::op::{SysctlKey, nft_table_name};
 
 mod state;
 

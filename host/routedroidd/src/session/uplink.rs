@@ -53,7 +53,7 @@ impl Uplink {
                     &counters.from_phone,
                     &counters.bytes_from_phone,
                     packet.len(),
-                )
+                );
             }
             Ok(false) => Counters::bump(&self.counters.congested),
             Err(e) => return Err(format!("inject into helper: {e}")),

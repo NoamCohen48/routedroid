@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use tracing::info;
 
-use super::{dir, Journal, Taken};
+use super::{Journal, Taken, dir};
 use crate::session_id::SessionId;
 use crate::storage;
 

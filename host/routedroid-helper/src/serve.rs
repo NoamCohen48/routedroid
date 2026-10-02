@@ -9,11 +9,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use routedroid_helper_ipc::{Activated, Activation, Listener, SeqPacket};
-use tokio::signal::unix::{signal, SignalKind};
+use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
-use tokio::task::{spawn_blocking, JoinSet};
+use tokio::task::{JoinSet, spawn_blocking};
 use tracing::{info, warn};
 
 use crate::connection;
@@ -118,11 +118,11 @@ fn shutdown_signal() -> Result<watch::Receiver<bool>> {
 /// The uid gate; socket permissions are the primary one.
 fn admit(options: &Options, conn: SeqPacket) -> Result<SeqPacket> {
     let uid = conn.peer_uid()?;
-    if let Some(want) = options.allow_uid {
-        if uid != want {
-            warn!(uid, "rejecting controller: uid not allowed");
-            bail!("controller uid {uid} not allowed");
-        }
+    if let Some(want) = options.allow_uid
+        && uid != want
+    {
+        warn!(uid, "rejecting controller: uid not allowed");
+        bail!("controller uid {uid} not allowed");
     }
     info!(uid, "controller connected");
     Ok(conn)

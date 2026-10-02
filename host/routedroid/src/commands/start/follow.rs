@@ -2,7 +2,7 @@
 //! to stop it and keeps following, so the exit code reflects how it ended;
 //! a second one stops waiting (the daemon finishes the stop on its own).
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use routedroid_ipc::{Calls, Client, ConnectionState, Event, Events, Outcome, Request, Response};
 use tokio::sync::mpsc;
 

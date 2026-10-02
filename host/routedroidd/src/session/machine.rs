@@ -1,14 +1,14 @@
 //! Pure host state machine (`protocol/version-1.md` §5). Fed one validated
 //! frame at a time; returns what to emit or why to close. No I/O, no time.
 
+use routedroid_proto::PROTOCOL_VERSION;
+use routedroid_proto::Role;
 use routedroid_proto::auth::{self, Nonce, Secret};
 use routedroid_proto::frame::{Frame, MessageType};
 use routedroid_proto::messages::{
     self, Auth, BodyError, ErrorBody, ErrorCode, Hello, HelloAck, VpnReady,
 };
 use routedroid_proto::state::{self, State};
-use routedroid_proto::Role;
-use routedroid_proto::PROTOCOL_VERSION;
 
 use super::{Close, SessionConfig};
 

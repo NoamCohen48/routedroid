@@ -11,14 +11,14 @@ use routedroid_proto::frame::Frame;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
-use tokio::time::{sleep_until, Instant};
+use tokio::time::{Instant, sleep_until};
 use tracing::{info, warn};
 
 use super::downlink;
 use super::progress::Progress;
 use super::timers::{Keepalive, LastRx, PhaseTimer};
-use super::uplink::{reader_task, Inbound, Inject, Uplink};
-use super::writer::{writer_task, QUEUE_DEPTH};
+use super::uplink::{Inbound, Inject, Uplink, reader_task};
+use super::writer::{QUEUE_DEPTH, writer_task};
 use super::{Machine, SessionEnd};
 
 const WRITER_FLUSH: Duration = Duration::from_millis(500);

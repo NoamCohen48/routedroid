@@ -4,9 +4,9 @@ use std::time::Duration;
 use routedroid_ipc::{ConnectionState, DeviceInfo, Event, Request, Response};
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
-use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::UnixStream;
-use tokio::sync::{watch, Notify};
+use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::sync::{Notify, watch};
 use tokio::time::timeout;
 
 use super::{Answer, ClientConnection};

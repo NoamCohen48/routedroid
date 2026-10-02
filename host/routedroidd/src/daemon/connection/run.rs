@@ -17,7 +17,7 @@ use crate::daemon::connections::DeviceConnections;
 use crate::daemon::spec::ConnectionSpec;
 use crate::device::AdbBridge;
 use crate::fault::{Fault, Kind, Result};
-use crate::host_network::{default_gateway, HostNetwork};
+use crate::host_network::{HostNetwork, default_gateway};
 use crate::session::Counters;
 
 const HELPER_START_TIMEOUT: Duration = Duration::from_secs(15);

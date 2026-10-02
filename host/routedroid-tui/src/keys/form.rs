@@ -18,10 +18,10 @@ pub fn handle(app: &mut App, key: KeyEvent, mut form: Box<StartForm>) -> Vec<Com
         KeyCode::Enter => return submit(app, form),
         KeyCode::Tab | KeyCode::Down => form.focus_next(),
         KeyCode::BackTab | KeyCode::Up => form.focus_previous(),
-        KeyCode::Left if form.picking() => form.pick(-1),
-        KeyCode::Right if form.picking() => form.pick(1),
+        KeyCode::Left if form.picking() => form.pick(false),
+        KeyCode::Right if form.picking() => form.pick(true),
         KeyCode::Char(' ') if form.focused == Field::NetworkAdb => {
-            form.allow_network_adb = !form.allow_network_adb
+            form.allow_network_adb = !form.allow_network_adb;
         }
         code => {
             if let Some(input) = form.input(form.focused) {
@@ -47,10 +47,10 @@ pub fn handle(app: &mut App, key: KeyEvent, mut form: Box<StartForm>) -> Vec<Com
 
 /// Bracketed paste lands in the focused text field, on one line.
 pub fn paste(app: &mut App, text: &str) {
-    if let Mode::StartForm(form) = &mut app.mode {
-        if let Some(input) = form.input(form.focused) {
-            input.insert(&text.replace(['\n', '\r'], " "));
-        }
+    if let Mode::StartForm(form) = &mut app.mode
+        && let Some(input) = form.input(form.focused)
+    {
+        input.insert(&text.replace(['\n', '\r'], " "));
     }
 }
 

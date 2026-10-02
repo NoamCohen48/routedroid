@@ -1,13 +1,13 @@
 //! The device table: one row per attached device, cursor on the selected one.
 //! Long serials are cut with an ellipsis; a phone's last end stays on its row.
 
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::Text;
 use ratatui::widgets::{Block, Row, Table, TableState};
-use ratatui::Frame;
 
-use super::text::fit;
+use super::text::{cells, fit};
 use crate::app::App;
 use crate::describe;
 
@@ -23,8 +23,8 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         app.devices.iter().map(|device| row(app, device)).collect()
     };
     let widths = [
-        Constraint::Max(SERIAL as u16),
-        Constraint::Max(MODEL as u16),
+        Constraint::Max(cells(SERIAL)),
+        Constraint::Max(cells(MODEL)),
         Constraint::Length(12),
         Constraint::Fill(1),
         Constraint::Fill(2),

@@ -1,12 +1,13 @@
 //! One line: daemon link on the left, key hints for the current mode on the
 //! right, dropped when the terminal is too narrow for both.
 
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Stylize};
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
-use ratatui::Frame;
 
+use super::text::cells;
 use crate::app::{App, DaemonLink, Mode};
 
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
@@ -23,12 +24,12 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         Mode::ConfirmStop { .. } => "y confirm  any other key cancels",
     };
     let needed = daemon.width() + hints.chars().count() + 1;
-    if (area.width as usize) < needed {
+    if usize::from(area.width) < needed {
         frame.render_widget(Paragraph::new(daemon), area);
         return;
     }
     let [daemon_area, hints_area] = Layout::horizontal([
-        Constraint::Length(daemon.width() as u16),
+        Constraint::Length(cells(daemon.width())),
         Constraint::Fill(1),
     ])
     .areas(area);

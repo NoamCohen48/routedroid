@@ -75,11 +75,7 @@ pub fn udp_checksum(src: Ipv4Addr, dst: Ipv4Addr, udp: &[u8]) -> u16 {
     // skip the checksum field at [6..8]
     s = s.wrapping_add(sum(&udp[8..]));
     let c = !fold(s);
-    if c == 0 {
-        0xffff
-    } else {
-        c
-    }
+    if c == 0 { 0xffff } else { c }
 }
 
 /// Build `Ethernet(IPv4(UDP(payload)))`. IPv4 id 0, DF clear, TTL 64.

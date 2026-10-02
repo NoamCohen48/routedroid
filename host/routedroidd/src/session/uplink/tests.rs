@@ -1,5 +1,5 @@
-use std::sync::atomic::Ordering;
 use std::sync::Mutex;
+use std::sync::atomic::Ordering;
 
 use super::*;
 

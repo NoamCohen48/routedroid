@@ -1,11 +1,14 @@
 use super::*;
-use crate::fixtures::{unhex, BOOTSTRAP};
+use crate::fixtures::{BOOTSTRAP, unhex};
 
 #[test]
 fn fixture_vectors_encode_and_decode() {
     let f: serde_json::Value = serde_json::from_str(BOOTSTRAP).unwrap();
     assert_eq!(f["magic"].as_str().unwrap().as_bytes(), MAGIC);
-    assert_eq!(f["length"].as_u64().unwrap() as usize, RECORD_LEN);
+    assert_eq!(
+        usize::try_from(f["length"].as_u64().unwrap()).unwrap(),
+        RECORD_LEN
+    );
     assert_eq!(f["provider_uri"].as_str().unwrap(), PROVIDER_URI);
     for v in f["vectors"].as_array().unwrap() {
         let name = v["name"].as_str().unwrap();

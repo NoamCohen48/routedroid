@@ -28,3 +28,6 @@ rustix = { version = "1", features = ["fs", "process"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
+
+[lints]
+workspace = true

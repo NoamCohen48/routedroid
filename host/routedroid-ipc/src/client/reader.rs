@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::unix::OwnedReadHalf;
 use tokio::sync::{mpsc, oneshot};
@@ -111,7 +111,7 @@ async fn read_all(read: OwnedReadHalf, shared: Arc<Shared>, events: mpsc::Unboun
                 break (
                     false,
                     format!("bad line from routedroidd ({error}): {}", line.trim()),
-                )
+                );
             }
         }
     };

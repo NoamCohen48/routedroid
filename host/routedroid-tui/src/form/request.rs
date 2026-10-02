@@ -3,7 +3,7 @@
 
 use std::net::Ipv4Addr;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use routedroid_ipc::{DnsChoice, StartRequest};
 
 use super::StartForm;
@@ -42,7 +42,7 @@ impl StartForm {
             tun: optional(self.tun.value()).map(str::to_string),
             mtu,
             dns: dns(self.dns.value())?,
-            connect_timeout_secs: timeout.map(|d| d.as_secs_f64().ceil() as u64),
+            connect_timeout_secs: timeout.map(|d| d.as_secs() + u64::from(d.subsec_nanos() > 0)),
             allow_network_adb: self.allow_network_adb,
         })
     }

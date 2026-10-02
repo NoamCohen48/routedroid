@@ -14,6 +14,31 @@ members = [
 [workspace.package]
 # The one product version: every crate inherits it and android/app/build.gradle.kts reads it.
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 publish = false
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unused_qualifications = "warn"
+missing_debug_implementations = "allow"
+
+[workspace.lints.clippy]
+# A curated pedantic subset: the ones that catch bugs or real noise, not taste.
+cast_possible_truncation = "warn"
+cast_sign_loss = "warn"
+cast_possible_wrap = "warn"
+cast_lossless = "warn"
+checked_conversions = "warn"
+redundant_else = "warn"
+semicolon_if_nothing_returned = "warn"
+uninlined_format_args = "warn"
+manual_let_else = "warn"
+implicit_clone = "warn"
+inefficient_to_string = "warn"
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+print_stderr = "allow"
+undocumented_unsafe_blocks = "warn"

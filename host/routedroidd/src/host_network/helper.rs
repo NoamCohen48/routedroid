@@ -3,8 +3,8 @@
 
 use std::path::Path;
 
-use anyhow::{bail, Context};
-use routedroid_helper_ipc::{Datagram, Reply, Request, SeqPacket, MAX_DATAGRAM, VERSION};
+use anyhow::{Context, bail};
+use routedroid_helper_ipc::{Datagram, MAX_DATAGRAM, Reply, Request, SeqPacket, VERSION};
 
 use crate::fault::{Fault, FaultExt, Kind, Result};
 

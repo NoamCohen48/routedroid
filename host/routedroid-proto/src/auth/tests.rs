@@ -1,5 +1,5 @@
 use super::*;
-use crate::fixtures::{unhex, AUTH};
+use crate::fixtures::{AUTH, unhex};
 
 #[test]
 fn fixture_vectors() {
@@ -17,7 +17,12 @@ fn fixture_vectors() {
             crate::messages::valid_session(session),
             "{name}: session the wire could carry"
         );
-        let t = transcript(session, v["device_port"].as_u64().unwrap() as u16, &cn, &hn);
+        let t = transcript(
+            session,
+            u16::try_from(v["device_port"].as_u64().unwrap()).unwrap(),
+            &cn,
+            &hn,
+        );
         assert_eq!(
             t,
             unhex(v["transcript_hex"].as_str().unwrap()),

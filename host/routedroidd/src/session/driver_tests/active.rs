@@ -69,10 +69,10 @@ async fn activate(peer: &mut TcpStream) {
 
 #[tokio::test(start_paused = true)]
 async fn unanswered_consent_is_a_consent_timeout() {
-    let (mut peer, handle, _stop) = super::start().await;
+    let (mut peer, handle, _stop) = start().await;
     authenticate(&mut peer).await;
-    tokio::time::sleep(super::CONSENT_DEADLINE + Duration::from_secs(1)).await;
-    let e = super::expect_error(&mut peer).await;
+    tokio::time::sleep(CONSENT_DEADLINE + Duration::from_secs(1)).await;
+    let e = expect_error(&mut peer).await;
     assert_eq!(e.code, "consent_timeout");
     assert!(matches!(handle.await.unwrap(), SessionEnd::Refused(_)));
 }

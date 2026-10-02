@@ -63,8 +63,12 @@ pub fn report(error: &anyhow::Error) -> i32 {
 pub fn help() -> String {
     let mut text =
         String::from("Exit codes:\n  0    success (for `start`: the connection ended cleanly)\n");
-    text += &format!("  {DAEMON_UNREACHABLE:<4} daemon unreachable; start it with `systemctl --user start routedroid`\n");
-    text += &format!("  {DAEMON_INCOMPATIBLE:<4} daemon speaks another API version; restart it after an upgrade\n");
+    text += &format!(
+        "  {DAEMON_UNREACHABLE:<4} daemon unreachable; start it with `systemctl --user start routedroid`\n"
+    );
+    text += &format!(
+        "  {DAEMON_INCOMPATIBLE:<4} daemon speaks another API version; restart it after an upgrade\n"
+    );
     for kind in Kind::ALL {
         text += &format!("  {:<4} {kind}\n", for_kind(kind));
     }

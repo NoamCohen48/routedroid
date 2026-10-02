@@ -1,7 +1,7 @@
 //! The driver's two clocks: keepalive (§5.1) and the pre-Active phase deadline.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use routedroid_proto::state::State;

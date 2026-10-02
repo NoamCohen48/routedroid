@@ -8,8 +8,8 @@ use std::net::Ipv4Addr;
 
 use serde::{Deserialize, Serialize};
 
-use crate::frame::{MAX_PACKET_BODY, MIN_MTU};
 use crate::PROTOCOL_VERSION;
+use crate::frame::{MAX_PACKET_BODY, MIN_MTU};
 
 pub const MAX_SESSION_LEN: usize = 40;
 pub const MAX_APP_LEN: usize = 64;
@@ -62,7 +62,7 @@ mod hex32;
 mod vpn;
 pub use error::{ErrorBody, ErrorCode};
 pub use handshake::{Auth, Hello, HelloAck};
-pub use vpn::{is_unicast_host, ConfigureVpn, Prefix, VpnReady};
+pub use vpn::{ConfigureVpn, Prefix, VpnReady, is_unicast_host};
 
 #[cfg(test)]
 mod tests;

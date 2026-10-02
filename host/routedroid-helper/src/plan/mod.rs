@@ -4,13 +4,13 @@
 
 use std::net::Ipv4Addr;
 
-use anyhow::{bail, ensure, Result};
+use anyhow::{Result, bail, ensure};
 use routedroid_helper_ipc::IfName;
 
 use crate::journal::Reservation;
 use crate::kernel::Firewall;
 use crate::op::{Leaf, Op};
-use crate::policy::{mask, Policy};
+use crate::policy::{Policy, mask};
 use crate::session_id::SessionId;
 use crate::survey::unsuitable;
 

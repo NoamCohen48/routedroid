@@ -57,9 +57,9 @@ fn the_interface_is_picked_from_the_eligible_ones() {
     assert_eq!(form.lan_if.value(), "eno1", "the default route first");
     assert!(form.picking());
     assert!(form.input(Field::LanIf).is_none());
-    form.pick(1);
+    form.pick(true);
     assert_eq!(form.lan_if.value(), "wlan0");
-    form.pick(1);
+    form.pick(true);
     assert_eq!(form.lan_if.value(), "eno1", "wraps, skipping docker0");
     form.offer(&interfaces[..2]);
     assert_eq!(form.lan_if.value(), "wlan0", "a vanished pick is replaced");

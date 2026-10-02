@@ -12,16 +12,16 @@ use std::net::Ipv4Addr;
 use std::path::Path;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
-use tokio::signal::unix::{signal, Signal, SignalKind};
+use tokio::signal::unix::{Signal, SignalKind, signal};
 use tracing::{debug, info, warn};
 
 use crate::dhcp::{
-    self, Identity, Message, MessageType, Options, StaticRoute, CLIENT_PORT, SERVER_PORT,
+    self, CLIENT_PORT, Identity, Message, MessageType, Options, SERVER_PORT, StaticRoute,
 };
-use crate::packet::{self, fmt_mac, parse_mac, Mac, BROADCAST_MAC};
-use crate::sock::{self, Iface, PacketSocket, RecvMeta, PACKET_OUTGOING};
+use crate::packet::{self, BROADCAST_MAC, Mac, fmt_mac, parse_mac};
+use crate::sock::{self, Iface, PACKET_OUTGOING, PacketSocket, RecvMeta};
 
 /// RFC 2131 §4.1 retransmission: 4 s doubling to 64 s, plus jitter.
 const RETRY_BASE: Duration = Duration::from_secs(4);
@@ -179,7 +179,7 @@ impl Client {
             if ip != self.arp_ip {
                 match ip {
                     Some(ip) => {
-                        info!(%ip, "ARP responder: answering requests for the lease address")
+                        info!(%ip, "ARP responder: answering requests for the lease address");
                     }
                     None => info!("ARP responder: off"),
                 }
@@ -527,13 +527,15 @@ impl Client {
                 {
                     Err(Interrupt::Signal) => bail!("interrupted"),
                     Ok(Some(r)) if r.kind == MessageType::Ack => {
-                        break Outcome::Bound(self.lease_from_ack(&r)?)
+                        break Outcome::Bound(self.lease_from_ack(&r)?);
                     }
                     Ok(Some(r)) => break Outcome::Nak(r.opts.message.unwrap_or_default()),
                     Ok(None) => {
                         req_attempt += 1;
                         if req_attempt >= REQUEST_ATTEMPTS {
-                            warn!("no ACK/NAK after {REQUEST_ATTEMPTS} REQUESTs; restarting from DISCOVER");
+                            warn!(
+                                "no ACK/NAK after {REQUEST_ATTEMPTS} REQUESTs; restarting from DISCOVER"
+                            );
                             break Outcome::Timeout;
                         }
                     }

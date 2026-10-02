@@ -1,5 +1,11 @@
 //! Fitting text into cells.
 
+/// A count of rows or columns as a terminal dimension; a terminal is never
+/// 65 536 cells wide, so saturating is exact in practice.
+pub fn cells(count: usize) -> u16 {
+    u16::try_from(count).unwrap_or(u16::MAX)
+}
+
 /// `text`, cut to `width` characters with an ellipsis when it does not fit.
 pub fn fit(text: &str, width: usize) -> String {
     if text.chars().count() <= width {

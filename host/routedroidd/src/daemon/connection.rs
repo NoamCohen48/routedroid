@@ -3,8 +3,8 @@
 //! a stop switch. The handle is what the daemon keeps; the task outlives any
 //! client that asked for it.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use routedroid_ipc::{ConnectionInfo, ConnectionState, NetworkInfo, Outcome, Traffic};

@@ -43,11 +43,11 @@ fn handle_normal(app: &mut App, code: KeyCode) -> Vec<Command> {
                 Command::RefreshDevices,
                 Command::RefreshStatus,
                 Command::RefreshInterfaces,
-            ]
+            ];
         }
         KeyCode::Char('s') => match app.selected_device() {
             Some(device) if device.connection.is_some() => {
-                app.error(format!("{}: already connected", device.serial))
+                app.error(format!("{}: already connected", device.serial));
             }
             Some(device) => return app.open_form(device.serial.clone()),
             None => app.error("no device selected"),

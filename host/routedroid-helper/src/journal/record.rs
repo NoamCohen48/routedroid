@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 use std::net::Ipv4Addr;
 
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{Context, Result, bail, ensure};
 use routedroid_helper_ipc::IfName;
 use serde::{Deserialize, Serialize};
 

@@ -4,8 +4,8 @@
 
 use std::net::Ipv4Addr;
 
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::*;
 
@@ -102,9 +102,11 @@ fn start_requests() {
         dns: DnsChoice::None,
         ..minimal
     });
-    assert!(serde_json::to_string(&no_dns)
-        .unwrap()
-        .contains(r#""dns":"none""#));
+    assert!(
+        serde_json::to_string(&no_dns)
+            .unwrap()
+            .contains(r#""dns":"none""#)
+    );
     let sparse: ClientMessage =
         serde_json::from_str(r#"{"id":3,"type":"start","serial":"s","lan_if":"eno1"}"#).unwrap();
     assert!(matches!(

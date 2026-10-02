@@ -1,5 +1,5 @@
 use super::*;
-use crate::fixtures::{unhex, FRAMES};
+use crate::fixtures::{FRAMES, unhex};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -111,7 +111,7 @@ async fn async_reader_never_allocates_for_hostile_length() {
     let mut cursor = std::io::Cursor::new(unhex(&hostile.wire_hex));
     let err = read_frame(&mut cursor, f.mtu).await.unwrap_err();
     assert!(matches!(err, FrameError::ControlBodyTooLarge { .. }));
-    assert_eq!(cursor.position() as usize, HEADER_LEN);
+    assert_eq!(cursor.position(), HEADER_LEN as u64);
 }
 
 #[tokio::test]

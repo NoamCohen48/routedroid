@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use routedroid_helper_ipc::Activation;
 
-use crate::env::{Env, DEFAULT_STATE_DIR};
+use crate::env::{DEFAULT_STATE_DIR, Env};
 use crate::fault::CrashHook;
 use crate::kernel::System;
 
@@ -105,8 +105,9 @@ fn main() -> Result<()> {
             once,
             allow_uid,
         } => {
-            // Before the runtime starts its threads: this edits the environment.
-            let activation = Activation::take().context("socket activation")?;
+            // SAFETY: the runtime has not started yet, and nothing before
+            // it spawns a thread.
+            let activation = unsafe { Activation::take() }.context("socket activation")?;
             let options = serve::Options {
                 socket: socket.clone(),
                 allow_uid: *allow_uid,

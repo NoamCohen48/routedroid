@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use super::*;
-use crate::{Datagram, Reply, Request, MAX_DATAGRAM};
+use crate::{Datagram, MAX_DATAGRAM, Reply, Request};
 
 fn socket_path(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("rd-seqpacket-{}-{name}.sock", std::process::id()))

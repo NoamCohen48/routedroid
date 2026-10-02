@@ -12,8 +12,8 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, ensure, Context, Result};
-use rustix::fs::{FlockOperation, RenameFlags, CWD};
+use anyhow::{Context, Result, bail, ensure};
+use rustix::fs::{CWD, FlockOperation, RenameFlags};
 
 use crate::op::Op;
 use crate::session_id::SessionId;

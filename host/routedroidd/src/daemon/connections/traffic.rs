@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use routedroid_ipc::{ConnectionState, Event, Traffic};
 
-use super::{lock, Table};
+use super::{Table, lock};
 use crate::daemon::events::EventBus;
 
 const TICK: Duration = Duration::from_secs(1);

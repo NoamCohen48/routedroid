@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use routedroid_ipc::{Client, Request, Response, API_VERSION};
+use routedroid_ipc::{API_VERSION, Client, Request, Response};
 use serde_json::json;
 
 use super::answer;

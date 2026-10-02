@@ -24,3 +24,6 @@ tokio = { version = "1", features = ["io-util"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "io-util"] }
+
+[lints]
+workspace = true

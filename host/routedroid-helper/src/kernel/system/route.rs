@@ -11,7 +11,7 @@ use netlink_packet_route::route::{
 use netlink_packet_route::{AddressFamily, RouteNetlinkMessage};
 
 use super::netlink;
-use crate::kernel::{HostRoute, Route, ROUTE_PROTOCOL};
+use crate::kernel::{HostRoute, ROUTE_PROTOCOL, Route};
 
 /// Every IPv4 route in every table; a multipath route yields one entry per hop.
 pub fn all() -> Result<Vec<Route>> {
@@ -50,7 +50,7 @@ fn entries(message: &RouteMessage) -> Vec<Route> {
                     }),
                     oif: Some(hop.interface_index),
                     ..route
-                }))
+                }));
             }
             _ => {}
         }

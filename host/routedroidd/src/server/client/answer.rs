@@ -4,7 +4,7 @@
 use std::future::Future;
 
 use routedroid_ipc::wire::ClientMessage;
-use routedroid_ipc::{DeviceInfo, Request, Response, API_VERSION};
+use routedroid_ipc::{API_VERSION, DeviceInfo, Request, Response};
 use tokio::sync::watch;
 
 use super::super::view;
