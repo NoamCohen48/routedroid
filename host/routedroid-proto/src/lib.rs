@@ -31,6 +31,9 @@ pub enum Role {
 }
 
 #[cfg(test)]
+mod noise_tests;
+
+#[cfg(test)]
 pub(crate) mod fixtures {
     //! The checked-in golden fixtures, embedded at compile time so the tests
     //! do not depend on the working directory.

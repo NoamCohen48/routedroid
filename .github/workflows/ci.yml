@@ -42,6 +42,21 @@ jobs:
           ../integration-tests/helper/multi-session.sh
           ../integration-tests/dhcp/netns-dhcp.sh
 
+  fuzz:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: host/fuzz
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install nightly --profile minimal
+      - run: cargo +nightly install cargo-fuzz --locked
+      - name: One minute per target
+        run: |
+          for target in frame bodies bootstrap; do
+            cargo +nightly fuzz run "$target" -- -max_total_time=60
+          done
+
   supply-chain:
     runs-on: ubuntu-24.04
     steps:

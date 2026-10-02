@@ -1,0 +1,36 @@
+# cargo fuzz targets for everything that parses bytes a phone (or anyone on
+# it) can send. Outside the workspace: they need nightly and libFuzzer.
+#   cargo +nightly fuzz run frame -- -max_total_time=60
+[package]
+name = "routedroid-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+routedroid-proto = { path = "../routedroid-proto" }
+
+[[bin]]
+name = "frame"
+path = "fuzz_targets/frame.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bodies"
+path = "fuzz_targets/bodies.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bootstrap"
+path = "fuzz_targets/bootstrap.rs"
+test = false
+doc = false
+bench = false

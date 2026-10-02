@@ -10,6 +10,8 @@ members = [
     "routedroid-dhcp",
     "routedroid-helper",
 ]
+# cargo fuzz targets: nightly-only, built on their own.
+exclude = ["fuzz"]
 
 [workspace.package]
 # The one product version: every crate inherits it and android/app/build.gradle.kts reads it.

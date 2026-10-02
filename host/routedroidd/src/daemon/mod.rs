@@ -13,6 +13,8 @@ mod connections;
 mod devices;
 mod events;
 mod spec;
+#[cfg(test)]
+mod tests;
 
 use std::path::PathBuf;
 
