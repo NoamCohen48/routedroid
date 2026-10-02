@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "routedroidd",
     "routedroid-ipc",
     "routedroid-proto",
     "routedroid-helper-ipc",

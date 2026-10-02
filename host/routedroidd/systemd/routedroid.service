@@ -1,0 +1,25 @@
+# The unprivileged daemon, as a user service: `systemctl --user enable --now
+# routedroid`. install.sh fills in @BINDIR@. The sandbox is what a user unit
+# can apply without privileges; the filesystem is left alone on purpose,
+# because the adb server the daemon may start inherits this unit and needs
+# ~/.android and the USB devices.
+[Unit]
+Description=Routedroid daemon (phones on the LAN over adb)
+Documentation=https://github.com/NoamCohen48/routedroid
+
+[Service]
+ExecStart=@BINDIR@/routedroidd
+Restart=on-failure
+Environment=RUST_LOG=info
+UMask=0077
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+# Control and helper sockets, the adb server, and adb's USB hotplug events.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+[Install]
+WantedBy=default.target
