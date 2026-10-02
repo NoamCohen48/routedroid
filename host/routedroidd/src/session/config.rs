@@ -1,3 +1,5 @@
+use std::net::Ipv4Addr;
+
 use routedroid_proto::auth::Secret;
 use routedroid_proto::messages::{ConfigureVpn, Prefix};
 
@@ -6,7 +8,7 @@ pub struct SessionConfig {
     pub mtu: u32,
     pub addresses: Vec<Prefix>,
     pub routes: Vec<Prefix>,
-    pub dns: Vec<String>,
+    pub dns: Vec<Ipv4Addr>,
     pub session_name: String,
     /// The HELLO `session` and `device_port` must match what we launched.
     pub expected_session: String,

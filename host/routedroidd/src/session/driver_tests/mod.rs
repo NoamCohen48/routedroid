@@ -15,8 +15,8 @@ use super::*;
 fn cfg() -> SessionConfig {
     SessionConfig {
         mtu: 1400,
-        addresses: vec![Prefix { address: "10.0.0.2".into(), prefix: 32 }],
-        routes: vec![Prefix { address: "0.0.0.0".into(), prefix: 0 }],
+        addresses: vec![Prefix::new(std::net::Ipv4Addr::new(10, 0, 0, 2), 32)],
+        routes: vec![Prefix::new(std::net::Ipv4Addr::UNSPECIFIED, 0)],
         dns: vec![],
         session_name: "test".into(),
         expected_session: "s1".into(),

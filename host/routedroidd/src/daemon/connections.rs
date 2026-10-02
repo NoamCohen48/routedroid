@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use routedroid_ipc::fault::{Fault, Kind, Result};
 use routedroid_ipc::{ConnectionInfo, ConnectionState, StartRequest};
+use routedroid_proto::messages::is_unicast_host;
 use tokio::sync::Mutex;
 
 use super::background::Background;
@@ -33,6 +34,18 @@ pub struct DeviceConnections {
     _traffic: Arc<Background>,
 }
 
+/// The addresses go into CONFIGURE_VPN, which the app refuses unless they
+/// are unicast host addresses (§4.4); refuse them here, before anything runs.
+fn check_addresses(request: &StartRequest) -> Result<()> {
+    if !is_unicast_host(request.phone_ip) {
+        return Err(Fault::msg(Kind::Usage, format!("{} is not a unicast host address", request.phone_ip)));
+    }
+    if let Some(dns) = request.dns.iter().find(|dns| !is_unicast_host(**dns)) {
+        return Err(Fault::msg(Kind::Usage, format!("DNS server {dns} is not a unicast host address")));
+    }
+    Ok(())
+}
+
 impl DeviceConnections {
     pub fn new(adb: Adb, helper_socket: PathBuf, events: EventBus, devices: AttachedDevices) -> Self {
         let live = Live::default();
@@ -46,6 +59,7 @@ impl DeviceConnections {
     /// lock, so two starts cannot race.
     pub async fn start(&self, request: StartRequest) -> Result<()> {
         Transport::check(&request.serial, request.allow_network_adb)?;
+        check_addresses(&request)?;
         self.check_attached(&request.serial).await?;
         let mut live = self.live.lock().await;
         if live.contains_key(&request.serial) {

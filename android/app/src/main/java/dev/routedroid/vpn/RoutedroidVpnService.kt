@@ -2,90 +2,68 @@ package dev.routedroid.vpn
 
 import android.content.Intent
 import android.net.VpnService
-import android.util.Log
-import dev.routedroid.session.PendingConnection
-import dev.routedroid.session.StatusStore
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
+import dev.routedroid.link
+import dev.routedroid.link.LinkState
+import dev.routedroid.link.VpnHost
+import dev.routedroid.protocol.message.ConfigureVpn
+import dev.routedroid.transport.PacketDevice
+import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * Foreground VpnService for one session at a time. Started by BootstrapActivity with the
- * session id after the host authenticated and the user consented; the authenticated socket
- * arrives through [PendingConnection].
+ * The foreground VpnService, as a shell: [DeviceLink][dev.routedroid.link.DeviceLink] runs
+ * the session and calls back through [VpnHost]. Started only by the link once the user
+ * consented; never always-on (the manifest opts out), never sticky.
  */
-class RoutedroidVpnService : VpnService() {
-    companion object {
-        private const val TAG = "VpnService"
-        const val ACTION_START = "dev.routedroid.START"
-        const val ACTION_STOP = "dev.routedroid.STOP"
-        const val EXTRA_SESSION = "session"
-    }
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var job: Job? = null
-    @Volatile private var runner: SessionRunner? = null
+class RoutedroidVpnService : VpnService(), VpnHost {
+    private val scope = MainScope()
+    @Volatile private var lastStartId = 0
+    @Volatile private var foreground = false
 
     override fun onCreate() {
         super.onCreate()
-        VpnNotification.createChannel(this)
+        LinkNotification.createChannel(this)
+        scope.launch {
+            link.state.collect { if (foreground && it !is LinkState.Idle) LinkNotification.update(this@RoutedroidVpnService, it) }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
+        // Always first: a service started with startForegroundService() must call this.
+        LinkNotification.startForeground(this, link.state.value)
+        foreground = true
         when (intent?.action) {
-            ACTION_START -> start(intent.getStringExtra(EXTRA_SESSION))
-            ACTION_STOP -> runner?.stop(SessionRunner.LocalStop.USER) ?: finish()
-            else -> if (job?.isActive != true) finish()
+            ACTION_START -> if (!link.attach(this)) release()
+            ACTION_STOP -> if (link.state.value.canStop) link.stop() else release()
+            else -> release()
         }
         return START_NOT_STICKY
     }
 
-    private fun start(session: String?) {
-        VpnNotification.startForeground(this)
-        if (job?.isActive == true) {
-            Log.w(TAG, "session already running; ignoring second START")
-            return
-        }
-        val handoff = session?.let { PendingConnection.take(it) }
-        if (handoff == null) {
-            // Without an authenticated connection there is nothing to run: no fallback connect.
-            Log.e(TAG, "START without an authenticated host connection")
-            StatusStore.setError("service started without an authenticated host connection")
-            finish()
-            return
-        }
-        val r = SessionRunner(scope, handoff, ::protect, ::Builder)
-        runner = r
-        job = scope.launch {
-            val failure = r.run()
-            if (failure != null) {
-                Log.e(TAG, "session ended: $failure")
-                StatusStore.setError(failure)
-            } else {
-                Log.i(TAG, "session ended cleanly")
-            }
-            runner = null
-            finish()
-        }
+    override fun establish(config: ConfigureVpn): PacketDevice = TunDevice(VpnBuilderConfig.establish(Builder(), config))
+
+    /** Any thread. stopSelf(startId) leaves the service running if a newer start arrived. */
+    override fun release() {
+        foreground = false
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf(lastStartId)
     }
 
     override fun onRevoke() {
-        Log.w(TAG, "VPN revoked by system/user")
-        StatusStore.setError("VPN permission revoked")
-        runner?.stop(SessionRunner.LocalStop.REVOKED) ?: finish()
+        // Not super: its stopSelf() would race the session's own teardown and release().
+        link.revoked()
     }
 
     override fun onDestroy() {
-        runner?.stop(SessionRunner.LocalStop.DESTROYED)
+        link.detach(this)
         scope.cancel()
         super.onDestroy()
     }
 
-    private fun finish() {
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+    companion object {
+        const val ACTION_START = "dev.routedroid.action.START"
+        const val ACTION_STOP = "dev.routedroid.action.STOP"
     }
 }

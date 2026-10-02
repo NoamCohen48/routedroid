@@ -70,7 +70,7 @@ mod handshake;
 mod vpn;
 pub use error::{ErrorBody, ErrorCode};
 pub use handshake::{Auth, Hello, HelloAck};
-pub use vpn::{ConfigureVpn, Prefix, VpnReady};
+pub use vpn::{is_unicast_host, ConfigureVpn, Prefix, VpnReady};
 
 #[cfg(test)]
 mod tests;

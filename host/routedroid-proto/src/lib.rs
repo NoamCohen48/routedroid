@@ -29,6 +29,7 @@ pub(crate) mod fixtures {
     pub const FRAMES: &str = include_str!("../../../protocol/fixtures/frames.json");
     pub const AUTH: &str = include_str!("../../../protocol/fixtures/auth.json");
     pub const BOOTSTRAP: &str = include_str!("../../../protocol/fixtures/bootstrap.json");
+    pub const BODIES: &str = include_str!("../../../protocol/fixtures/bodies.json");
     pub const STATES: &str = include_str!("../../../protocol/fixtures/states.json");
 
     pub fn unhex(s: &str) -> Vec<u8> {

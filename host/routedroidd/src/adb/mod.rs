@@ -13,7 +13,6 @@ mod device;
 mod devices;
 mod reverse;
 
-pub use android::Extra;
 pub use device::AdbDevice;
 pub use devices::{parse_devices, Device, DeviceState};
 #[cfg(test)]

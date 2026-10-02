@@ -1,33 +1,59 @@
 package dev.routedroid.protocol.frame
 
 import dev.routedroid.protocol.Protocol
-import java.io.EOFException
-import java.io.InputStream
+import java.nio.ByteBuffer
 
-/** Blocking frame reader. Allocates the body only after the header validated. */
-class FrameReader(private val input: InputStream, private val mtu: Int) {
-    private val header = ByteArray(Protocol.HEADER_LEN)
+/** Where a [FrameReader] reads from: a blocking read into [dst], -1 at the end of the stream. */
+fun interface ByteSource {
+    fun read(dst: ByteBuffer): Int
+}
 
-    /** Returns null on a clean EOF at a frame boundary. */
-    fun read(): Frame? {
-        var filled = 0
-        while (filled < header.size) {
-            val n = input.read(header, filled, header.size - filled)
-            if (n < 0) {
-                if (filled == 0) return null
+/**
+ * The one frame reader, used on the phone and against the fixtures. [next] reads and checks
+ * a header (§2) before anything of its body; the caller then reads the body with [readBody]
+ * into a buffer it owns (the packet path, which allocates nothing per frame) or [body].
+ */
+class FrameReader(private val source: ByteSource) {
+    private val header = ByteBuffer.allocate(Protocol.HEADER_LEN)
+
+    /** Of the header [next] last returned true for. */
+    var type: MessageType = MessageType.STOP
+        private set
+    var bodyLength: Int = 0
+        private set
+
+    /** False on a clean end of stream at a frame boundary; [mtu] is null before HELLO_ACK. */
+    fun next(mtu: Int?): Boolean {
+        header.clear()
+        while (header.hasRemaining()) {
+            if (source.read(header) < 0) {
+                if (header.position() == 0) return false
                 throw FrameException(FrameException.TRUNCATED, "stream ended mid-header")
             }
-            filled += n
         }
-        val parsed = FrameHeader.parse(header)
-        val type = parsed.validate(mtu)
-        val body = ByteArray(parsed.bodyLength.toInt())
-        var got = 0
-        while (got < body.size) {
-            val n = input.read(body, got, body.size - got)
-            if (n < 0) throw FrameException(FrameException.TRUNCATED, "stream ended mid-body")
-            got += n
-        }
-        return Frame(type, body)
+        type = FrameHeader.validate(header, mtu)
+        bodyLength = header.getInt(0)
+        return true
     }
+
+    /** Fills [dst] from its position with exactly [bodyLength] bytes. */
+    fun readBody(dst: ByteBuffer) {
+        require(dst.remaining() >= bodyLength) { "buffer too small for the body" }
+        val end = dst.position() + bodyLength
+        val limit = dst.limit()
+        dst.limit(end)
+        try {
+            while (dst.hasRemaining()) {
+                if (source.read(dst) < 0) throw FrameException(FrameException.TRUNCATED, "stream ended mid-body")
+            }
+        } finally {
+            dst.limit(limit)
+        }
+    }
+
+    /** The body as a new array; for control frames, which are rare and small. */
+    fun body(): ByteArray = ByteArray(bodyLength).also { readBody(ByteBuffer.wrap(it)) }
+
+    /** The next whole frame, or null on a clean end of stream. */
+    fun frame(mtu: Int?): Frame? = if (next(mtu)) Frame(type, body()) else null
 }

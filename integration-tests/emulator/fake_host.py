@@ -53,16 +53,48 @@ def proof(secret, role, t):
     return hmac.new(secret, role.encode() + t, hashlib.sha256).digest()
 
 
-def bootstrap(session, secret, host_port):
+def record(session, secret, port=DEVICE_PORT, reserved=0):
+    return b"RDB1" + bytes([1, reserved]) + struct.pack(">H", port) + session.encode().ljust(40, b"\0") + secret
+
+
+def write_record(rec):
+    r = adb("shell", "content", "write", "--uri", "content://dev.routedroid.bootstrap/record", stdin=rec)
+    assert r.returncode == 0, r.stderr
+
+
+def start(session):
+    r = adb("shell", "am", "start", "-n", "dev.routedroid/.bootstrap.BootstrapActivity", "--es", "session", session)
+    assert r.returncode == 0, r.stderr
+
+
+def reverse(host_port):
     adb("reverse", "--remove", f"tcp:{DEVICE_PORT}")
     r = adb("reverse", f"tcp:{DEVICE_PORT}", f"tcp:{host_port}")
     assert r.returncode == 0, r.stderr
-    rec = b"RDB1" + bytes([1, 0, 0, 0]) + session.encode().ljust(40, b"\0") + secret
-    r = adb("shell", "content", "write", "--uri", "content://dev.routedroid.bootstrap/record", stdin=rec)
-    assert r.returncode == 0, r.stderr
-    r = adb("shell", "am", "start", "-n", "dev.routedroid/.BootstrapActivity", "--es", "session", session,
-            "--ei", "device_port", str(DEVICE_PORT))
-    assert r.returncode == 0, r.stderr
+
+
+def bootstrap(session, secret, host_port):
+    reverse(host_port)
+    write_record(record(session, secret))
+    start(session)
+
+
+def listener(timeout):
+    ls = socket.socket()
+    ls.bind(("127.0.0.1", 0))
+    ls.listen(1)
+    ls.settimeout(timeout)
+    return ls
+
+
+def expect_no_connection(ls):
+    try:
+        ls.accept()
+        raise AssertionError("app connected")
+    except socket.timeout:
+        pass
+    finally:
+        ls.close()
 
 
 def vpn_up():
@@ -73,10 +105,7 @@ def vpn_up():
 def launch(app_secret, host_secret=None):
     """Bootstraps the app and returns (socket, session, secret, client_nonce) after HELLO."""
     session = secrets.token_hex(8)
-    ls = socket.socket()
-    ls.bind(("127.0.0.1", 0))
-    ls.listen(1)
-    ls.settimeout(20)
+    ls = listener(20)
     bootstrap(session, app_secret, ls.getsockname()[1])
     s, _ = ls.accept()
     ls.close()
@@ -135,17 +164,54 @@ def case_wrong_secret():
 
 def case_no_record():
     """§7.2: launch without a record does nothing observable (no connection)."""
-    ls = socket.socket(); ls.bind(("127.0.0.1", 0)); ls.listen(1); ls.settimeout(6)
-    adb("reverse", f"tcp:{DEVICE_PORT}", f"tcp:{ls.getsockname()[1]}")
-    adb("shell", "am", "start", "-n", "dev.routedroid/.BootstrapActivity", "--es", "session", "nope",
-        "--ei", "device_port", str(DEVICE_PORT))
+    ls = listener(6)
+    reverse(ls.getsockname()[1])
+    start("nope")
+    expect_no_connection(ls)
+
+
+def case_bad_record():
+    """§7.1: a record with a nonzero reserved byte or port 0 is refused, so its launch does nothing."""
+    for rec in (record("bad-reserved", secrets.token_bytes(32), reserved=1),
+                record("bad-port", secrets.token_bytes(32), port=0)):
+        ls = listener(5)
+        reverse(ls.getsockname()[1])
+        adb("shell", "content", "write", "--uri", "content://dev.routedroid.bootstrap/record", stdin=rec)  # refused
+        start(rec[8:48].rstrip(b"\0").decode())
+        expect_no_connection(ls)
+
+
+def case_session_mismatch():
+    """§7.2: a launch naming another session leaves the record in place for the right one."""
+    session, secret = secrets.token_hex(8), secrets.token_bytes(32)
+    ls = listener(5)
+    reverse(ls.getsockname()[1])
+    write_record(record(session, secret))
+    start("someone-else")
     try:
         ls.accept()
-        raise AssertionError("app connected without a record")
+        raise AssertionError("app connected for the wrong session")
     except socket.timeout:
         pass
-    finally:
-        ls.close()
+    ls.settimeout(20)
+    start(session)
+    s, _ = ls.accept()
+    ls.close()
+    s.settimeout(15)
+    t, body = recv_frame(s)
+    assert t == HELLO and json.loads(body)["session"] == session
+    s.close()
+
+
+def case_superseded():
+    """A new launch ends the active session: the old host gets VPN_ERROR internal, the new one HELLO."""
+    s, session, secret, cn = launch(secrets.token_bytes(32))
+    active(s, session, secret, cn)
+    s2, session2, secret2, cn2 = launch(secrets.token_bytes(32))
+    expect_vpn_error(s, "internal")
+    active(s2, session2, secret2, cn2)
+    s2.sendall(frame(STOP))
+    expect_closed(s2)
 
 
 def case_bad_frame_negotiated():
@@ -245,7 +311,7 @@ def case_host_error():
 
 
 def case_keepalive_dead():
-    """§5.1: app pings after 10 s of silence and closes after 30 s (slow)."""
+    """§5.1: app pings every 10 s of silence and closes after 30 s (slow)."""
     s, session, secret, cn = launch(secrets.token_bytes(32))
     active(s, session, secret, cn)
     s.settimeout(15)
@@ -255,9 +321,13 @@ def case_keepalive_dead():
         r = recv_frame(s)
         if r is None:
             break
+        if r[0] == VPN_ERROR:  # §5.1: a silent host ends with internal
+            assert json.loads(r[1])["code"] == "internal", r[1]
+            assert recv_frame(s) is None, "socket still open after VPN_ERROR"
+            break
         assert r[0] == PING, NAMES.get(r[0])
         pings += 1
-    assert pings >= 1, "no PING"
+    assert pings >= 2, f"{pings} PINGs in 30 s of silence"
     assert 28 < time.time() - t0 < 40, f"closed after {time.time() - t0:.0f}s"
     time.sleep(1)
     assert not vpn_up()
@@ -267,6 +337,7 @@ CASES = {k[5:]: v for k, v in globals().items() if k.startswith("case_")}
 
 if __name__ == "__main__":
     SERIAL = sys.argv[1]
+    subprocess.run([os.path.join(os.path.dirname(os.path.abspath(__file__)), "prepare-device.sh"), SERIAL], check=True)
     names = list(CASES) if sys.argv[2:] == ["all"] else sys.argv[2:]
     if "keepalive_dead" in names and sys.argv[2:] == ["all"] and os.environ.get("SLOW") != "1":
         names.remove("keepalive_dead")
@@ -278,6 +349,6 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"FAIL  {n}: {type(e).__name__}: {e}"); failed += 1
         adb("reverse", "--remove", f"tcp:{DEVICE_PORT}")
-        time.sleep(4)  # stay under the app launch rate limit (3 per 10 s)
+        time.sleep(1)
     print(f"RESULT: {passed} passed, {failed} failed")
     sys.exit(1 if failed else 0)

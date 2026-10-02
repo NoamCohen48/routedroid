@@ -1,32 +1,36 @@
 package dev.routedroid.protocol.message
 
-import dev.routedroid.protocol.Protocol
+import dev.routedroid.protocol.json.JsonWriter
 
 /** Body of ERROR and VPN_ERROR (§4.6). */
-data class ErrorBody(val code: String, val message: String, val supported: List<Int>? = null) {
-    constructor(code: ErrorCode, message: String) : this(code.wire, message)
-
+class ErrorBody(val code: String, val message: String, val supported: List<Int>? = null) {
     val knownCode: ErrorCode? get() = ErrorCode.parse(code)
 
-    fun encode(): ByteArray = JsonOut()
-        .str("code", code).str("message", message)
-        .apply { if (supported != null) numList("supported", supported) }
+    fun encode(): ByteArray = JsonWriter()
+        .string("code", code).string("message", message)
+        .apply { if (supported != null) ints("supported", supported) }
         .bytes()
+
+    override fun toString() = "$code: $message"
 
     companion object {
         const val MAX_MESSAGE_LEN = 512
 
-        fun protocolUnsupported(message: String) =
-            ErrorBody(ErrorCode.PROTOCOL_UNSUPPORTED.wire, message, listOf(Protocol.VERSION))
+        /** A body to send: [message] is cut to [MAX_MESSAGE_LEN] code points, never mid-pair. */
+        fun of(code: ErrorCode, message: String): ErrorBody {
+            val cut = if (Fields.codePoints(message) <= MAX_MESSAGE_LEN) message
+            else message.substring(0, message.offsetByCodePoints(0, MAX_MESSAGE_LEN))
+            return ErrorBody(code.wire, cut)
+        }
 
-        fun decode(body: ByteArray): ErrorBody = Fields.decoding {
-            val o = Fields.parse(body)
-            val code = Fields.str(o, "code")
+        fun decode(body: ByteArray): ErrorBody {
+            val f = Fields.parse(body)
+            val code = f.string("code")
             if (code.isEmpty() || !code.all { it in 'a'..'z' || it == '_' }) Fields.fail("code", "snake_case identifier")
-            val msg = Fields.str(o, "message")
-            if (msg.length > MAX_MESSAGE_LEN) Fields.fail("message", "at most 512 characters")
-            val sup = o.optJSONArray("supported")?.let { a -> (0 until a.length()).map { a.getInt(it) } }
-            ErrorBody(code, msg, sup)
+            val message = f.string("message")
+            if (Fields.codePoints(message) > MAX_MESSAGE_LEN) Fields.fail("message", "at most $MAX_MESSAGE_LEN characters")
+            val supported = f.optionalList("supported")?.map { Fields.int("supported", it, 0..255) }
+            return ErrorBody(code, message, supported)
         }
     }
 }

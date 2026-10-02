@@ -1,6 +1,6 @@
 package dev.routedroid.protocol.message
 
-/** §4.6 error codes. Unknown codes from a newer peer are kept as strings in [ErrorBody]. */
+/** §4.6 error codes. Unknown codes from a newer peer stay strings in [ErrorBody]. */
 enum class ErrorCode(val wire: String) {
     PROTOCOL_UNSUPPORTED("protocol_unsupported"),
     PROTOCOL_ERROR("protocol_error"),

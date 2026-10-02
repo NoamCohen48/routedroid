@@ -8,10 +8,10 @@ use routedroid_proto::bootstrap::{self, PROVIDER_URI};
 use tracing::info;
 
 use super::{DevicePorts, ReservedPort};
-use crate::adb::{AdbDevice, Extra};
+use crate::adb::AdbDevice;
 use routedroid_ipc::fault::{FaultExt, Kind, Result};
 
-pub const BOOTSTRAP_COMPONENT: &str = "dev.routedroid/.BootstrapActivity";
+pub const BOOTSTRAP_COMPONENT: &str = "dev.routedroid/.bootstrap.BootstrapActivity";
 
 pub struct AdbBridge {
     adb: AdbDevice,
@@ -52,27 +52,28 @@ impl AdbBridge {
 
     /// Tell the app about this session (§7.1–7.2), in two adb steps:
     ///
-    /// 1. Write the bootstrap record (session id + secret) into the app's
-    ///    content provider, streamed over adb's stdin so the secret is never
-    ///    part of a command line on either machine. The provider keeps it for
-    ///    60 s and only the host's own uid (shell) may write it.
-    /// 2. Launch `BootstrapActivity` with the session id and the reverse port.
-    ///    The app matches the id against the stored record, connects to
-    ///    `127.0.0.1:<device_port>` (which adb forwards to the host's
-    ///    listener) and proves the secret in the AUTH exchange.
+    /// 1. Write the bootstrap record (session id, reverse port, secret) into
+    ///    the app's content provider, streamed over adb's stdin so the secret
+    ///    is never part of a command line on either machine. The provider
+    ///    keeps it for 60 s and only the host's own uid (shell) may write it.
+    /// 2. Launch `BootstrapActivity` with the session id. The app matches it
+    ///    against the stored record, connects to `127.0.0.1:<device_port>`
+    ///    from the record (which adb forwards to the host's listener) and
+    ///    proves the secret in the AUTH exchange. The port is not an extra:
+    ///    anyone on the phone can launch the activity, so it must come from
+    ///    the shell-delivered record.
     ///
     /// Nothing else happens on the phone before AUTH succeeds: no VPN prompt,
     /// no service.
     pub async fn bootstrap(&self) -> Result<()> {
         let secret = self.secret.as_ref().expect("bootstrap before the secret is handed over");
-        let record = bootstrap::encode(&self.session, secret).expect("session id is valid hex");
+        let record =
+            bootstrap::encode(&self.session, self.port.device_port, secret).expect("session id is valid hex");
         self.adb.content_write(PROVIDER_URI, record.as_slice()).await?;
         drop(record);
         info!(uri = PROVIDER_URI, "bootstrap record delivered over adb stdin");
 
-        let extras =
-            [Extra::Str("session", &self.session), Extra::Int("device_port", i64::from(self.port.device_port))];
-        self.adb.am_start(BOOTSTRAP_COMPONENT, &extras).await?;
+        self.adb.am_start(BOOTSTRAP_COMPONENT, &[("session", &self.session)]).await?;
         info!(component = BOOTSTRAP_COMPONENT, "launched bootstrap activity");
         Ok(())
     }

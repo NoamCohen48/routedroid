@@ -1,24 +1,15 @@
-// Wire protocol version 1 (protocol/version-1.md): framing, bodies, state
-// allowlist, bootstrap record, mutual HMAC. Pure Kotlin, no Android APIs, so
-// it is unit-tested on the JVM against protocol/fixtures/.
+// Wire protocol version 1 (protocol/version-1.md): framing, the frame reader, bodies with
+// one strict JSON codec, the state allowlist, the bootstrap record and the mutual HMAC.
+// A plain JVM module: the bytes it reads and writes in its tests are the bytes the phone
+// reads and writes, because no platform library is involved.
 plugins {
-    id("com.android.library")
+    alias(libs.plugins.kotlin.jvm)
 }
 
-android {
-    namespace = "dev.routedroid.protocol"
-    compileSdk = 36
-    defaultConfig { minSdk = 26 }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlin { jvmToolchain(17) }
-    sourceSets.getByName("test").resources.srcDir("../../protocol/fixtures")
-}
+kotlin { jvmToolchain(17) }
+
+sourceSets.test { resources.srcDir("../../protocol/fixtures") }
 
 dependencies {
-    testImplementation("junit:junit:4.13.2")
-    // The real org.json for JVM tests; on device the platform copy is used.
-    testImplementation("org.json:json:20250517")
+    testImplementation(libs.junit)
 }

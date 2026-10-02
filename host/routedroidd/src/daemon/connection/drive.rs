@@ -48,7 +48,7 @@ impl ConnectionRun<'_> {
             mtu,
             addresses: vec![Prefix::new(self.request.phone_ip, 32)],
             routes: vec![Prefix::new(Ipv4Addr::UNSPECIFIED, 0)],
-            dns: self.request.dns.iter().map(ToString::to_string).collect(),
+            dns: self.request.dns.clone(),
             session_name: "Routedroid".into(),
             expected_session: bridge.session.clone(),
             expected_device_port: bridge.device_port(),

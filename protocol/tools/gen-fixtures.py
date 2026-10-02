@@ -4,6 +4,7 @@
 Deterministic: rerunning produces identical files. Uses only the standard
 library so the fixtures do not depend on either implementation.
 """
+import re
 import hashlib
 import hmac
 import json
@@ -106,9 +107,9 @@ add("pong", "PONG", b"")
 add("stop", "STOP", b"")
 PKT = icmp_echo("10.100.102.5", "10.100.102.222")
 add("ip_packet_icmp_echo", "IP_PACKET", PKT)
-# 21 bytes: IPv4 header plus one payload byte; smallest body the header rule admits.
+# 20 bytes: a bare IPv4 header (protocol 59, no next header); the smallest legal body.
 add("ip_packet_min", "IP_PACKET",
-    bytes([0x45, 0, 0, 21, 0, 0, 0, 0, 64, 0xFD, 0, 0, 10, 0, 0, 2, 10, 0, 0, 1, 0]))
+    bytes([0x45, 0, 0, 20, 0, 0, 0, 0, 64, 59, 0, 0, 10, 0, 0, 2, 10, 0, 0, 1]))
 add("ip_packet_mtu", "IP_PACKET", icmp_echo("10.0.0.2", "10.0.0.1", payload=b"\x00" * (MTU - 28)))
 add("control_body_at_limit", "ERROR", b"{" + b" " * (CONTROL_LIMIT - 2) + b"}")
 
@@ -142,7 +143,7 @@ invalid = [
     {"name": "error_empty", "wire_hex": header(0, mtype=T["ERROR"]).hex(), "error": "empty_body"},
     {"name": "packet_empty", "wire_hex": header(0, mtype=T["IP_PACKET"]).hex(),
      "error": "packet_body_out_of_range"},
-    {"name": "packet_20_bytes", "wire_hex": (header(20, mtype=T["IP_PACKET"]) + bytes(20)).hex(),
+    {"name": "packet_19_bytes", "wire_hex": (header(19, mtype=T["IP_PACKET"]) + bytes(19)).hex(),
      "error": "packet_body_out_of_range"},
     {"name": "packet_mtu_plus_one", "wire_hex": header(MTU + 1, mtype=T["IP_PACKET"]).hex(),
      "error": "packet_body_out_of_range"},
@@ -166,10 +167,11 @@ frames = {
 vectors = []
 for name, secret, sess, port, cn, hn in [
     ("pinned", SECRET, SESSION, PORT, NONCE_C, NONCE_H),
-    ("zero_secret", bytes(32), "session-with-dots.and_underscores-40chars", 65535,
+    ("zero_secret", bytes(32), "session-with-dots.and_underscores-40char", 65535,
      bytes([0x01]) * 32, bytes([0x02]) * 32),
     ("port_1", bytes([0xFF]) * 32, "x", 1, bytes(range(32)), bytes(range(32, 64))),
 ]:
+    assert re.fullmatch(r"[A-Za-z0-9._-]{1,40}", sess), sess
     t = transcript(sess, port, cn, hn)
     vectors.append({
         "name": name, "secret_hex": secret.hex(), "session": sess, "device_port": port,
@@ -185,10 +187,10 @@ auth = {
 }
 
 # ------------------------------------------------------------- bootstrap.json
-def record(session, secret):
+def record(session, secret, port=PORT, reserved=0):
     s = session.encode()
     assert 1 <= len(s) <= 40
-    return b"RDB1" + bytes([VERSION]) + bytes(3) + s.ljust(40, b"\x00") + secret
+    return b"RDB1" + bytes([VERSION, reserved]) + struct.pack(">H", port) + s.ljust(40, b"\x00") + secret
 
 bootstrap = {
     "_comment": frames["_comment"],
@@ -196,17 +198,131 @@ bootstrap = {
     "length": 80,
     "provider_uri": "content://dev.routedroid.bootstrap/record",
     "vectors": [
-        {"name": "pinned", "session": SESSION, "secret_hex": SECRET.hex(),
+        {"name": "pinned", "session": SESSION, "device_port": PORT, "secret_hex": SECRET.hex(),
          "record_hex": record(SESSION, SECRET).hex()},
-        {"name": "max_session", "session": "s" * 40, "secret_hex": (b"\xcd" * 32).hex(),
-         "record_hex": record("s" * 40, b"\xcd" * 32).hex()},
+        {"name": "max_session", "session": "s" * 40, "device_port": 65535, "secret_hex": (b"\xcd" * 32).hex(),
+         "record_hex": record("s" * 40, b"\xcd" * 32, port=65535).hex()},
+        {"name": "port_1", "session": "x", "device_port": 1, "secret_hex": bytes(32).hex(),
+         "record_hex": record("x", bytes(32), port=1).hex()},
     ],
     "invalid": [
         {"name": "bad_magic", "record_hex": (b"RDB0" + record(SESSION, SECRET)[4:]).hex()},
         {"name": "bad_version", "record_hex": (b"RDB1\x00" + record(SESSION, SECRET)[5:]).hex()},
+        {"name": "reserved_nonzero", "record_hex": record(SESSION, SECRET, reserved=1).hex()},
+        {"name": "port_zero", "record_hex": record(SESSION, SECRET, port=0).hex()},
         {"name": "short", "record_hex": record(SESSION, SECRET)[:79].hex()},
         {"name": "long", "record_hex": (record(SESSION, SECRET) + b"\x00").hex()},
-        {"name": "empty_session", "record_hex": (b"RDB1\x01\x00\x00\x00" + bytes(40) + SECRET).hex()},
+        {"name": "empty_session", "record_hex": (record(SESSION, SECRET)[:8] + bytes(40) + SECRET).hex()},
+        {"name": "session_bad_char", "record_hex": record("a b", SECRET).hex()},
+        {"name": "session_byte_after_nul",
+         "record_hex": (record(SESSION, SECRET)[:8] + b"s1\x00x".ljust(40, b"\x00") + SECRET).hex()},
+    ],
+}
+
+# --------------------------------------------------------------- bodies.json
+# Bodies that one JSON library accepts and another rejects are where two
+# implementations silently diverge, so both must agree on every case here.
+CFG = {"mtu": MTU, "addresses": [{"address": "10.100.102.222", "prefix": 32}],
+       "routes": [{"address": "0.0.0.0", "prefix": 0}], "dns": ["10.100.102.1"],
+       "session_name": "Routedroid"}
+
+
+def cfg(**kw):
+    return j({**CFG, **kw})
+
+
+def cfg_text(text):
+    """CONFIGURE_VPN with the mtu member written by hand."""
+    return j(CFG).replace(b'"mtu":1400', b'"mtu":' + text.encode())
+
+
+def addr(a, p=32):
+    return [{"address": a, "prefix": p}]
+
+
+EMOJI = "\U0001F600"
+ACK = {"protocol": 1, "mtu": MTU, "host_nonce": NONCE_H.hex(), "host_proof": HOST_PROOF.hex()}
+bodies = {
+    "_comment": frames["_comment"],
+    "mtu": MTU,
+    "valid": [
+        {"name": "unknown_fields_ignored", "kind": "configure_vpn", "body_hex": cfg(future={"x": [1, 2]}).hex()},
+        {"name": "whitespace_between_tokens", "kind": "configure_vpn",
+         "body_hex": json.dumps(CFG, indent=2).encode().hex()},
+        {"name": "escaped_slash_and_unicode", "kind": "configure_vpn",
+         "body_hex": cfg().replace(b'"Routedroid"', b'"Route\\/droid \\u00e9"').hex()},
+        {"name": "session_name_64_code_points", "kind": "configure_vpn",
+         "body_hex": cfg(session_name=EMOJI * 64).hex()},
+        {"name": "session_name_raw_utf8", "kind": "configure_vpn",
+         "body_hex": json.dumps({**CFG, "session_name": "Caf\u00e9 " + EMOJI}, ensure_ascii=False,
+                                separators=(",", ":")).encode().hex()},
+        {"name": "route_host_prefix", "kind": "configure_vpn",
+         "body_hex": cfg(routes=addr("192.168.7.9")).hex()},
+        {"name": "no_dns", "kind": "configure_vpn", "body_hex": cfg(dns=[]).hex()},
+        {"name": "message_512_code_points", "kind": "error",
+         "body_hex": j({"code": "internal", "message": EMOJI * 512}).hex()},
+        {"name": "unknown_error_code", "kind": "error",
+         "body_hex": j({"code": "from_the_future", "message": ""}).hex()},
+    ],
+    "invalid": [
+        # JSON syntax: serde_json is strict RFC 8259 and so must the app be.
+        {"name": "trailing_garbage", "kind": "configure_vpn", "body_hex": (cfg() + b"x").hex()},
+        {"name": "trailing_second_object", "kind": "configure_vpn", "body_hex": (cfg() + b"{}").hex()},
+        {"name": "duplicate_key", "kind": "configure_vpn",
+         "body_hex": cfg().replace(b'{"mtu":1400', b'{"mtu":1400,"mtu":1400').hex()},
+        {"name": "single_quotes", "kind": "configure_vpn",
+         "body_hex": cfg().replace(b'"Routedroid"', b"'Routedroid'").hex()},
+        {"name": "unquoted_key", "kind": "configure_vpn", "body_hex": cfg().replace(b'"mtu"', b"mtu").hex()},
+        {"name": "hex_integer", "kind": "configure_vpn", "body_hex": cfg_text("0x578").hex()},
+        {"name": "leading_zero_integer", "kind": "configure_vpn", "body_hex": cfg_text("01400").hex()},
+        {"name": "fraction_integer", "kind": "configure_vpn", "body_hex": cfg_text("1400.0").hex()},
+        {"name": "exponent_integer", "kind": "configure_vpn", "body_hex": cfg_text("14e2").hex()},
+        {"name": "string_integer", "kind": "configure_vpn", "body_hex": cfg(mtu="1400").hex()},
+        {"name": "byte_order_mark", "kind": "configure_vpn", "body_hex": (b"\xef\xbb\xbf" + cfg()).hex()},
+        {"name": "invalid_utf8", "kind": "configure_vpn",
+         "body_hex": cfg().replace(b"Routedroid", b"Route\xffdroid").hex()},
+        {"name": "lone_surrogate_escape", "kind": "configure_vpn",
+         "body_hex": cfg().replace(b'"Routedroid"', b'"\\ud800"').hex()},
+        {"name": "raw_control_character", "kind": "configure_vpn",
+         "body_hex": cfg().replace(b"Routedroid", b"Route\x01droid").hex()},
+        {"name": "not_an_object", "kind": "configure_vpn", "body_hex": b"[1,2]".hex()},
+        # Types: no coercion between strings and numbers.
+        {"name": "dns_number_element", "kind": "configure_vpn", "body_hex": cfg(dns=[7]).hex()},
+        {"name": "address_object_is_string", "kind": "configure_vpn", "body_hex": cfg(addresses=["10.0.0.2/32"]).hex()},
+        {"name": "supported_string_element", "kind": "error",
+         "body_hex": j({"code": "protocol_unsupported", "message": "", "supported": ["1"]}).hex()},
+        {"name": "supported_fraction_element", "kind": "error",
+         "body_hex": j({"code": "protocol_unsupported", "message": "", "supported": [1.5]}).hex()},
+        {"name": "supported_over_u8", "kind": "error",
+         "body_hex": j({"code": "protocol_unsupported", "message": "", "supported": [256]}).hex()},
+        {"name": "hello_ack_fraction_protocol", "kind": "hello_ack",
+         "body_hex": j(ACK).replace(b'"protocol":1', b'"protocol":1.0').hex()},
+        # Dotted quads: ASCII digits, no leading zeros, exactly four parts.
+        {"name": "address_non_ascii_digits", "kind": "configure_vpn",
+         "body_hex": cfg(addresses=addr("\u0661\u0660.0.0.1")).hex()},
+        {"name": "address_leading_zero", "kind": "configure_vpn", "body_hex": cfg(addresses=addr("010.0.0.1")).hex()},
+        {"name": "address_three_parts", "kind": "configure_vpn", "body_hex": cfg(addresses=addr("10.0.1")).hex()},
+        {"name": "address_octet_256", "kind": "configure_vpn", "body_hex": cfg(addresses=addr("10.0.0.256")).hex()},
+        # Semantics (§4.4): the phone's own address is one unicast /32.
+        {"name": "address_prefix_31", "kind": "configure_vpn", "body_hex": cfg(addresses=addr("10.0.0.2", 31)).hex()},
+        {"name": "address_unspecified", "kind": "configure_vpn", "body_hex": cfg(addresses=addr("0.0.0.0")).hex()},
+        {"name": "address_loopback", "kind": "configure_vpn", "body_hex": cfg(addresses=addr("127.0.0.1")).hex()},
+        {"name": "address_multicast", "kind": "configure_vpn", "body_hex": cfg(addresses=addr("224.0.0.1")).hex()},
+        {"name": "address_broadcast", "kind": "configure_vpn",
+         "body_hex": cfg(addresses=addr("255.255.255.255")).hex()},
+        {"name": "two_addresses", "kind": "configure_vpn",
+         "body_hex": cfg(addresses=addr("10.0.0.2") + addr("10.0.0.3")).hex()},
+        {"name": "route_not_canonical", "kind": "configure_vpn", "body_hex": cfg(routes=addr("10.0.0.1", 8)).hex()},
+        {"name": "route_prefix_33", "kind": "configure_vpn", "body_hex": cfg(routes=addr("10.0.0.1", 33)).hex()},
+        {"name": "no_routes", "kind": "configure_vpn", "body_hex": cfg(routes=[]).hex()},
+        {"name": "dns_unspecified", "kind": "configure_vpn", "body_hex": cfg(dns=["0.0.0.0"]).hex()},
+        {"name": "dns_multicast", "kind": "configure_vpn", "body_hex": cfg(dns=["239.1.1.1"]).hex()},
+        {"name": "mtu_mismatch", "kind": "configure_vpn", "body_hex": cfg(mtu=1500).hex()},
+        {"name": "session_name_65_code_points", "kind": "configure_vpn",
+         "body_hex": cfg(session_name=EMOJI * 65).hex()},
+        {"name": "message_513_code_points", "kind": "error",
+         "body_hex": j({"code": "internal", "message": EMOJI * 513}).hex()},
+        {"name": "code_not_snake_case", "kind": "error", "body_hex": j({"code": "Internal", "message": ""}).hex()},
     ],
 }
 
@@ -234,6 +350,6 @@ states = {
 }
 
 OUT.mkdir(parents=True, exist_ok=True)
-for name, data in [("frames", frames), ("auth", auth), ("bootstrap", bootstrap), ("states", states)]:
+for name, data in [("frames", frames), ("auth", auth), ("bootstrap", bootstrap), ("bodies", bodies), ("states", states)]:
     (OUT / f"{name}.json").write_text(json.dumps(data, indent=1) + "\n")
     print("wrote", OUT / f"{name}.json")

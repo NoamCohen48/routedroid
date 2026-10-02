@@ -21,6 +21,7 @@ H=$(cd "$(dirname "$0")/../../host" && pwd)/target/release
 S=$(mktemp -d /tmp/rd-e2e.XXXXXX); echo "artifacts: $S"
 PHONE_IP=10.90.0.7; HOST_IP=10.90.0.1
 pass=0; fail=0
+"$(dirname "$0")/prepare-device.sh" "$SERIAL"
 check() { local name=$1; shift; if "$@"; then echo "PASS  $name"; pass=$((pass+1)); else echo "FAIL  $name"; fail=$((fail+1)); fi; }
 
 unshare -Urn --propagation unchanged sh -c 'ip link set lo up; exec sleep infinity' &
@@ -112,7 +113,7 @@ check "helper acknowledged Stop" grep -q 'helper session stopped' "$S/daemon.log
 check "reverse mapping removed" [ -z "$(adb -s "$SERIAL" reverse --list)" ]
 check "TUN gone" bash -c "! $NS ip link show phone0 >/dev/null 2>&1"
 sleep 2
-[[ $STOP_MODE == early ]] || check "app session ended cleanly" bash -c "adb -s '$SERIAL' logcat -d -s VpnService | tail -1 | grep -q 'ended cleanly'"
+[[ $STOP_MODE == early ]] || check "app session ended cleanly" bash -c "adb -s '$SERIAL' logcat -d -s DeviceLink | tail -1 | grep -Eq 'session ended: (UserStopped|HostStopped)$'"
 check "VPN address gone on phone" bash -c "! adb -s '$SERIAL' shell ip -4 addr | grep -q $PHONE_IP"
 kill -TERM $DPID; wait $DPID; drc=$?
 check "daemon exit 0" [ $drc -eq 0 ]

@@ -1,38 +1,45 @@
 package dev.routedroid.transport
 
-import android.os.SystemClock
-import kotlinx.coroutines.delay
 import java.util.concurrent.atomic.AtomicLong
 
-/** §5.1: PING after 10 s of silence in both directions, dead after 30 s without any received frame. */
-class Keepalive {
+/**
+ * §5.1 as pure arithmetic over [Clock] readings: PING after [IDLE_MS] with no frame either
+ * way, dead after [DEAD_MS] with no frame received. The packet path calls [check] at the
+ * times [nextCheckIn] names, so an idle session wakes about every 10 s, not every second.
+ */
+class Keepalive(now: Long) {
+    enum class Verdict { NONE, PING, DEAD }
+
+    private val lastRx = AtomicLong(now)
+    private val lastTx = AtomicLong(now)
+
+    fun received(now: Long) = lastRx.set(now)
+
+    fun sent(now: Long) = lastTx.set(now)
+
+    fun check(now: Long): Verdict {
+        val rx = lastRx.get()
+        return when {
+            now - rx >= DEAD_MS -> Verdict.DEAD
+            now - rx >= IDLE_MS && now - lastTx.get() >= IDLE_MS -> Verdict.PING
+            else -> Verdict.NONE
+        }
+    }
+
+    /**
+     * Milliseconds until [check] could answer differently. Once idle, the PING just asked
+     * for may not be written yet, so the next one is due an idle interval from now.
+     */
+    fun nextCheckIn(now: Long): Long {
+        val rx = lastRx.get()
+        val idleAt = maxOf(rx, lastTx.get()) + IDLE_MS
+        val pingAt = if (idleAt > now) idleAt else now + IDLE_MS
+        return (minOf(pingAt, rx + DEAD_MS) - now).coerceAtLeast(MIN_WAIT_MS)
+    }
+
     companion object {
         const val IDLE_MS = 10_000L
         const val DEAD_MS = 30_000L
-        private const val TICK_MS = 1_000L
-    }
-
-    private val lastRx = AtomicLong(now())
-    private val lastTx = AtomicLong(now())
-    @Volatile private var running = true
-
-    private fun now() = SystemClock.elapsedRealtime()
-    fun received() { lastRx.set(now()) }
-    fun sent() { lastTx.set(now()) }
-    fun stop() { running = false }
-
-    suspend fun run(ping: () -> Boolean, dead: () -> Unit) {
-        var pinged = false
-        while (running) {
-            delay(TICK_MS)
-            val t = now()
-            val sinceRx = t - lastRx.get()
-            if (sinceRx >= DEAD_MS) { dead(); return }
-            if (sinceRx >= IDLE_MS && t - lastTx.get() >= IDLE_MS) {
-                if (!pinged) { ping(); pinged = true }
-            } else {
-                pinged = false
-            }
-        }
+        private const val MIN_WAIT_MS = 10L
     }
 }

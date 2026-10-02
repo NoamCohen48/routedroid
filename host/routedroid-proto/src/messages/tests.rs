@@ -1,5 +1,5 @@
 use super::*;
-use crate::fixtures::{unhex, FRAMES};
+use crate::fixtures::{unhex, BODIES, FRAMES};
 use crate::frame::MessageType;
 
 fn body(name: &str) -> (MessageType, Vec<u8>) {
@@ -75,7 +75,7 @@ fn field_rules() {
     cfg.addresses.pop();
     cfg.routes.clear();
     assert!(cfg.validate().is_err(), "no routes");
-    cfg.routes.push(Prefix { address: "0.0.0.0".into(), prefix: 33 });
+    cfg.routes.push(Prefix::new(Ipv4Addr::UNSPECIFIED, 33));
     assert!(cfg.validate().is_err(), "prefix 33");
     cfg.routes[0].prefix = 0;
     cfg.mtu = 575;
@@ -90,4 +90,49 @@ fn field_rules() {
     assert!(ready.validate().is_err());
     let ready = VpnReady { addresses: vec!["10.0.0.1".into()], mtu: 1400 };
     assert!(ready.validate().is_err());
+}
+
+/// The cases where JSON libraries disagree (bodies.json); the app must agree
+/// on every one, so both sides test the same bytes.
+#[test]
+fn body_fixtures() {
+    let f: serde_json::Value = serde_json::from_str(BODIES).unwrap();
+    let mtu = f["mtu"].as_u64().unwrap() as u32;
+    let accept = |kind: &str, b: &[u8]| -> Result<(), BodyError> {
+        match kind {
+            "configure_vpn" => {
+                let c: ConfigureVpn = parse(b)?;
+                if c.mtu != mtu {
+                    return Err(field("mtu", "must equal the negotiated mtu"));
+                }
+                Ok(())
+            }
+            "error" => parse::<ErrorBody>(b).map(drop),
+            "hello_ack" => parse::<HelloAck>(b).map(drop),
+            other => panic!("unknown kind {other}"),
+        }
+    };
+    for v in f["valid"].as_array().unwrap() {
+        let name = v["name"].as_str().unwrap();
+        let b = unhex(v["body_hex"].as_str().unwrap());
+        accept(v["kind"].as_str().unwrap(), &b).unwrap_or_else(|e| panic!("{name}: {e}"));
+    }
+    for v in f["invalid"].as_array().unwrap() {
+        let name = v["name"].as_str().unwrap();
+        let b = unhex(v["body_hex"].as_str().unwrap());
+        assert!(accept(v["kind"].as_str().unwrap(), &b).is_err(), "{name}: accepted");
+    }
+}
+
+#[test]
+fn prefix_canonical_and_unicast() {
+    assert!(Prefix::new(Ipv4Addr::UNSPECIFIED, 0).is_canonical());
+    assert!(Prefix::new(Ipv4Addr::new(10, 0, 0, 0), 8).is_canonical());
+    assert!(!Prefix::new(Ipv4Addr::new(10, 0, 0, 1), 8).is_canonical());
+    assert!(Prefix::new(Ipv4Addr::new(10, 0, 0, 1), 32).is_canonical());
+    assert!(!Prefix::new(Ipv4Addr::new(10, 0, 0, 1), 33).is_canonical());
+    for bad in ["0.0.0.0", "0.1.2.3", "127.0.0.1", "224.0.0.1", "240.0.0.1", "255.255.255.255"] {
+        assert!(!vpn::is_unicast_host(bad.parse().unwrap()), "{bad}");
+    }
+    assert!(vpn::is_unicast_host(Ipv4Addr::new(10, 0, 0, 1)));
 }

@@ -17,16 +17,11 @@ impl AdbDevice {
         Ok(())
     }
 
-    /// `am start -n COMPONENT` with string (`--es`) and integer (`--ei`) extras.
-    pub async fn am_start(&self, component: &str, extras: &[Extra<'_>]) -> Result<()> {
+    /// `am start -n COMPONENT` with string extras (`--es KEY VALUE`).
+    pub async fn am_start(&self, component: &str, extras: &[(&str, &str)]) -> Result<()> {
         let mut args = vec!["am", "start", "-n", component];
-        let ints: Vec<String> = extras.iter().filter_map(|e| e.int_value()).collect();
-        let mut ints = ints.iter();
-        for extra in extras {
-            match extra {
-                Extra::Str(key, value) => args.extend(["--es", key, value]),
-                Extra::Int(key, _) => args.extend(["--ei", key, ints.next().expect("one string per Int extra")]),
-            }
+        for (key, value) in extras {
+            args.extend(["--es", key, value]);
         }
         let (out, _) = self.shell(&args, None).await?;
         // `am start` exits 0 even when the component is missing; surface that.
@@ -34,21 +29,5 @@ impl AdbDevice {
             return Err(Fault::msg(Kind::Adb, format!("am start reported: {}", out.trim())));
         }
         Ok(())
-    }
-}
-
-/// An intent extra for [`AdbDevice::am_start`].
-#[derive(Debug, Clone, Copy)]
-pub enum Extra<'a> {
-    Str(&'a str, &'a str),
-    Int(&'a str, i64),
-}
-
-impl Extra<'_> {
-    fn int_value(&self) -> Option<String> {
-        match self {
-            Self::Int(_, v) => Some(v.to_string()),
-            Self::Str(..) => None,
-        }
     }
 }

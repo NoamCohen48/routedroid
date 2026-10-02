@@ -10,12 +10,13 @@ fn fixture_vectors_encode_and_decode() {
     for v in f["vectors"].as_array().unwrap() {
         let name = v["name"].as_str().unwrap();
         let session = v["session"].as_str().unwrap();
+        let port = u16::try_from(v["device_port"].as_u64().unwrap()).unwrap();
         let secret = Secret::from_hex(v["secret_hex"].as_str().unwrap()).unwrap();
         let want = unhex(v["record_hex"].as_str().unwrap());
-        assert_eq!(encode(session, &secret).unwrap().as_slice(), want.as_slice(), "{name}: encode");
-        let (s, k) = decode(&want).unwrap();
-        assert_eq!(s, session, "{name}");
-        assert_eq!(k, secret, "{name}");
+        assert_eq!(encode(session, port, &secret).unwrap().as_slice(), want.as_slice(), "{name}: encode");
+        let r = decode(&want).unwrap();
+        assert_eq!((r.session.as_str(), r.device_port), (session, port), "{name}");
+        assert_eq!(r.secret, secret, "{name}");
     }
     for v in f["invalid"].as_array().unwrap() {
         let name = v["name"].as_str().unwrap();
@@ -24,10 +25,11 @@ fn fixture_vectors_encode_and_decode() {
 }
 
 #[test]
-fn invalid_session_is_refused_on_encode() {
+fn invalid_session_or_port_is_refused_on_encode() {
     let secret = Secret::new([1; 32]);
-    assert!(encode("", &secret).is_none());
-    assert!(encode(&"s".repeat(41), &secret).is_none());
-    assert!(encode("has space", &secret).is_none());
-    assert!(encode(&"s".repeat(40), &secret).is_some());
+    assert!(encode("", 9000, &secret).is_none());
+    assert!(encode(&"s".repeat(41), 9000, &secret).is_none());
+    assert!(encode("has space", 9000, &secret).is_none());
+    assert!(encode("s", 0, &secret).is_none());
+    assert!(encode(&"s".repeat(40), 9000, &secret).is_some());
 }

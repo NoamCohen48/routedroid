@@ -1,6 +1,6 @@
 package dev.routedroid.protocol.frame
 
-/** Header rejection (§2). [code] is the name used by fixtures/frames.json. */
+/** A frame that breaks §2. [code] is the name used by fixtures/frames.json. */
 class FrameException(val code: String, message: String) : Exception(message) {
     companion object {
         const val UNSUPPORTED_VERSION = "unsupported_version"

@@ -1,46 +1,54 @@
 package dev.routedroid.protocol
 
+import dev.routedroid.protocol.Fixtures.hex
+import dev.routedroid.protocol.Fixtures.int
 import dev.routedroid.protocol.Fixtures.objects
+import dev.routedroid.protocol.Fixtures.str
 import dev.routedroid.protocol.auth.Auth
 import dev.routedroid.protocol.auth.Hex
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AuthFixtureTest {
     @Test fun vectors() {
         val f = Fixtures.load("auth.json")
-        assertEquals(Auth.DOMAIN, f.getString("domain"))
-        val vectors = f.getJSONArray("vectors").objects()
+        assertEquals(Auth.DOMAIN, f.str("domain"))
+        val vectors = f.objects("vectors")
         assertTrue(vectors.size >= 3)
         for (v in vectors) {
-            val name = v.getString("name")
-            val secret = Fixtures.hex(v.getString("secret_hex"))
-            val t = Auth.transcript(v.getString("session"), v.getInt("device_port"),
-                Fixtures.hex(v.getString("client_nonce_hex")), Fixtures.hex(v.getString("host_nonce_hex")))
-            assertArrayEquals(name, Fixtures.hex(v.getString("transcript_hex")), t)
-            val hp = v.getString("host_proof_hex"); val ap = v.getString("android_proof_hex")
-            assertEquals(name, hp, Hex.encode(Auth.proof(secret, Auth.ROLE_HOST, t)))
-            assertEquals(name, ap, Hex.encode(Auth.proof(secret, Auth.ROLE_ANDROID, t)))
-            assertTrue(Auth.verify(secret, Auth.ROLE_HOST, t, hp))
-            assertTrue(Auth.verify(secret, Auth.ROLE_ANDROID, t, ap))
-            assertFalse("$name reflection", Auth.verify(secret, Auth.ROLE_ANDROID, t, hp))
-            assertFalse("$name reflection", Auth.verify(secret, Auth.ROLE_HOST, t, ap))
+            val name = v.str("name")
+            val t = Auth.transcript(v.str("session"), v.int("device_port"), v.hex("client_nonce_hex"), v.hex("host_nonce_hex"))
+            assertArrayEquals(name, v.hex("transcript_hex"), t)
+            val proofs = Auth.proofs(v.hex("secret_hex"), t)
+            assertEquals(name, v.str("host_proof_hex"), Hex.encode(proofs.host))
+            assertEquals(name, v.str("android_proof_hex"), Hex.encode(proofs.android))
+            assertTrue(Auth.matches(proofs.host, v.str("host_proof_hex")))
+            assertFalse("$name: reflection", Auth.matches(proofs.host, v.str("android_proof_hex")))
         }
     }
 
     @Test fun proofsBindEveryField() {
         val secret = ByteArray(32) { 7 }
         val c = ByteArray(32) { 1 }; val h = ByteArray(32) { 2 }; val x = ByteArray(32) { 3 }
-        val base = Auth.transcript("s1", 9000, c, h)
-        val p = Hex.encode(Auth.proof(secret, Auth.ROLE_HOST, base))
+        val base = Auth.proofs(secret, Auth.transcript("s1", 9000, c, h)).host
         for (other in listOf(Auth.transcript("s2", 9000, c, h), Auth.transcript("s1", 9001, c, h),
             Auth.transcript("s1", 9000, x, h), Auth.transcript("s1", 9000, c, x)))
-            assertFalse(Auth.verify(secret, Auth.ROLE_HOST, other, p))
-        assertFalse(Auth.verify(ByteArray(32) { 8 }, Auth.ROLE_HOST, base, p))
-        assertFalse("malformed hex", Auth.verify(secret, Auth.ROLE_HOST, base, "zz"))
-        assertFalse("uppercase hex", Auth.verify(secret, Auth.ROLE_HOST, base, p.uppercase()))
+            assertFalse(Auth.matches(Auth.proofs(secret, other).host, Hex.encode(base)))
+        assertFalse(Auth.matches(Auth.proofs(ByteArray(32) { 8 }, Auth.transcript("s1", 9000, c, h)).host, Hex.encode(base)))
+        assertFalse("malformed hex", Auth.matches(base, "zz"))
+        assertFalse("uppercase hex", Auth.matches(base, Hex.encode(base).uppercase()))
+        assertFalse("short", Auth.matches(base, Hex.encode(base).dropLast(2)))
+    }
+
+    @Test fun transcriptRefusesWhatTheWireCannotCarry() {
+        val n = ByteArray(32)
+        assertThrows(IllegalArgumentException::class.java) { Auth.transcript("s", 0, n, n) }
+        assertThrows(IllegalArgumentException::class.java) { Auth.transcript("s", 65536, n, n) }
+        assertThrows(IllegalArgumentException::class.java) { Auth.transcript("é", 1, n, n) }
+        assertThrows(IllegalArgumentException::class.java) { Auth.transcript("s", 1, n, ByteArray(31)) }
     }
 }

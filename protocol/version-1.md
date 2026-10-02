@@ -52,7 +52,7 @@ Limits, checked on the header:
 |---|---|
 | PING, PONG, STOP | exactly 0 |
 | all other control messages | 1 … 65 536 |
-| IP_PACKET | 21 … min(negotiated `mtu`, 65 535) |
+| IP_PACKET | 20 … min(negotiated `mtu`, 65 535) |
 
 `65 536` is the control limit (64 KiB). `65 535` is the absolute IPv4 total
 length. The negotiated `mtu` is the value in HELLO_ACK (§4.2); before
@@ -80,7 +80,14 @@ occur in a session; numbering is historical and MUST NOT be reassigned.
 
 ## 4. Control bodies
 
-Control bodies are UTF-8 JSON objects without a byte-order mark. Field order
+Control bodies are UTF-8 JSON objects (RFC 8259) without a byte-order mark.
+Receivers MUST be strict: invalid UTF-8, a lone surrogate escape, trailing
+bytes after the object, a duplicate member name, single quotes, unquoted
+names, leading zeros, hex or octal numbers, and a number with a fraction or
+exponent where an integer is required are all malformed bodies. A string is
+never accepted where a number is required, nor the reverse. Lengths below
+are counted in Unicode code points. `fixtures/bodies.json` pins these
+cases. Field order
 on the wire is not significant to receivers; senders SHOULD emit the order
 shown so that fixtures are byte-stable. Receivers MUST ignore unknown
 fields (forward compatibility) and MUST treat a missing or wrongly typed
@@ -136,10 +143,15 @@ Hex strings are lowercase, without prefix, of exactly the stated length.
 | field | rule |
 |---|---|
 | `mtu` | MUST equal HELLO_ACK `mtu` |
-| `addresses` | exactly one entry in version 1 (decision record 0001, gate 3); dotted-quad IPv4, prefix 0–32 |
-| `routes` | one or more; dotted-quad IPv4, prefix 0–32 |
-| `dns` | zero or more dotted-quad IPv4 |
+| `addresses` | exactly one entry in version 1 (decision record 0001, gate 3): a unicast host address (below) with prefix 32 |
+| `routes` | one or more; prefix 0–32 with every address bit past the prefix zero (`10.0.0.0/8`, not `10.0.0.1/8`) |
+| `dns` | zero or more unicast host addresses |
 | `session_name` | ≤ 64 characters; shown by Android in the VPN notification |
+
+Addresses are dotted-quad IPv4: four decimal parts of 1–3 ASCII digits,
+each 0–255, without leading zeros. A *unicast host address* is one outside
+`0.0.0.0/8`, `127.0.0.0/8`, `224.0.0.0/4` and `240.0.0.0/4` (which holds the
+limited broadcast address).
 
 The app MUST reject (VPN_ERROR `config_rejected`) any value outside these
 rules rather than pass it to `VpnService.Builder`.
@@ -201,9 +213,10 @@ state is a protocol violation.
 | Configuring | VPN_READY, VPN_ERROR, STOP | ERROR, STOP |
 | Active | IP_PACKET, PING, PONG, STOP, VPN_ERROR | IP_PACKET, PING, PONG, STOP, ERROR |
 
-VPN_ERROR in Active means the app lost the VPN (revoked by the user or the
-system) or detected a violation; the host tears down.
 | Closed | — | — |
+
+VPN_ERROR in Active means the app lost the VPN (revoked by the user or the
+system), failed locally, or detected a violation; the host tears down.
 
 Transitions:
 
@@ -221,11 +234,18 @@ Transitions:
 4. Android MUST NOT show the VPN consent dialog, start the VPN service, or
    persist anything before step 3 succeeded.
 5. Android applies the configuration and sends VPN_READY (Active) or
-   VPN_ERROR (Closed).
+   VPN_ERROR (Closed). The user may be answering the VPN consent dialog, so
+   the host waits up to 120 seconds after AUTH for either; then it closes.
+   An app that is ready later than 120 seconds after it sent AUTH MUST NOT
+   establish the VPN: it closes instead.
 6. In Active either side sends IP_PACKET freely. Android's VPN stop, from
    any cause, MUST close the socket (which ends the packet path on both sides).
+   Android ends the session with STOP when the user stopped it and with
+   VPN_ERROR for every other cause it detected itself (revocation, a local
+   failure, a violation, a dead peer).
 7. STOP is legal in every state except Closed; a receiver of STOP closes
-   the socket without reply. A sender of STOP closes after sending.
+   the socket without reply. A sender of STOP or VPN_ERROR sends nothing
+   after it and closes.
 
 Only one session exists per socket; a second HELLO is a protocol violation.
 
@@ -264,29 +284,35 @@ record to the app's bootstrap content provider through ADB standard input:
 ```text
 adb -s SERIAL shell content write --uri content://dev.routedroid.bootstrap/record < record
 
-record = "RDB1"[4] | version u8 = 1 | reserved[3] = 0 | session[40] | secret[32]
+record = "RDB1"[4] | version u8 = 1 | reserved u8 = 0 | device_port u16 | session[40] | secret[32]
 ```
 
-`session` is UTF-8, NUL-padded to 40 bytes. The secret MUST NOT appear in a
-command argument, an intent extra, an environment variable, a file, or a log
-on either side.
+`device_port` is big-endian, 1–65 535: the port the app connects to.
+`session` is UTF-8, NUL-padded to 40 bytes, with nothing but NUL after the
+first NUL. A record with a non-zero reserved byte is malformed. The secret
+MUST NOT appear in a command argument, an intent extra, an environment
+variable, a file, or a log on either side.
 
 The provider MUST be exported, non-browsable, guarded by
 `android.permission.DUMP`, and MUST additionally check
 `Binder.getCallingUid() == 2000` (shell). It MUST return a write-only
-descriptor and MUST NOT allow reads. It MUST accept at most one record per
-60 seconds. The record is held only in app-process memory, for at most 60
-seconds, and is consumed (removed) the first time the bootstrap activity
-reads it.
+descriptor and MUST NOT allow reads. Only the shell can write, so a new
+record replaces (and wipes) a pending one: that is a host retrying. The
+record is held only in app-process memory, is wiped 60 seconds after it
+arrived, and is consumed (removed) by the first launch that names its
+session.
 
 ### 7.2 Launch
 
 ```text
-adb -s SERIAL shell am start -n dev.routedroid/.BootstrapActivity --es session <id> --ei device_port <n>
+adb -s SERIAL shell am start -n dev.routedroid/.bootstrap.BootstrapActivity --es session <id>
 ```
 
-A launch whose `session` does not match an unexpired record MUST do nothing
-observable: no connection, no VPN consent, no service, no persisted state.
+The app connects to the record's `device_port`. Everything a launch carries
+is untrusted, because any app on the phone can send it; the session id only
+selects the record. A launch whose `session` does not match an unexpired
+record MUST do nothing observable: no window, no connection, no VPN consent,
+no service, no persisted state.
 
 ### 7.3 Mutual proof
 
@@ -341,7 +367,8 @@ checked in. Both implementations load these files in their unit tests:
 |---|---|
 | `frames.json` | valid frames (type, body, exact wire bytes) and invalid headers with the expected rejection |
 | `auth.json` | transcript and proof vectors for given secret, nonces, session and port |
-| `bootstrap.json` | bootstrap record bytes for a given session and secret |
+| `bootstrap.json` | bootstrap record bytes for a given session, port and secret, and malformed records |
+| `bodies.json` | control bodies JSON libraries disagree on, each to accept or to reject |
 | `states.json` | the §5 allowlist table |
 
 Rejection codes used by `frames.json`:

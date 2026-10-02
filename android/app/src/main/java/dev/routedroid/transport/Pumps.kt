@@ -1,96 +1,122 @@
 package dev.routedroid.transport
 
-import dev.routedroid.session.StatusStore
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.launch
-import java.io.FileDescriptor
+import dev.routedroid.link.SessionEnd
+import dev.routedroid.protocol.Protocol
+import dev.routedroid.protocol.frame.Frame
+import dev.routedroid.protocol.frame.FrameHeader
+import dev.routedroid.protocol.frame.MessageType
+import dev.routedroid.protocol.message.BodyException
+import dev.routedroid.protocol.message.ErrorBody
+import dev.routedroid.protocol.net.Ipv4Packet
+import dev.routedroid.protocol.session.Allowlist
+import dev.routedroid.protocol.session.Role
+import dev.routedroid.protocol.session.State
 
-/**
- * The Active-state packet path: four pump coroutines plus keepalive, with one bounded slot
- * pool per direction, so a slow side suspends its producer instead of growing memory.
- */
-class Pumps(
-    private val scope: CoroutineScope,
-    private val input: ChannelInput,
-    private val output: ChannelOutput,
-    private val tun: FileDescriptor,
-    private val mtu: Int,
-    /** Unblocks the socket reader; called by keepalive when the host went silent. */
-    private val closeSocket: () -> Unit,
-) {
-    companion object {
-        /** Bounded in-flight packets per direction; the reader suspends when this is full. */
-        const val QUEUE_DEPTH = 256
-        /** Slots must cover the queue plus one being filled and one being written. */
-        const val POOL_SIZE = QUEUE_DEPTH + 2
-    }
+/** The loops of [PacketPath], one per thread. Each returns when the path ends. */
+internal class Pumps(private val p: PacketPath) {
+    private val header = Protocol.HEADER_LEN
 
-    // VPN -> socket (tx). The extra byte lets the VPN reader detect an oversize packet.
-    private val txFree = Channel<Slot>(POOL_SIZE).also { c -> repeat(POOL_SIZE) { c.trySend(Slot(mtu + 1, pooled = true)) } }
-    private val txFilled = Channel<Slot>(QUEUE_DEPTH)
-    // socket -> VPN (rx).
-    private val rxFree = Channel<Slot>(POOL_SIZE).also { c -> repeat(POOL_SIZE) { c.trySend(Slot(mtu, pooled = true)) } }
-    private val rxFilled = Channel<Slot>(QUEUE_DEPTH)
-
-    val keepalive = Keepalive()
-    @Volatile private var running = true
-    private var firstFailure: Throwable? = null
-    private val failLock = Any()
-
-    /** Stops the readers; the writers drain and exit when their inputs close. */
-    fun stop() { running = false }
-
-    private fun fail(t: Throwable) {
-        synchronized(failLock) { if (firstFailure == null) firstFailure = t }
-        running = false
-        closeSocket()
-    }
-
-    /**
-     * Runs until the socket reader ends (host STOP/ERROR/close, violation, keepalive death),
-     * [stop] is called, or a pump fails. The first failure is rethrown after all pumps exit;
-     * otherwise the reader's verdict is returned (null when stopped locally).
-     */
-    suspend fun run(): SocketReader.End? {
-        var end: SocketReader.End? = null
-        val jobs = listOf(
-            scope.launch {
-                try { TunReader(tun, mtu).run({ running }, txFree, txFilled) } catch (t: Throwable) { if (running) fail(t) }
-                finally { txFilled.close() }
-            },
-            scope.launch {
-                try { socketWriter() } catch (t: Throwable) { if (running) fail(t) }
-            },
-            scope.launch {
-                try { end = SocketReader(input, mtu, keepalive).run({ running }, rxFree, rxFilled, txFilled) } catch (t: Throwable) { if (running) fail(t) }
-                finally { rxFilled.close(); running = false; keepalive.stop() }
-            },
-            scope.launch {
-                try { TunWriter(tun).run(rxFilled, rxFree) } catch (t: Throwable) { if (running) fail(t) }
-            },
-            scope.launch {
-                keepalive.run(ping = { txFilled.trySend(Slot.PING).isSuccess }, dead = { end = SocketReader.End.Dead; fail(KeepaliveDead()) })
-            },
-        )
-        jobs.joinAll()
-        firstFailure?.let { if (it !is KeepaliveDead) throw it }
-        return end
-    }
-
-    class KeepaliveDead : Exception("no frame from host for ${Keepalive.DEAD_MS / 1000}s")
-
-    /** txFilled -> socket. Whole frame per write; returns pooled slots. */
-    private suspend fun socketWriter() {
-        for (slot in txFilled) {
-            output.write(slot.buf, 0, slot.frameLength)
-            keepalive.sent()
-            if (slot.pooled) {
-                StatusStore.packetsOut.incrementAndGet()
-                StatusStore.bytesOut.addAndGet(slot.len.toLong())
-                txFree.send(slot)
+    fun tunReader() {
+        while (p.ending() == null) {
+            val slot = p.txPool.take()
+            val n = p.tun.read(slot.buf, header, p.mtu + 1)
+            when {
+                n < 0 -> return p.txPool.give(slot)
+                n > p.mtu -> { p.traffic.oversizeOut.incrementAndGet(); p.txPool.give(slot) }
+                Ipv4Packet.reject(slot.buf, header, n) != null -> { p.traffic.droppedOut.incrementAndGet(); p.txPool.give(slot) }
+                else -> {
+                    FrameHeader.write(slot.buf, 0, MessageType.IP_PACKET, n)
+                    slot.len = header + n
+                    p.tx.offer(slot)
+                }
             }
+        }
+    }
+
+    fun socketWriter() {
+        while (true) {
+            when (val item = p.tx.take()) {
+                is Slot -> {
+                    p.conn.write(item.buf, 0, item.len)
+                    p.traffic.packetsOut.incrementAndGet()
+                    p.traffic.bytesOut.addAndGet((item.len - header).toLong())
+                    p.txPool.give(item)
+                }
+                TxItem.Ping, TxItem.Pong -> {
+                    p.sentControl(item)
+                    val frame = if (item == TxItem.Ping) PING else PONG
+                    p.conn.write(frame, 0, frame.size)
+                }
+                TxItem.End -> {
+                    // §5 step 7: the last frame is the last thing written, after no queued data.
+                    SessionEnd.lastFrame(p.ending()!!)?.let(p.conn::send)
+                    return
+                }
+            }
+            p.keepalive.sent(p.clock.now())
+        }
+    }
+
+    fun socketReader() {
+        val reader = p.conn.reader
+        while (reader.next(p.mtu)) {
+            p.keepalive.received(p.clock.now())
+            val type = reader.type
+            if (!Allowlist.isAllowed(Role.ANDROID, State.Active, type)) return p.stop(SessionEnd.Violation("$type while Active"))
+            when (type) {
+                MessageType.IP_PACKET -> packet(reader.bodyLength)
+                MessageType.PING -> p.requestPong()
+                MessageType.PONG -> Unit
+                MessageType.STOP -> return p.stop(SessionEnd.HostStopped)
+                else -> return p.stop(hostError(reader.body()))
+            }
+        }
+        p.stop(SessionEnd.HostClosed)
+    }
+
+    private fun packet(len: Int) {
+        val slot = p.rxPool.take()
+        slot.buffer.clear()
+        p.conn.reader.readBody(slot.buffer)
+        if (Ipv4Packet.reject(slot.buf, 0, len) != null) {
+            // §6: a packet that fails the checks is dropped, not a violation.
+            p.traffic.droppedIn.incrementAndGet()
+            p.rxPool.give(slot)
+            return
+        }
+        slot.len = len
+        p.rx.offer(slot)
+    }
+
+    fun tunWriter() {
+        while (true) {
+            val slot = p.rx.take()
+            p.tun.write(slot.buf, 0, slot.len)
+            p.traffic.packetsIn.incrementAndGet()
+            p.traffic.bytesIn.addAndGet(slot.len.toLong())
+            p.rxPool.give(slot)
+        }
+    }
+
+    fun keepalive() {
+        while (true) {
+            when (p.keepalive.check(p.clock.now())) {
+                Keepalive.Verdict.DEAD -> return p.stop(SessionEnd.HostSilent)
+                Keepalive.Verdict.PING -> p.requestPing()
+                Keepalive.Verdict.NONE -> Unit
+            }
+            Thread.sleep(p.keepalive.nextCheckIn(p.clock.now()))
+        }
+    }
+
+    private companion object {
+        val PING = Frame(MessageType.PING).encode()
+        val PONG = Frame(MessageType.PONG).encode()
+
+        fun hostError(body: ByteArray): SessionEnd = try {
+            ErrorBody.decode(body).let { SessionEnd.HostRefused(it.code, it.message) }
+        } catch (e: BodyException) {
+            SessionEnd.Violation("ERROR body: ${e.message}")
         }
     }
 }

@@ -20,8 +20,8 @@ pub use message_type::MessageType;
 pub const HEADER_LEN: usize = 8;
 /// Control bodies (all JSON messages) are limited to 64 KiB.
 pub const MAX_CONTROL_BODY: u32 = 65_536;
-/// IP_PACKET bodies must be strictly larger than an IPv4 header.
-pub const MIN_PACKET_BODY: u32 = 21;
+/// An IP_PACKET body holds at least a bare IPv4 header; §6 judges the packet itself.
+pub const MIN_PACKET_BODY: u32 = 20;
 /// Absolute IPv4 total-length limit; the negotiated MTU can only lower it.
 pub const MAX_PACKET_BODY: u32 = 65_535;
 /// Smallest MTU a host may negotiate (§4.2).

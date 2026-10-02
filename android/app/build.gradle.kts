@@ -1,8 +1,17 @@
-// Routedroid Android app: VpnService end of the version-1 wire protocol.
-// All protocol parsing lives in :protocol so it is fixture-tested on the JVM.
+// Routedroid Android app: the VpnService end of the version-1 wire protocol. The wire
+// itself lives in :protocol; this module is the session owner (link/), the packet path
+// (transport/) and the Android shells around them (bootstrap/, vpn/, ui/).
 plugins {
-    id("com.android.application")
+    alias(libs.plugins.android.application)
 }
+
+// One product version for the host and the phone: [workspace.package] in host/Cargo.toml.
+// HELLO's `app` field carries it, so the host can tell an outdated app apart.
+val productVersion: String = rootDir.resolve("../host/Cargo.toml").readLines()
+    .dropWhile { it.trim() != "[workspace.package]" }
+    .firstNotNullOfOrNull { Regex("""^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"""").find(it)?.groupValues?.drop(1) }
+    ?.joinToString(".")
+    ?: error("no [workspace.package] version in host/Cargo.toml")
 
 android {
     namespace = "dev.routedroid"
@@ -12,13 +21,18 @@ android {
         applicationId = "dev.routedroid"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1-phase1"
+        val (major, minor, patch) = productVersion.split('.').map(String::toInt)
+        versionCode = major * 1_000_000 + minor * 1_000 + patch
+        versionName = productVersion
     }
+
+    buildFeatures { buildConfig = true }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
@@ -27,17 +41,29 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlin {
-        jvmToolchain(17)
+    kotlin { jvmToolchain(17) }
+
+    lint {
+        abortOnError = true
+        warningsAsErrors = true
+        checkReleaseBuilds = true
+        // Version currency is reviewed deliberately, not whenever a new release appears.
+        disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion", "OldTargetApi")
     }
+
+    // link/ and transport/ are plain JVM code tested over real loopback sockets; the few
+    // android.util.Log calls they reach return defaults there.
+    testOptions { unitTests.isReturnDefaultValues = true }
 }
 
 dependencies {
     implementation(project(":protocol"))
-    implementation("androidx.core:core-ktx:1.16.0")
-    implementation("androidx.appcompat:appcompat:1.7.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation(libs.androidx.core)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.activity)
+    implementation(libs.androidx.lifecycle.runtime)
+    implementation(libs.material)
+    implementation(libs.coroutines.android)
 
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.json:json:20250517")
+    testImplementation(libs.junit)
 }

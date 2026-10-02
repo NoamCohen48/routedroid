@@ -1,3 +1,5 @@
+use std::net::Ipv4Addr;
+
 use routedroid_proto::auth::{self, Secret};
 use routedroid_proto::frame::{Frame, MessageType};
 use routedroid_proto::messages::{Auth, ConfigureVpn, ErrorCode, Hello, HelloAck, Prefix, VpnReady};
@@ -12,8 +14,8 @@ const HOST_NONCE: [u8; 32] = [0xbb; 32];
 fn cfg() -> SessionConfig {
     SessionConfig {
         mtu: 1400,
-        addresses: vec![Prefix { address: "10.0.0.2".into(), prefix: 32 }],
-        routes: vec![Prefix { address: "0.0.0.0".into(), prefix: 0 }],
+        addresses: vec![Prefix::new(Ipv4Addr::new(10, 0, 0, 2), 32)],
+        routes: vec![Prefix::new(Ipv4Addr::UNSPECIFIED, 0)],
         dns: vec![],
         session_name: "test".into(),
         expected_session: "s1".into(),
@@ -60,7 +62,7 @@ fn to_active(m: &mut Machine) {
     let out = m.handle(auth_frame(&SECRET, auth::Role::Android)).unwrap();
     let Outbound::ToPeer(cfgf) = &out[0] else { panic!() };
     let c: ConfigureVpn = routedroid_proto::messages::parse(&cfgf.body).unwrap();
-    assert_eq!(c.addresses[0].address, "10.0.0.2");
+    assert_eq!(c.addresses[0].address, Ipv4Addr::new(10, 0, 0, 2));
     assert_eq!(m.state(), State::Configuring);
     m.handle(Frame::json(MessageType::VpnReady, &VpnReady { addresses: vec!["10.0.0.2/32".into()], mtu: 1400 }))
         .unwrap();

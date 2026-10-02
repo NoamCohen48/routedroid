@@ -1,4 +1,6 @@
-// Phase 0 throwaway probe. Single module; see app/build.gradle.kts.
+// Three modules: :protocol (pure Kotlin/JVM wire protocol), :app (the product) and
+// :hostile (a test-only attacker app, see settings.gradle.kts).
 plugins {
-    id("com.android.application") version "9.0.1" apply false
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.kotlin.jvm) apply false
 }
