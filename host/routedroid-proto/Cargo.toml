@@ -1,6 +1,6 @@
 [package]
 name = "routedroid-proto"
-version = "0.1.0"
+version.workspace = true
 description = "Routedroid wire protocol version 1: framing, control bodies, session state allowlist, bootstrap record, mutual HMAC (protocol/version-1.md)"
 edition.workspace = true
 license.workspace = true

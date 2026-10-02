@@ -1,6 +1,6 @@
 [package]
 name = "routedroid"
-version = "0.1.0"
+version.workspace = true
 description = "Routedroid command line: a client of routedroidd"
 edition.workspace = true
 license.workspace = true

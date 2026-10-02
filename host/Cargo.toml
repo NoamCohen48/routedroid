@@ -12,6 +12,8 @@ members = [
 ]
 
 [workspace.package]
+# The one product version: every crate inherits it and android/app/build.gradle.kts reads it.
+version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 publish = false

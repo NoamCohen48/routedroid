@@ -1,6 +1,6 @@
 [package]
 name = "routedroid-helper"
-version = "0.1.0"
+version.workspace = true
 description = "Routedroid privileged helper: one socket-activated instance per phone connection, write-ahead journal, systemd cleanup, and a SOCK_SEQPACKET packet relay"
 edition.workspace = true
 license.workspace = true

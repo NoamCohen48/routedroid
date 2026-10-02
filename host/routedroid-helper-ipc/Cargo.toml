@@ -1,6 +1,6 @@
 [package]
 name = "routedroid-helper-ipc"
-version = "0.1.0"
+version.workspace = true
 description = "Controller <-> privileged helper IPC: version handshake, typed control messages and raw IPv4 packets over one Unix SOCK_SEQPACKET connection"
 edition.workspace = true
 license.workspace = true

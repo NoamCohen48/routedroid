@@ -1,6 +1,6 @@
 [package]
 name = "routedroid-ipc"
-version = "0.1.0"
+version.workspace = true
 description = "Control API between the routedroid daemon and its clients (CLI, TUI): JSON lines over a Unix socket"
 edition.workspace = true
 license.workspace = true

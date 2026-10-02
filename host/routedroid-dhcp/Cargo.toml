@@ -1,6 +1,6 @@
 [package]
 name = "routedroid-dhcp"
-version = "0.1.0"
+version.workspace = true
 description = "Routedroid DHCP alias client: an extra DHCP identity on a physical interface, never assigned locally"
 edition.workspace = true
 license.workspace = true

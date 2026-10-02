@@ -1,6 +1,6 @@
 [package]
 name = "routedroidd"
-version = "0.1.0"
+version.workspace = true
 description = "Routedroid daemon: owns phone sessions (ADB, protocol, helper) and serves the control socket"
 edition.workspace = true
 license.workspace = true

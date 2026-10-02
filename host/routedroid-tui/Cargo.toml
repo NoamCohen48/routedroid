@@ -1,6 +1,6 @@
 [package]
 name = "routedroid-tui"
-version = "0.1.0"
+version.workspace = true
 description = "Routedroid terminal UI: a keyboard-driven client of routedroidd"
 edition.workspace = true
 license.workspace = true
