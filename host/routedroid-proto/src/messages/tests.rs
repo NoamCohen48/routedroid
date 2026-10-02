@@ -32,7 +32,7 @@ fn fixtures_round_trip_byte_exact() {
 fn error_codes_are_known() {
     let (_, b) = body("error_protocol_unsupported");
     let e: ErrorBody = parse(&b).unwrap();
-    assert_eq!(e.code(), Some(ErrorCode::ProtocolUnsupported));
+    assert_eq!(e.known_code(), Some(ErrorCode::ProtocolUnsupported));
     assert_eq!(e.supported, Some(vec![1]));
     for c in ErrorCode::ALL {
         assert_eq!(ErrorCode::parse(c.as_str()), Some(c));
@@ -52,21 +52,23 @@ fn unknown_fields_are_ignored_and_missing_ones_rejected() {
 
 #[test]
 fn field_rules() {
-    let nonce = "a".repeat(64);
-    let mk = |session: &str, port: u16, nonce: &str| Hello {
+    let mk = |session: &str, port: u16| Hello {
         protocol: 1,
         session: session.into(),
         device_port: port,
-        client_nonce: nonce.into(),
+        client_nonce: [0xaa; 32],
         app: None,
     };
-    assert!(mk("ok.session_1-", 9000, &nonce).validate().is_ok());
-    assert!(mk("", 9000, &nonce).validate().is_err());
-    assert!(mk(&"s".repeat(41), 9000, &nonce).validate().is_err());
-    assert!(mk("bad space", 9000, &nonce).validate().is_err());
-    assert!(mk("s", 0, &nonce).validate().is_err());
-    assert!(mk("s", 1, &"A".repeat(64)).validate().is_err(), "uppercase hex");
-    assert!(mk("s", 1, &"a".repeat(63)).validate().is_err());
+    assert!(mk("ok.session_1-", 9000).validate().is_ok());
+    assert!(mk("", 9000).validate().is_err());
+    assert!(mk(&"s".repeat(41), 9000).validate().is_err());
+    assert!(mk("bad space", 9000).validate().is_err());
+    assert!(mk("s", 0).validate().is_err());
+    let hello = |nonce: &str| format!(r#"{{"protocol":1,"session":"s","device_port":1,"client_nonce":"{nonce}"}}"#);
+    assert!(parse::<Hello>(hello(&"a".repeat(64)).as_bytes()).is_ok());
+    assert!(parse::<Hello>(hello(&"A".repeat(64)).as_bytes()).is_err(), "uppercase hex");
+    assert!(parse::<Hello>(hello(&"a".repeat(63)).as_bytes()).is_err());
+    assert!(parse::<Hello>(hello(&"a".repeat(66)).as_bytes()).is_err());
 
     let (_, b) = body("configure_vpn");
     let mut cfg: ConfigureVpn = parse(&b).unwrap();
@@ -83,13 +85,13 @@ fn field_rules() {
     cfg.mtu = 65_535;
     assert!(cfg.validate().is_ok());
 
-    let ack = HelloAck { protocol: 2, mtu: 1400, host_nonce: nonce.clone(), host_proof: nonce.clone() };
+    let ack = HelloAck { protocol: 2, mtu: 1400, host_nonce: [1; 32], host_proof: [2; 32] };
     assert!(ack.validate().is_err(), "wrong protocol in ack");
 
-    let ready = VpnReady { addresses: vec!["10.0.0.1/33".into()], mtu: 1400 };
-    assert!(ready.validate().is_err());
-    let ready = VpnReady { addresses: vec!["10.0.0.1".into()], mtu: 1400 };
-    assert!(ready.validate().is_err());
+    let ready = |prefix| VpnReady { addresses: vec![Prefix::new(Ipv4Addr::new(10, 0, 0, 1), prefix)], mtu: 1400 };
+    assert!(ready(32).validate().is_ok());
+    assert!(ready(33).validate().is_err());
+    assert!(VpnReady { addresses: vec![], mtu: 1400 }.validate().is_err());
 }
 
 /// The cases where JSON libraries disagree (bodies.json); the app must agree
@@ -109,6 +111,13 @@ fn body_fixtures() {
             }
             "error" => parse::<ErrorBody>(b).map(drop),
             "hello_ack" => parse::<HelloAck>(b).map(drop),
+            "vpn_ready" => {
+                let r: VpnReady = parse(b)?;
+                if r.mtu != mtu {
+                    return Err(field("mtu", "must equal the negotiated mtu"));
+                }
+                Ok(())
+            }
             other => panic!("unknown kind {other}"),
         }
     };

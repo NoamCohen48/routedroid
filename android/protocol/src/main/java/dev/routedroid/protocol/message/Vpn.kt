@@ -18,15 +18,15 @@ data class ConfigureVpn(
 ) {
     fun encode(): ByteArray = JsonWriter()
         .int("mtu", mtu)
-        .objects("addresses", listOf(prefix(address)))
-        .objects("routes", routes.map(::prefix))
+        .objects("addresses", listOf(Companion.prefix(address)))
+        .objects("routes", routes.map(Companion::prefix))
         .strings("dns", dns.map { it.toString() })
         .string("session_name", sessionName)
         .bytes()
 
-    private fun prefix(p: Ipv4Prefix) = JsonWriter().string("address", p.address.toString()).int("prefix", p.length)
-
     companion object {
+        internal fun prefix(p: Ipv4Prefix) = JsonWriter().string("address", p.address.toString()).int("prefix", p.length)
+
         const val MAX_SESSION_NAME_LEN = 64
 
         /** [negotiatedMtu] is HELLO_ACK's; CONFIGURE_VPN must repeat it. */
@@ -47,29 +47,24 @@ data class ConfigureVpn(
             return ConfigureVpn(mtu, address, routes, dns, name)
         }
 
-        private fun prefix(name: String, v: JsonValue): Ipv4Prefix {
+        internal fun prefix(name: String, v: JsonValue): Ipv4Prefix {
             val f = Fields.of(name, v)
             return Ipv4Prefix(f.ipv4("address"), f.int("prefix", 0..32))
         }
     }
 }
 
-/** VPN_READY, Android → host: what was actually configured. */
+/** VPN_READY, Android → host: what was actually configured, in CONFIGURE_VPN's address shape. */
 data class VpnReady(val addresses: List<Ipv4Prefix>, val mtu: Int) {
-    fun encode(): ByteArray = JsonWriter().strings("addresses", addresses.map { it.toString() }).int("mtu", mtu).bytes()
+    fun encode(): ByteArray = JsonWriter().objects("addresses", addresses.map(ConfigureVpn::prefix)).int("mtu", mtu).bytes()
 
     companion object {
+        /** The caller compares [mtu] with the negotiated one, as for CONFIGURE_VPN. */
         fun decode(body: ByteArray): VpnReady {
             val f = Fields.parse(body)
-            val addresses = f.list("addresses").map { v ->
-                val text = Fields.string("addresses", v)
-                val ip = Ipv4Address.parse(text.substringBefore('/', "")) ?: Fields.fail("addresses", "expected ip/prefix")
-                val bits = text.substringAfter('/')
-                if (bits.isEmpty() || !bits.all { it in '0'..'9' } || bits.trimStart('0').length > 2) Fields.fail("addresses", "prefix must be 0-32")
-                val length = bits.toInt()
-                if (length > 32) Fields.fail("addresses", "prefix must be 0-32")
-                Ipv4Prefix(ip, length)
-            }
+            val addresses = f.list("addresses").map { ConfigureVpn.prefix("addresses", it) }
+            if (addresses.isEmpty()) Fields.fail("addresses", "at least one address")
+            if (!addresses.all { it.address.isUnicastHost }) Fields.fail("addresses", "unicast host addresses")
             return VpnReady(addresses, f.mtu("mtu"))
         }
     }

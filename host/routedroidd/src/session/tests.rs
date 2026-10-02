@@ -20,35 +20,28 @@ fn cfg() -> SessionConfig {
         session_name: "test".into(),
         expected_session: "s1".into(),
         expected_device_port: 9000,
-        secret: Secret::new(SECRET),
     }
 }
 
 fn machine() -> Machine {
-    Machine::new(cfg(), HOST_NONCE)
+    Machine::new(cfg(), Secret::new(SECRET), HOST_NONCE)
 }
 
 fn hello(session: &str, port: u16, protocol: u32) -> Frame {
     Frame::json(
         MessageType::Hello,
-        &Hello {
-            protocol,
-            session: session.into(),
-            device_port: port,
-            client_nonce: hex::encode(CLIENT_NONCE),
-            app: None,
-        },
+        &Hello { protocol, session: session.into(), device_port: port, client_nonce: CLIENT_NONCE, app: None },
     )
 }
 
 fn auth_frame(secret: &[u8; 32], role: auth::Role) -> Frame {
     let t = auth::transcript("s1", 9000, &CLIENT_NONCE, &HOST_NONCE);
-    Frame::json(MessageType::Auth, &Auth { android_proof: hex::encode(auth::proof(&Secret::new(*secret), role, &t)) })
+    Frame::json(MessageType::Auth, &Auth { android_proof: auth::proof(&Secret::new(*secret), role, &t) })
 }
 
 fn refused(r: Result<Vec<Outbound>, Close>) -> ErrorCode {
     match r {
-        Err(Close::Refuse(e)) => e.code().expect("known code"),
+        Err(Close::Refuse(e)) => e.known_code().expect("known code"),
         other => panic!("expected refusal, got {other:?}"),
     }
 }
@@ -58,14 +51,17 @@ fn to_active(m: &mut Machine) {
     let Outbound::ToPeer(ack) = &out[0] else { panic!() };
     let ack: HelloAck = routedroid_proto::messages::parse(&ack.body).unwrap();
     let t = auth::transcript("s1", 9000, &CLIENT_NONCE, &HOST_NONCE);
-    assert!(auth::verify(&Secret::new(SECRET), auth::Role::Host, &t, &auth::proof_from_hex(&ack.host_proof).unwrap()));
+    assert!(auth::verify(&Secret::new(SECRET), auth::Role::Host, &t, &ack.host_proof));
     let out = m.handle(auth_frame(&SECRET, auth::Role::Android)).unwrap();
     let Outbound::ToPeer(cfgf) = &out[0] else { panic!() };
     let c: ConfigureVpn = routedroid_proto::messages::parse(&cfgf.body).unwrap();
     assert_eq!(c.addresses[0].address, Ipv4Addr::new(10, 0, 0, 2));
     assert_eq!(m.state(), State::Configuring);
-    m.handle(Frame::json(MessageType::VpnReady, &VpnReady { addresses: vec!["10.0.0.2/32".into()], mtu: 1400 }))
-        .unwrap();
+    m.handle(Frame::json(
+        MessageType::VpnReady,
+        &VpnReady { addresses: vec![Prefix::new(Ipv4Addr::new(10, 0, 0, 2), 32)], mtu: 1400 },
+    ))
+    .unwrap();
     assert_eq!(m.state(), State::Active);
 }
 
@@ -89,7 +85,7 @@ fn wrong_protocol_is_refused_with_supported_list() {
     let mut m = machine();
     match m.handle(hello("s1", 9000, 2)) {
         Err(Close::Refuse(e)) => {
-            assert_eq!(e.code(), Some(ErrorCode::ProtocolUnsupported));
+            assert_eq!(e.known_code(), Some(ErrorCode::ProtocolUnsupported));
             assert_eq!(e.supported, Some(vec![1]));
         }
         other => panic!("{other:?}"),
@@ -146,7 +142,7 @@ fn vpn_ready_must_echo_configuration() {
     let mut m = machine();
     m.handle(hello("s1", 9000, 1)).unwrap();
     m.handle(auth_frame(&SECRET, auth::Role::Android)).unwrap();
-    let bad = VpnReady { addresses: vec!["10.0.0.3/32".into()], mtu: 1400 };
+    let bad = VpnReady { addresses: vec![Prefix::new(Ipv4Addr::new(10, 0, 0, 3), 32)], mtu: 1400 };
     assert_eq!(refused(m.handle(Frame::json(MessageType::VpnReady, &bad))), ErrorCode::ProtocolError);
 }
 

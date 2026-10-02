@@ -47,7 +47,7 @@ sealed interface SessionEnd {
             HostStopped, HostClosed, is HostRefused, HostUnreachable, AuthFailed -> null
             ConsentDenied -> error(ErrorCode.VPN_PERMISSION_DENIED, "user declined the VPN consent")
             Revoked -> error(ErrorCode.VPN_PERMISSION_DENIED, "VPN permission revoked")
-            ConsentExpired -> error(ErrorCode.INTERNAL, "VPN consent came after the configure deadline")
+            ConsentExpired -> error(ErrorCode.CONSENT_TIMEOUT, "VPN consent came after the configure deadline")
             Superseded -> error(ErrorCode.INTERNAL, "replaced by a newer launch")
             HostSilent -> error(ErrorCode.INTERNAL, "no frame from the host for 30 s")
             is ConfigRejected -> error(ErrorCode.CONFIG_REJECTED, end.detail)

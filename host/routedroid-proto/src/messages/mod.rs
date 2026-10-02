@@ -15,8 +15,6 @@ pub const MAX_SESSION_LEN: usize = 40;
 pub const MAX_APP_LEN: usize = 64;
 pub const MAX_SESSION_NAME_LEN: usize = 64;
 pub const MAX_ERROR_MESSAGE_LEN: usize = 512;
-pub const HEX_NONCE_LEN: usize = 64;
-pub const HEX_PROOF_LEN: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BodyError {
@@ -43,17 +41,6 @@ pub fn valid_session(s: &str) -> bool {
         && s.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
-fn check_hex(name: &'static str, v: &str, len: usize) -> Result<(), BodyError> {
-    if v.len() != len || !v.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
-        return Err(field(name, format!("expected {len} lowercase hex characters")));
-    }
-    Ok(())
-}
-
-fn check_ipv4(name: &'static str, v: &str) -> Result<Ipv4Addr, BodyError> {
-    v.parse::<Ipv4Addr>().map_err(|_| field(name, "expected dotted-quad IPv4"))
-}
-
 /// Parse a control body and apply the spec's field rules.
 pub fn parse<T: Body>(body: &[u8]) -> Result<T, BodyError> {
     let v: T = serde_json::from_slice(body)?;
@@ -67,6 +54,7 @@ pub trait Body: Serialize + for<'de> Deserialize<'de> {
 
 mod error;
 mod handshake;
+mod hex32;
 mod vpn;
 pub use error::{ErrorBody, ErrorCode};
 pub use handshake::{Auth, Hello, HelloAck};

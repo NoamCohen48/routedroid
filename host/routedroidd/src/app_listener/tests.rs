@@ -7,8 +7,7 @@ fn expected() -> Expected {
 }
 
 fn hello(session: &str) -> Vec<u8> {
-    let hello =
-        Hello { protocol: 1, session: session.into(), device_port: 9000, client_nonce: "aa".repeat(32), app: None };
+    let hello = Hello { protocol: 1, session: session.into(), device_port: 9000, client_nonce: [0xaa; 32], app: None };
     Frame::json(MessageType::Hello, &hello).encode()
 }
 

@@ -256,7 +256,7 @@ def active(s, session, secret, cn):
     t, body = recv_frame(s)
     assert t == VPN_READY, NAMES.get(t)
     r = json.loads(body)
-    assert r["mtu"] == MTU and r["addresses"] == ["10.91.0.7/32"], r
+    assert r["mtu"] == MTU and r["addresses"] == [{"address": "10.91.0.7", "prefix": 32}], r
     assert vpn_up()
 
 

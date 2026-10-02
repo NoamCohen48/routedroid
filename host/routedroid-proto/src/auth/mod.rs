@@ -25,23 +25,17 @@ pub const PROOF_LEN: usize = 32;
 pub type Nonce = [u8; NONCE_LEN];
 pub type Proof = [u8; PROOF_LEN];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Role {
-    Host,
-    Android,
-}
+pub use crate::Role;
 
-impl Role {
-    fn label(self) -> &'static [u8] {
-        match self {
-            Self::Host => b"host",
-            Self::Android => b"android",
-        }
+fn label(role: Role) -> &'static [u8] {
+    match role {
+        Role::Host => b"host",
+        Role::Android => b"android",
     }
 }
 
-/// A session secret: zeroized on drop, never printed.
-#[derive(Clone, PartialEq, Eq)]
+/// A session secret: zeroized on drop, never printed, never copied, and
+/// compared only through [`verify`]'s constant-time check.
 pub struct Secret(Zeroizing<[u8; SECRET_LEN]>);
 
 impl Secret {
@@ -106,7 +100,7 @@ pub fn transcript(session: &str, device_port: u16, client_nonce: &Nonce, host_no
 
 pub fn proof(secret: &Secret, role: Role, transcript: &[u8]) -> Proof {
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("hmac accepts any key length");
-    mac.update(role.label());
+    mac.update(label(role));
     mac.update(transcript);
     mac.finalize().into_bytes().into()
 }

@@ -159,11 +159,16 @@ rules rather than pass it to `VpnService.Builder`.
 ### 4.5 VPN_READY (Android → host)
 
 ```json
-{"addresses":["10.100.102.222/32"],"mtu":1400}
+{"addresses":[{"address":"10.100.102.222","prefix":32}],"mtu":1400}
 ```
 
-`addresses` echoes what was actually configured; `mtu` MUST equal the
-negotiated value.
+| field | rule |
+|---|---|
+| `addresses` | one or more entries in CONFIGURE_VPN's shape, each a unicast host address with prefix 0–32: what was actually configured |
+| `mtu` | MUST equal the negotiated value |
+
+The host compares the parsed addresses with the ones it sent; anything
+missing or extra is a protocol violation.
 
 ### 4.6 VPN_ERROR and ERROR
 
@@ -184,6 +189,7 @@ protocol violation it detected, through VPN_ERROR. `code` values:
 | `vpn_permission_denied` | Android (VPN_ERROR) | user declined the VPN consent |
 | `vpn_establish_failed` | Android (VPN_ERROR) | `establish()` returned null or threw |
 | `config_rejected` | Android (VPN_ERROR) | CONFIGURE_VPN failed §4.4 validation |
+| `consent_timeout` | either (host: ERROR, app: VPN_ERROR) | the VPN was not ready within 120 s of AUTH (§5 step 5), normally because nobody answered the consent dialog |
 | `internal` | either (host: ERROR, app: VPN_ERROR) | unexpected failure; message is diagnostic only |
 
 A receiver MUST NOT act on `message` programmatically; it is for logs and
@@ -235,9 +241,10 @@ Transitions:
    persist anything before step 3 succeeded.
 5. Android applies the configuration and sends VPN_READY (Active) or
    VPN_ERROR (Closed). The user may be answering the VPN consent dialog, so
-   the host waits up to 120 seconds after AUTH for either; then it closes.
-   An app that is ready later than 120 seconds after it sent AUTH MUST NOT
-   establish the VPN: it closes instead.
+   the host waits up to 120 seconds after AUTH for either; then it sends
+   ERROR `consent_timeout` and closes. An app that is ready later than 120
+   seconds after it sent AUTH MUST NOT establish the VPN: it sends VPN_ERROR
+   `consent_timeout` and closes instead.
 6. In Active either side sends IP_PACKET freely. Android's VPN stop, from
    any cause, MUST close the socket (which ends the packet path on both sides).
    Android ends the session with STOP when the user stopped it and with

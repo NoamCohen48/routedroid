@@ -1,6 +1,5 @@
 use std::net::Ipv4Addr;
 
-use routedroid_proto::auth::Secret;
 use routedroid_proto::messages::{ConfigureVpn, Prefix};
 
 #[derive(Debug, Clone)]
@@ -13,8 +12,6 @@ pub struct SessionConfig {
     /// The HELLO `session` and `device_port` must match what we launched.
     pub expected_session: String,
     pub expected_device_port: u16,
-    /// Single-use secret delivered to the phone out of band (§7.1).
-    pub secret: Secret,
 }
 
 impl SessionConfig {

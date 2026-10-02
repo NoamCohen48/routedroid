@@ -103,7 +103,7 @@ class DeviceLinkTest {
         skew = Session.CONSENT_LIMIT_MS + 1
         link.consent(true)
         assertEquals(SessionEnd.ConsentExpired, ended())
-        assertEquals("internal", vpnErrorCode(end))
+        assertEquals("consent_timeout", vpnErrorCode(end))
         assertEquals(0, established.get())
     }
 

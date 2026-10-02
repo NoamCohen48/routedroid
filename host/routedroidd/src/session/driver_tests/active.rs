@@ -1,6 +1,7 @@
 //! The driver once Active: each packet direction runs on its own, and
 //! either side of the data path ending ends the session.
 
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 
 use routedroid_proto::auth;
@@ -25,23 +26,32 @@ async fn expect(peer: &mut TcpStream, want: MessageType) {
     assert_eq!(frame::read_frame(peer, 1400).await.unwrap().message_type, want);
 }
 
-/// Play the app's side of the handshake up to Active.
-async fn activate(peer: &mut TcpStream) {
-    let hello = Hello {
-        protocol: 1,
-        session: "s1".into(),
-        device_port: 9000,
-        client_nonce: hex::encode(CLIENT_NONCE),
-        app: None,
-    };
+/// Play the app's side of the handshake up to Configuring.
+async fn authenticate(peer: &mut TcpStream) {
+    let hello = Hello { protocol: 1, session: "s1".into(), device_port: 9000, client_nonce: CLIENT_NONCE, app: None };
     send(peer, Frame::json(MessageType::Hello, &hello)).await;
     expect(peer, MessageType::HelloAck).await;
     let transcript = auth::transcript("s1", 9000, &CLIENT_NONCE, &[0xbb; 32]);
     let proof = auth::proof(&Secret::new([7; 32]), auth::Role::Android, &transcript);
-    send(peer, Frame::json(MessageType::Auth, &Auth { android_proof: hex::encode(proof) })).await;
+    send(peer, Frame::json(MessageType::Auth, &Auth { android_proof: proof })).await;
     expect(peer, MessageType::ConfigureVpn).await;
-    let ready = VpnReady { addresses: vec!["10.0.0.2/32".into()], mtu: 1400 };
+}
+
+/// Play the app's side of the handshake up to Active.
+async fn activate(peer: &mut TcpStream) {
+    authenticate(peer).await;
+    let ready = VpnReady { addresses: vec![Prefix::new(Ipv4Addr::new(10, 0, 0, 2), 32)], mtu: 1400 };
     send(peer, Frame::json(MessageType::VpnReady, &ready)).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn unanswered_consent_is_a_consent_timeout() {
+    let (mut peer, handle, _stop) = super::start().await;
+    authenticate(&mut peer).await;
+    tokio::time::sleep(super::CONSENT_DEADLINE + Duration::from_secs(1)).await;
+    let e = super::expect_error(&mut peer).await;
+    assert_eq!(e.code, "consent_timeout");
+    assert!(matches!(handle.await.unwrap(), SessionEnd::Refused(_)));
 }
 
 #[tokio::test(start_paused = true)]

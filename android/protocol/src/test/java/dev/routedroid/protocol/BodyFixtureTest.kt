@@ -9,6 +9,7 @@ import dev.routedroid.protocol.message.BodyException
 import dev.routedroid.protocol.message.ConfigureVpn
 import dev.routedroid.protocol.message.ErrorBody
 import dev.routedroid.protocol.message.HelloAck
+import dev.routedroid.protocol.message.VpnReady
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.fail
@@ -23,6 +24,9 @@ class BodyFixtureTest {
         "configure_vpn" -> ConfigureVpn.decode(v.hex("body_hex"), mtu)
         "error" -> ErrorBody.decode(v.hex("body_hex"))
         "hello_ack" -> HelloAck.decode(v.hex("body_hex"))
+        "vpn_ready" -> VpnReady.decode(v.hex("body_hex")).also {
+            if (it.mtu != mtu) throw BodyException("mtu ${it.mtu} is not the negotiated $mtu")
+        }
         else -> error("unknown kind $kind")
     }
 
@@ -32,7 +36,7 @@ class BodyFixtureTest {
 
     @Test fun invalidBodiesRefused() {
         val cases = f.objects("invalid")
-        assertEquals(40, cases.size)
+        assertEquals(47, cases.size)
         for (v in cases) {
             try {
                 decode(v)

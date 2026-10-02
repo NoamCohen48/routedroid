@@ -31,11 +31,9 @@ impl SessionDriver {
     pub(super) async fn on_phase_deadline(&mut self) -> SessionEnd {
         let state = self.machine.state();
         let budget = PhaseTimer::budget(state).unwrap_or_default();
-        self.refuse(ErrorBody::new(
-            ErrorCode::ProtocolError,
-            format!("no progress from {} within {budget:?}", state.name()),
-        ))
-        .await
+        // Configuring waits on a person answering the consent dialog, not on a protocol step.
+        let code = if state == State::Configuring { ErrorCode::ConsentTimeout } else { ErrorCode::ProtocolError };
+        self.refuse(ErrorBody::new(code, format!("no progress from {} within {budget:?}", state.name()))).await
     }
 
     /// What the reader task delivered; `None` means the task is gone.
@@ -80,7 +78,8 @@ impl SessionDriver {
                 }
             }
         }
-        if self.machine.state() != state_before {
+        // One deadline for the whole handshake, a fresh one for the consent.
+        if PhaseTimer::budget(self.machine.state()) != PhaseTimer::budget(state_before) {
             self.phase.reset();
         }
         if self.machine.state() == State::Active && !self.progress.counters.reached_active() {

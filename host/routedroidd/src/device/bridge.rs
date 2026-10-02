@@ -9,7 +9,7 @@ use tracing::info;
 
 use super::{DevicePorts, ReservedPort};
 use crate::adb::AdbDevice;
-use routedroid_ipc::fault::{FaultExt, Kind, Result};
+use routedroid_ipc::fault::{Fault, FaultExt, Kind, Result};
 
 pub const BOOTSTRAP_COMPONENT: &str = "dev.routedroid/.bootstrap.BootstrapActivity";
 
@@ -19,7 +19,7 @@ pub struct AdbBridge {
     port: ReservedPort,
     pub session: String,
     pub host_nonce: Nonce,
-    /// Taken by the session machine; `None` once handed over.
+    /// Handed to the session by [`Self::bootstrap`]; `None` after that.
     secret: Option<Secret>,
 }
 
@@ -44,12 +44,6 @@ impl AdbBridge {
         self.port.device_port
     }
 
-    /// The single copy of the secret, for the session machine (§7.3: it is
-    /// consumed on AUTH). Panics if called twice.
-    pub fn take_secret(&mut self) -> Secret {
-        self.secret.take().expect("secret taken once")
-    }
-
     /// Tell the app about this session (§7.1–7.2), in two adb steps:
     ///
     /// 1. Write the bootstrap record (session id, reverse port, secret) into
@@ -65,17 +59,19 @@ impl AdbBridge {
     ///
     /// Nothing else happens on the phone before AUTH succeeds: no VPN prompt,
     /// no service.
-    pub async fn bootstrap(&self) -> Result<()> {
-        let secret = self.secret.as_ref().expect("bootstrap before the secret is handed over");
-        let record =
-            bootstrap::encode(&self.session, self.port.device_port, secret).expect("session id is valid hex");
+    ///
+    /// Returns the secret, the only copy left on the host, for the session
+    /// machine (§7.3: it is consumed on AUTH). A second call fails.
+    pub async fn bootstrap(&mut self) -> Result<Secret> {
+        let secret = self.secret.take().ok_or_else(|| Fault::msg(Kind::Internal, "bootstrap runs once"))?;
+        let record = bootstrap::encode(&self.session, self.port.device_port, &secret).expect("session id is valid hex");
         self.adb.content_write(PROVIDER_URI, record.as_slice()).await?;
         drop(record);
         info!(uri = PROVIDER_URI, "bootstrap record delivered over adb stdin");
 
         self.adb.am_start(BOOTSTRAP_COMPONENT, &[("session", &self.session)]).await?;
         info!(component = BOOTSTRAP_COMPONENT, "launched bootstrap activity");
-        Ok(())
+        Ok(secret)
     }
 
     /// Undo the phone-side footprint (the reverse mapping). Never fails.

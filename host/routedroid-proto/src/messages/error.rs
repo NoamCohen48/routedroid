@@ -2,7 +2,8 @@
 
 use super::*;
 
-/// §4.6 error codes. `Other` keeps unknown codes from a newer peer readable.
+/// §4.6 error codes. A code from a newer peer stays a string in
+/// [`ErrorBody::code`]; [`ErrorBody::known_code`] is `None` for it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
     ProtocolUnsupported,
@@ -13,11 +14,12 @@ pub enum ErrorCode {
     VpnPermissionDenied,
     VpnEstablishFailed,
     ConfigRejected,
+    ConsentTimeout,
     Internal,
 }
 
 impl ErrorCode {
-    pub const ALL: [ErrorCode; 9] = [
+    pub const ALL: [ErrorCode; 10] = [
         Self::ProtocolUnsupported,
         Self::ProtocolError,
         Self::AuthFailed,
@@ -26,6 +28,7 @@ impl ErrorCode {
         Self::VpnPermissionDenied,
         Self::VpnEstablishFailed,
         Self::ConfigRejected,
+        Self::ConsentTimeout,
         Self::Internal,
     ];
 
@@ -39,6 +42,7 @@ impl ErrorCode {
             Self::VpnPermissionDenied => "vpn_permission_denied",
             Self::VpnEstablishFailed => "vpn_establish_failed",
             Self::ConfigRejected => "config_rejected",
+            Self::ConsentTimeout => "consent_timeout",
             Self::Internal => "internal",
         }
     }
@@ -71,7 +75,7 @@ impl ErrorBody {
         }
     }
 
-    pub fn code(&self) -> Option<ErrorCode> {
+    pub fn known_code(&self) -> Option<ErrorCode> {
         ErrorCode::parse(&self.code)
     }
 }

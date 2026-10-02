@@ -10,6 +10,7 @@ enum class ErrorCode(val wire: String) {
     VPN_PERMISSION_DENIED("vpn_permission_denied"),
     VPN_ESTABLISH_FAILED("vpn_establish_failed"),
     CONFIG_REJECTED("config_rejected"),
+    CONSENT_TIMEOUT("consent_timeout"),
     INTERNAL("internal");
 
     companion object {

@@ -34,11 +34,7 @@ impl State {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Role {
-    Host,
-    Android,
-}
+pub use crate::Role;
 
 /// Message types `role` may receive while in `state`.
 pub fn allowed(role: Role, state: State) -> &'static [MessageType] {

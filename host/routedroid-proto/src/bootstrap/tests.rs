@@ -16,7 +16,7 @@ fn fixture_vectors_encode_and_decode() {
         assert_eq!(encode(session, port, &secret).unwrap().as_slice(), want.as_slice(), "{name}: encode");
         let r = decode(&want).unwrap();
         assert_eq!((r.session.as_str(), r.device_port), (session, port), "{name}");
-        assert_eq!(r.secret, secret, "{name}");
+        assert_eq!(r.secret.as_bytes(), secret.as_bytes(), "{name}");
     }
     for v in f["invalid"].as_array().unwrap() {
         let name = v["name"].as_str().unwrap();

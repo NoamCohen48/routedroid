@@ -97,7 +97,7 @@ add("configure_vpn", "CONFIGURE_VPN", j({
     "dns": ["10.100.102.1"],
     "session_name": "Routedroid",
 }))
-add("vpn_ready", "VPN_READY", j({"addresses": ["10.100.102.222/32"], "mtu": MTU}))
+add("vpn_ready", "VPN_READY", j({"addresses": [{"address": "10.100.102.222", "prefix": 32}], "mtu": MTU}))
 add("vpn_error", "VPN_ERROR", j({"code": "vpn_permission_denied", "message": "user declined"}))
 add("error_auth_failed", "ERROR", j({"code": "auth_failed", "message": "proof mismatch"}))
 add("error_protocol_unsupported", "ERROR",
@@ -263,6 +263,9 @@ bodies = {
          "body_hex": j({"code": "internal", "message": EMOJI * 512}).hex()},
         {"name": "unknown_error_code", "kind": "error",
          "body_hex": j({"code": "from_the_future", "message": ""}).hex()},
+        {"name": "consent_timeout", "kind": "error",
+         "body_hex": j({"code": "consent_timeout", "message": "no VPN consent within 120 s"}).hex()},
+        {"name": "vpn_ready", "kind": "vpn_ready", "body_hex": j({"addresses": addr("10.100.102.222"), "mtu": MTU}).hex()},
     ],
     "invalid": [
         # JSON syntax: serde_json is strict RFC 8259 and so must the app be.
@@ -323,6 +326,20 @@ bodies = {
         {"name": "message_513_code_points", "kind": "error",
          "body_hex": j({"code": "internal", "message": EMOJI * 513}).hex()},
         {"name": "code_not_snake_case", "kind": "error", "body_hex": j({"code": "Internal", "message": ""}).hex()},
+        # VPN_READY (§4.5) uses CONFIGURE_VPN's address shape and the negotiated MTU.
+        {"name": "vpn_ready_address_string", "kind": "vpn_ready",
+         "body_hex": j({"addresses": ["10.100.102.222/32"], "mtu": MTU}).hex()},
+        {"name": "vpn_ready_prefix_33", "kind": "vpn_ready",
+         "body_hex": j({"addresses": addr("10.100.102.222", 33), "mtu": MTU}).hex()},
+        {"name": "vpn_ready_no_address", "kind": "vpn_ready", "body_hex": j({"addresses": [], "mtu": MTU}).hex()},
+        {"name": "vpn_ready_loopback", "kind": "vpn_ready", "body_hex": j({"addresses": addr("127.0.0.1"), "mtu": MTU}).hex()},
+        {"name": "vpn_ready_mtu_mismatch", "kind": "vpn_ready",
+         "body_hex": j({"addresses": addr("10.100.102.222"), "mtu": 1500}).hex()},
+        # Hex fields: exactly 64 lowercase characters.
+        {"name": "hello_ack_uppercase_hex", "kind": "hello_ack",
+         "body_hex": j({**ACK, "host_nonce": NONCE_H.hex().upper()}).hex()},
+        {"name": "hello_ack_short_proof", "kind": "hello_ack",
+         "body_hex": j({**ACK, "host_proof": HOST_PROOF.hex()[:62]}).hex()},
     ],
 }
 

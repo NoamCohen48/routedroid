@@ -22,6 +22,14 @@ pub mod state;
 /// Frame header `version` and HELLO / HELLO_ACK `protocol`.
 pub const PROTOCOL_VERSION: u8 = 1;
 
+/// The two ends of a session: which proof label a side uses (§7.3) and
+/// which allowlist applies to what it receives (§5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    Host,
+    Android,
+}
+
 #[cfg(test)]
 pub(crate) mod fixtures {
     //! The checked-in golden fixtures, embedded at compile time so the tests

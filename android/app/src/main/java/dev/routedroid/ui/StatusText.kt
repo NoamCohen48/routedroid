@@ -4,6 +4,7 @@ import android.content.Context
 import dev.routedroid.R
 import dev.routedroid.link.LinkState
 import dev.routedroid.link.SessionEnd
+import dev.routedroid.protocol.message.ErrorCode
 
 /** [LinkState] and [SessionEnd] as user-facing text, all from string resources. */
 class StatusText(private val context: Context) {
@@ -42,7 +43,10 @@ class StatusText(private val context: Context) {
         SessionEnd.HostStopped -> context.getString(R.string.end_host_stopped)
         SessionEnd.HostClosed -> context.getString(R.string.end_host_closed)
         SessionEnd.HostSilent -> context.getString(R.string.end_host_silent)
-        is SessionEnd.HostRefused -> context.getString(R.string.end_host_refused, end.code)
+        // consent_timeout is the host's side of the same deadline as ConsentExpired.
+        is SessionEnd.HostRefused ->
+            if (end.code == ErrorCode.CONSENT_TIMEOUT.wire) context.getString(R.string.end_consent_expired)
+            else context.getString(R.string.end_host_refused, end.code)
         is SessionEnd.TimedOut -> context.getString(R.string.end_timed_out, end.waitingFor)
         is SessionEnd.Violation -> context.getString(R.string.end_violation, end.detail)
     }

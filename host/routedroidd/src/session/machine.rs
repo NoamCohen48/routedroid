@@ -4,7 +4,8 @@
 use routedroid_proto::auth::{self, Nonce, Secret};
 use routedroid_proto::frame::{Frame, MessageType};
 use routedroid_proto::messages::{self, Auth, BodyError, ErrorBody, ErrorCode, Hello, HelloAck, VpnReady};
-use routedroid_proto::state::{self, Role, State};
+use routedroid_proto::state::{self, State};
+use routedroid_proto::Role;
 use routedroid_proto::PROTOCOL_VERSION;
 
 use super::{Close, SessionConfig};
@@ -27,9 +28,10 @@ pub struct Machine {
 }
 
 impl Machine {
-    pub fn new(mut cfg: SessionConfig, host_nonce: Nonce) -> Self {
-        let secret = Some(std::mem::replace(&mut cfg.secret, Secret::new([0; auth::SECRET_LEN])));
-        Self { state: State::Connected, cfg, host_nonce, transcript: None, secret }
+    /// `secret` is the session's only copy; the machine drops it once AUTH
+    /// is decided (§7.3), whatever the outcome.
+    pub fn new(cfg: SessionConfig, secret: Secret, host_nonce: Nonce) -> Self {
+        Self { state: State::Connected, cfg, host_nonce, transcript: None, secret: Some(secret) }
     }
 
     pub fn state(&self) -> State {
@@ -100,20 +102,14 @@ impl Machine {
         if hello.session != self.cfg.expected_session || hello.device_port != self.cfg.expected_device_port {
             return Err(self.refuse(ErrorCode::SessionMismatch, "HELLO session/port is not the one launched"));
         }
-        let client_nonce = auth::nonce_from_hex(&hello.client_nonce).expect("validated 64 hex");
-        let transcript = auth::transcript(&hello.session, hello.device_port, &client_nonce, &self.host_nonce);
+        let transcript = auth::transcript(&hello.session, hello.device_port, &hello.client_nonce, &self.host_nonce);
         let Some(secret) = self.secret.as_ref() else {
             return Err(self.refuse(ErrorCode::Internal, "session secret already consumed"));
         };
-        let host_proof = hex::encode(auth::proof(secret, auth::Role::Host, &transcript));
+        let host_proof = auth::proof(secret, Role::Host, &transcript);
         self.transcript = Some(transcript);
         self.state = State::Authenticating;
-        let ack = HelloAck {
-            protocol: PROTOCOL_VERSION,
-            mtu: self.cfg.mtu,
-            host_nonce: hex::encode(self.host_nonce),
-            host_proof,
-        };
+        let ack = HelloAck { protocol: PROTOCOL_VERSION, mtu: self.cfg.mtu, host_nonce: self.host_nonce, host_proof };
         Ok(vec![Outbound::ToPeer(Frame::json(MessageType::HelloAck, &ack))])
     }
 
@@ -122,8 +118,7 @@ impl Machine {
         // Single use: the secret is dropped whatever the outcome.
         let secret = self.secret.take().expect("secret present while Authenticating");
         let transcript = self.transcript.take().expect("transcript fixed by HELLO");
-        let received = auth::proof_from_hex(&msg.android_proof).expect("validated 64 hex");
-        if !auth::verify(&secret, auth::Role::Android, &transcript, &received) {
+        if !auth::verify(&secret, Role::Android, &transcript, &msg.android_proof) {
             return Err(self.refuse(ErrorCode::AuthFailed, "android_proof does not verify"));
         }
         drop(secret);
@@ -138,11 +133,16 @@ impl Machine {
                 self.refuse(ErrorCode::ProtocolError, format!("VPN_READY mtu {} != {}", ready.mtu, self.cfg.mtu))
             );
         }
-        for want in &self.cfg.addresses {
-            let want_s = format!("{}/{}", want.address, want.prefix);
-            if !ready.addresses.contains(&want_s) {
-                return Err(self.refuse(ErrorCode::ProtocolError, format!("VPN_READY lacks {want_s}")));
-            }
+        // Exactly what was sent, compared as values: nothing missing, nothing extra.
+        let missing = self.cfg.addresses.iter().find(|a| !ready.addresses.contains(a));
+        let extra = ready.addresses.iter().find(|a| !self.cfg.addresses.contains(a));
+        if let Some(a) = missing {
+            return Err(self.refuse(ErrorCode::ProtocolError, format!("VPN_READY lacks {}/{}", a.address, a.prefix)));
+        }
+        if let Some(a) = extra {
+            return Err(
+                self.refuse(ErrorCode::ProtocolError, format!("VPN_READY has extra {}/{}", a.address, a.prefix))
+            );
         }
         self.state = State::Active;
         Ok(Vec::new())

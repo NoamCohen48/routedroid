@@ -21,7 +21,6 @@ fn cfg() -> SessionConfig {
         session_name: "test".into(),
         expected_session: "s1".into(),
         expected_device_port: 9000,
-        secret: Secret::new([7; 32]),
     }
 }
 
@@ -49,9 +48,16 @@ async fn start_with(packets: PacketEndpoints) -> (TcpStream, tokio::task::JoinHa
     let (stream, _) = listener.accept().await.unwrap();
     let (stop_tx, stop_rx) = watch::channel(false);
     let handle = tokio::spawn(async move {
-        SessionDriver::run(stream, None, Machine::new(cfg(), [0xbb; 32]), packets, stop_rx, Progress::detached())
-            .await
-            .end
+        SessionDriver::run(
+            stream,
+            None,
+            Machine::new(cfg(), Secret::new([7; 32]), [0xbb; 32]),
+            packets,
+            stop_rx,
+            Progress::detached(),
+        )
+        .await
+        .end
     });
     (peer, handle, stop_tx)
 }
@@ -72,16 +78,14 @@ async fn silent_peer_is_refused_after_handshake_deadline() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn consent_deadline_applies_after_hello_reset_the_clock() {
+async fn one_handshake_deadline_from_connect_to_auth() {
     let (mut peer, handle, _stop) = start().await;
     tokio::time::sleep(HANDSHAKE_DEADLINE - Duration::from_secs(1)).await;
-    let hello =
-        Hello { protocol: 1, session: "s1".into(), device_port: 9000, client_nonce: "aa".repeat(32), app: None };
+    let hello = Hello { protocol: 1, session: "s1".into(), device_port: 9000, client_nonce: [0xaa; 32], app: None };
     peer.write_all(&Frame::json(MessageType::Hello, &hello).encode()).await.unwrap();
     let ack = frame::read_frame(&mut peer, 1400).await.unwrap();
     assert_eq!(ack.message_type, MessageType::HelloAck);
-    // The HELLO restarted the phase clock: another near-deadline wait is still fine.
-    tokio::time::sleep(HANDSHAKE_DEADLINE - Duration::from_secs(1)).await;
+    // HELLO does not restart the clock: AUTH is due within the same 15 s.
     tokio::time::sleep(Duration::from_secs(2)).await;
     let e = expect_error(&mut peer).await;
     assert_eq!(e.code, "protocol_error");

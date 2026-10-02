@@ -82,8 +82,9 @@ impl Keepalive {
     }
 }
 
-/// How long the peer may stay in the current pre-Active state; restarted on
-/// every state change.
+/// How long the peer may take to leave the current pre-Active phase. The
+/// handshake states share one budget; the driver restarts the timer only
+/// when the budget changes (on entering Configuring).
 pub struct PhaseTimer {
     started: Instant,
 }

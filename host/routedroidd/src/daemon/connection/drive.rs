@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use routedroid_ipc::fault::{Fault, Kind, Result};
 use routedroid_ipc::ConnectionState;
-use routedroid_proto::messages::Prefix;
+use routedroid_proto::messages::{ErrorCode, Prefix};
 use tokio::sync::watch;
 use tracing::info;
 
@@ -29,7 +29,7 @@ impl ConnectionRun<'_> {
         network: &mut HostNetwork,
         mut stop_rx: watch::Receiver<bool>,
     ) -> Result<&'static str> {
-        bridge.bootstrap().await?;
+        let secret = bridge.bootstrap().await?;
         self.sink.set(ConnectionState::WaitingForApp);
         // The app dials in (over adb reverse, not over the VPN): the phone
         // never listens, so nothing on it can be reached before AUTH.
@@ -52,10 +52,9 @@ impl ConnectionRun<'_> {
             session_name: "Routedroid".into(),
             expected_session: bridge.session.clone(),
             expected_device_port: bridge.device_port(),
-            secret: bridge.take_secret(),
         };
         let (progress, mut active_rx) = Progress::new(self.counters.clone());
-        let machine = Machine::new(config, bridge.host_nonce);
+        let machine = Machine::new(config, secret, bridge.host_nonce);
         let driver = SessionDriver::run(app.stream, Some(app.hello), machine, network.relay(), stop_rx, progress);
         tokio::pin!(driver);
         // Publish Active the moment the driver flips it; then wait for the end.
@@ -83,6 +82,9 @@ impl ConnectionRun<'_> {
             SessionEnd::LocalStop if !summary.reached_active => Ok("stopped before the connection was active"),
             SessionEnd::LocalStop | SessionEnd::PeerStop | SessionEnd::PeerClosed if summary.reached_active => {
                 Ok("session ended cleanly")
+            }
+            SessionEnd::VpnError(e) | SessionEnd::Refused(e) if e.known_code() == Some(ErrorCode::ConsentTimeout) => {
+                Err(Fault::msg(Kind::Vpn, "VPN permission was not granted on the phone within 2 minutes"))
             }
             // Peer-supplied text: `{:?}` escapes control characters before it reaches a terminal.
             SessionEnd::VpnError(e) => Err(Fault::msg(Kind::Vpn, format!("{}: {:?}", e.code, e.message))),
