@@ -1,0 +1,29 @@
+[package]
+name = "routedroid-proto"
+version.workspace = true
+description = "Routedroid wire protocol version 1: framing, control bodies, session state allowlist, bootstrap record, mutual HMAC (protocol/version-1.md)"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = ["tokio"]
+tokio = ["dep:tokio"]
+
+[dependencies]
+getrandom.workspace = true
+hex.workspace = true
+hmac.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["io-util"], optional = true }
+zeroize.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "io-util"] }
+
+[lints]
+workspace = true
