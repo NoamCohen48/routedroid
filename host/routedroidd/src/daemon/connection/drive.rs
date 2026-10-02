@@ -10,12 +10,13 @@ use routedroid_proto::messages::Prefix;
 use tokio::sync::watch;
 use tracing::info;
 
-use super::end;
 use super::run::ConnectionRun;
+use super::{end, run};
 use crate::app_listener::{AppListener, Expected};
 use crate::device::AdbBridge;
-use crate::fault::Result;
-use crate::host_network::HostNetwork;
+use crate::fault::{Fault, Kind, Result};
+use crate::host_network::{HelperEvent, HostNetwork};
+use crate::session::SessionEnd;
 use crate::session::{Machine, Progress, SessionConfig, SessionDriver};
 
 impl ConnectionRun {
@@ -61,17 +62,23 @@ impl ConnectionRun {
         };
         let (progress, mut active_rx) = Progress::new(self.counters.clone());
         let machine = Machine::new(config, secret, bridge.host_nonce);
+        let packets = network.relay();
+        let mut events = network.take_events().expect("relay() was just called");
         let driver = SessionDriver::run(
             app.stream,
             Some(app.hello),
             machine,
-            network.relay(),
+            packets,
             stop_rx,
             progress,
         );
         tokio::pin!(driver);
-        // Publish Active the moment the driver flips it; then wait for the end.
+        // Publish Active the moment the driver flips it, and renewals as
+        // they come; then wait for the end.
+        let mut placed = placed.clone();
+        let mut ended = None;
         let mut watch_active = true;
+        let mut watch_events = true;
         let summary = loop {
             tokio::select! {
                 summary = &mut driver => break summary,
@@ -80,8 +87,16 @@ impl ConnectionRun {
                     Ok(()) => {}
                     Err(_) => watch_active = false,
                 },
+                event = events.recv(), if watch_events => match event {
+                    Some(event) => self.on_helper(event, &mut placed, &mut ended),
+                    None => watch_events = false,
+                },
             }
         };
+        // The helper's word on why it ended comes just before it closes.
+        while let Ok(event) = events.try_recv() {
+            self.on_helper(event, &mut placed, &mut ended);
+        }
         info!(
             to_phone = summary.packets_to_phone,
             from_phone = summary.packets_from_phone,
@@ -90,6 +105,26 @@ impl ConnectionRun {
             "traffic"
         );
         self.sink.set(ConnectionState::Stopping);
-        end::reason(summary.end, summary.reached_active)
+        if ended.is_some() {
+            network.ended_by_helper();
+        }
+        match ended {
+            Some(why) if matches!(summary.end, SessionEnd::HelperClosed) => Err(Fault::msg(
+                Kind::Helper,
+                format!("the helper ended the session: {why}"),
+            )),
+            _ => end::reason(summary.end, summary.reached_active),
+        }
+    }
+
+    fn on_helper(&self, event: HelperEvent, placed: &mut NetworkInfo, ended: &mut Option<String>) {
+        match event {
+            HelperEvent::Renewed(lease) => {
+                info!(expires_at = lease.expires_at, "lease renewed");
+                placed.lease = Some(run::lease(&lease));
+                self.sink.set_network(placed.clone());
+            }
+            HelperEvent::Ended(why) => *ended = Some(why),
+        }
     }
 }

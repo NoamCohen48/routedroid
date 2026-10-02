@@ -1,5 +1,6 @@
 //! The packet path of an active session: TUN ↔ controller, until `Stop`,
-//! disconnect, shutdown or an I/O failure. It never returns early with
+//! disconnect, shutdown, an I/O failure or the loss of the phone's address
+//! (reported by the keeper, which also has renewals passed on). It never returns early with
 //! `?`: every exit is an [`Ended`], so the caller always runs the undo.
 //!
 //! The helper is the privilege boundary, so it checks every packet itself
@@ -16,9 +17,10 @@ use std::net::Ipv4Addr;
 
 use routedroid_helper_ipc::{Datagram, ErrorCode, MAX_DATAGRAM, Reply, Request, SeqPacket};
 use routedroid_proto::ipv4;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 use tracing::{debug, info};
 
+use super::keeper::Kept;
 use crate::kernel::AsyncTun;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -45,7 +47,11 @@ struct Counters {
 }
 
 impl Relay<'_> {
-    pub async fn run(&self, mut shutdown: watch::Receiver<bool>) -> Ended {
+    pub async fn run(
+        &self,
+        mut shutdown: watch::Receiver<bool>,
+        kept: &mut mpsc::Receiver<Kept>,
+    ) -> Ended {
         let mut from_tun = vec![0u8; self.mtu + 1];
         let mut from_conn = vec![0u8; MAX_DATAGRAM];
         let mut counters = Counters::default();
@@ -54,6 +60,7 @@ impl Relay<'_> {
                 () = crate::serve::stopped(&mut shutdown) => Some(Ended::Shutdown),
                 read = self.tun.read(&mut from_tun) => self.to_phone(read, &from_tun, &mut counters),
                 recv = self.conn.recv(&mut from_conn) => self.to_lan(recv, &mut counters).await,
+                event = kept.recv() => self.on_kept(event).await,
             };
             if let Some(ended) = step {
                 break ended;
@@ -118,6 +125,18 @@ impl Relay<'_> {
             Ok(Datagram::Control(Request::Ping)) => Reply::Pong,
             Ok(Datagram::Control(_)) => super::error(ErrorCode::OutOfState, "a session is active"),
             Err(e) => super::error(ErrorCode::BadRequest, e.to_string()),
+        };
+        match self.conn.send_control(&reply).await {
+            Ok(()) => None,
+            Err(e) => Some(Ended::Failed(format!("send to controller: {e}"))),
+        }
+    }
+
+    async fn on_kept(&self, event: Option<Kept>) -> Option<Ended> {
+        let reply = match event {
+            Some(Kept::Renewed(lease)) => Reply::Lease { lease },
+            Some(Kept::Lost(why)) => return Some(Ended::Failed(why)),
+            None => return Some(Ended::Failed("the address keeper ended".into())),
         };
         match self.conn.send_control(&reply).await {
             Ok(()) => None,

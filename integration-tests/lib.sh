@@ -54,3 +54,11 @@ wait_for_socket() {
     for _ in $(seq 1 30); do [[ -S $1 ]] && return 0; sleep 0.1; done
     return 1
 }
+
+# eventually CMD...: CMD succeeds within 3 s (teardown after a controller
+# leaves is asynchronous).
+eventually() {
+    local _
+    for _ in $(seq 1 30); do "$@" && return 0; sleep 0.1; done
+    return 1
+}

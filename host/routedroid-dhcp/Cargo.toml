@@ -1,0 +1,35 @@
+[package]
+name = "routedroid-dhcp"
+version.workspace = true
+description = "Routedroid DHCP alias client library (and its lab CLI): an extra DHCP identity on a physical interface, never assigned locally"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = ["cli"]
+# The lab binary and what only it needs; the helper uses the library alone.
+cli = ["dep:clap", "dep:routedroid-helper-ipc", "dep:tracing-subscriber", "tokio/rt-multi-thread", "tokio/signal"]
+
+[[bin]]
+name = "routedroid-dhcp"
+required-features = ["cli"]
+
+[dependencies]
+routedroid-helper-ipc = { workspace = true, optional = true }
+anyhow.workspace = true
+clap = { workspace = true, optional = true }
+getrandom.workspace = true
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "net", "time"] }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt"] }
+
+[lints]
+workspace = true

@@ -54,6 +54,7 @@ pub fn survey(kernel: &impl Kernel, policy: &Result<Policy>) -> Result<Vec<Inter
                     .collect(),
                 Err(_) => Vec::new(),
             };
+            let dhcp = policy.as_ref().is_ok_and(|p| p.dhcp(&link.name));
             let ineligible = unsuitable(link, &links).or_else(|| {
                 if !link.carrier {
                     Some("no carrier (cable or Wi-Fi down)".into())
@@ -61,7 +62,7 @@ pub fn survey(kernel: &impl Kernel, policy: &Result<Policy>) -> Result<Vec<Inter
                     Some("no IPv4 address".into())
                 } else if let Err(e) = policy {
                     Some(format!("the helper policy cannot be read: {e:#}"))
-                } else if phone_addresses.is_empty() {
+                } else if phone_addresses.is_empty() && !dhcp {
                     Some("not in the helper policy".into())
                 } else {
                     None
@@ -75,6 +76,7 @@ pub fn survey(kernel: &impl Kernel, policy: &Result<Policy>) -> Result<Vec<Inter
                     .any(|r| r.prefix == 0 && r.oif == Some(link.index)),
                 addresses,
                 phone_addresses,
+                dhcp,
                 ineligible,
             }
         })

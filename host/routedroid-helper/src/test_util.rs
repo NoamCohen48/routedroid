@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 
+use routedroid_dhcp::Held;
 use routedroid_helper_ipc::IfName;
 
 use crate::env::Env;
@@ -113,7 +114,7 @@ impl Lab {
         let policy = scratch.path().join("helper.toml");
         std::fs::write(
             &policy,
-            "[[interface]]\nname = \"lan0\"\nphone_addresses = [\"10.0.0.0/24\"]\n",
+            "[[interface]]\nname = \"lan0\"\nphone_addresses = [\"10.0.0.0/24\"]\ndhcp = true\n",
         )
         .unwrap();
         let env = Env::new(
@@ -130,11 +131,27 @@ impl Lab {
     }
 
     pub fn plan(&self, session: u64, tun: &str, phone_ip: &str) -> anyhow::Result<Plan> {
+        self.plan_with(session, tun, phone_ip, None)
+    }
+
+    /// A plan for a phone that leased `phone_ip` from 10.0.0.1.
+    pub fn leased_plan(&self, session: u64, tun: &str, phone_ip: &str) -> anyhow::Result<Plan> {
+        self.plan_with(session, tun, phone_ip, Some(held(phone_ip)))
+    }
+
+    fn plan_with(
+        &self,
+        session: u64,
+        tun: &str,
+        phone_ip: &str,
+        lease: Option<Held>,
+    ) -> anyhow::Result<Plan> {
         let request = Request {
             lan_if: IfName::new("lan0").unwrap(),
             phone_ip: phone_ip.parse().unwrap(),
             tun: IfName::new(tun).unwrap(),
             mtu: 1400,
+            lease,
         };
         let facts = Facts::gather(&self.kernel, &request.lan_if, &request.tun)?;
         let policy = Policy::load(&self.env.policy)?;
@@ -148,5 +165,16 @@ impl Lab {
             .unwrap_or_default();
         out.retain(|p| p.extension().is_some_and(|e| e == "journal"));
         out
+    }
+}
+
+/// The record of a lease on lan0 for `address` from 10.0.0.1.
+pub fn held(address: &str) -> Held {
+    Held {
+        iface: "lan0".into(),
+        client_id: "routedroid:caf60be925035877:020000000001".into(),
+        address: address.parse().unwrap(),
+        server_id: "10.0.0.1".parse().unwrap(),
+        server_mac: "02:00:00:00:00:fe".into(),
     }
 }

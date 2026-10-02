@@ -6,6 +6,7 @@ mod fake_app;
 mod fake_helper;
 
 mod connections;
+mod leased;
 
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};

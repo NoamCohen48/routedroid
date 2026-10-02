@@ -1,7 +1,10 @@
 //! The session firewall as one `nft -f` transaction (design §11). `create
 //! table` fails if the table exists, so a leftover is never merged into;
 //! the comment carries the owner tag. Deny-first: only phone<->LAN
-//! forwarding and phone<->host traffic for exactly one address pass.
+//! forwarding and phone<->host traffic for exactly one address pass. DHCP
+//! is the helper's business, never the phone's: a renewal ACK unicast to the
+//! phone's address must not be forwarded to it, and the phone may neither
+//! serve nor ask for leases.
 
 use crate::kernel::Firewall;
 use crate::op::nft_table_name;
@@ -29,6 +32,9 @@ table inet {table} {{
     }}
     chain forward {{
         type filter hook forward priority -10; policy accept;
+        iifname "{lan_if}" oifname "{tun}" udp sport 67 udp dport 68 counter drop
+        iifname "{tun}" udp sport 67 counter drop
+        iifname "{tun}" udp dport 67 counter drop
         iifname "{tun}" oifname "{lan_if}" ip saddr {phone_ip} counter accept
         iifname "{lan_if}" oifname "{tun}" ip daddr {phone_ip} counter accept
         iifname "{tun}" counter drop
@@ -69,5 +75,15 @@ mod tests {
         ));
         assert_eq!(rules.matches("10.0.0.5").count(), 6);
         assert!(rules.contains("iifname \"phone0\" ip saddr != 10.0.0.5 counter drop"));
+        let dhcp = rules
+            .find("udp sport 67 udp dport 68 counter drop")
+            .unwrap();
+        let forward = rules
+            .find("oifname \"phone0\" ip daddr 10.0.0.5 counter accept")
+            .unwrap();
+        assert!(
+            dhcp < forward,
+            "DHCP is dropped before forwarding is accepted"
+        );
     }
 }

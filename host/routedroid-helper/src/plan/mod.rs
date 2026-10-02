@@ -5,29 +5,35 @@
 use std::net::Ipv4Addr;
 
 use anyhow::{Result, bail, ensure};
+use routedroid_dhcp::Held;
 use routedroid_helper_ipc::IfName;
 
 use crate::journal::Reservation;
 use crate::kernel::Firewall;
 use crate::op::{Leaf, Op};
-use crate::policy::{Policy, mask};
+use crate::policy::Policy;
 use crate::session_id::SessionId;
 use crate::survey::unsuitable;
 
+mod address;
 mod facts;
 
+pub use address::exclusions;
 pub use facts::Facts;
 
 pub use routedroid_helper_ipc::MTU_RANGE;
 pub use routedroid_helper_ipc::TUN_PREFIX;
 
-/// The controller's `Start`, already type-checked by the IPC layer.
+/// The controller's `Start`, already type-checked by the IPC layer, with
+/// the phone's address settled: the requested one, or the leased one with
+/// its lease.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
     pub lan_if: IfName,
     pub phone_ip: Ipv4Addr,
     pub tun: IfName,
     pub mtu: u32,
+    pub lease: Option<Held>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,6 +56,7 @@ impl Plan {
             phone_ip,
             tun,
             mtu,
+            lease,
         } = &request;
         let phone_ip = *phone_ip;
         ensure!(
@@ -61,56 +68,26 @@ impl Plan {
             MTU_RANGE.contains(mtu),
             "MTU {mtu} is outside {MTU_RANGE:?}"
         );
-        policy.check(lan_if, phone_ip)?;
+        match lease {
+            None => policy.check(lan_if, phone_ip)?,
+            Some(held) => {
+                ensure!(
+                    held.address == phone_ip && held.iface == lan_if.as_str(),
+                    "the lease is for {} on {}, not {phone_ip} on {lan_if}",
+                    held.address,
+                    held.iface
+                );
+                policy.check_leased(lan_if, phone_ip)?;
+            }
+        }
         let Some(lan) = &facts.lan else {
             bail!("{lan_if} does not exist")
         };
         if let Some(reason) = unsuitable(lan, &[]) {
             bail!("{lan_if} cannot carry phones: {reason}");
         }
-        let lan = lan.index;
         ensure!(!facts.tun_exists, "{tun} already exists");
-
-        let subnet = |a: &crate::kernel::Address| u32::from(a.addr) & mask(a.prefix);
-        let Some(host) = facts
-            .addresses
-            .iter()
-            .find(|a| a.index == lan && subnet(a) == u32::from(phone_ip) & mask(a.prefix))
-        else {
-            bail!("{phone_ip} is not inside any IPv4 subnet of {lan_if}");
-        };
-        let host_part = u32::from(phone_ip) & !mask(host.prefix);
-        if host.prefix < 31 && (host_part == 0 || host_part == !mask(host.prefix)) {
-            bail!(
-                "{phone_ip} is the network or broadcast address of {}/{}",
-                host.addr,
-                host.prefix
-            );
-        }
-        if phone_ip.is_loopback()
-            || phone_ip.is_link_local()
-            || phone_ip.is_multicast()
-            || phone_ip.is_broadcast()
-        {
-            bail!("{phone_ip} is not a unicast LAN address");
-        }
-        ensure!(
-            !facts.addresses.iter().any(|a| a.addr == phone_ip),
-            "{phone_ip} is one of this host's addresses"
-        );
-        ensure!(
-            !facts.routes.iter().any(|r| r.gateway == Some(phone_ip)),
-            "{phone_ip} is a gateway"
-        );
-        ensure!(
-            !facts.neighbours.contains(&phone_ip),
-            "{phone_ip} is in use on {lan_if}"
-        );
-        let routed = facts
-            .routes
-            .iter()
-            .any(|r| r.prefix == 32 && r.dst == phone_ip);
-        ensure!(!routed, "{phone_ip} already has a host route");
+        let host = address::check(phone_ip, lan_if, lan.index, facts)?;
 
         Ok(Self {
             session,
@@ -161,29 +138,40 @@ impl Plan {
 
     /// Mutations in application order. Deny-first: the firewall exists before
     /// anything forwards, and the route that attracts traffic comes last.
+    /// A held lease comes first, so it is given back last.
     pub fn ops(&self) -> Vec<Op> {
         let Request {
             lan_if,
             phone_ip,
             tun,
+            lease,
             ..
         } = &self.request;
         let sysctl = |ifname: &IfName, leaf| Op::Sysctl {
             ifname: ifname.clone(),
             leaf,
         };
-        vec![
-            Op::Tun { name: tun.clone() },
-            Op::NftTable { tun: tun.clone() },
-            sysctl(tun, Leaf::Forwarding),
-            sysctl(lan_if, Leaf::Forwarding),
-            sysctl(lan_if, Leaf::ProxyArp),
-            Op::Route {
-                dst: *phone_ip,
-                tun: tun.clone(),
-                src: self.host_ip,
-            },
-        ]
+        let lease = lease.iter().map(|held| Op::Lease {
+            lan_if: lan_if.clone(),
+            client_id: held.client_id.clone(),
+            address: held.address,
+            server_id: held.server_id,
+            server_mac: held.server_mac.clone(),
+        });
+        lease
+            .chain([
+                Op::Tun { name: tun.clone() },
+                Op::NftTable { tun: tun.clone() },
+                sysctl(tun, Leaf::Forwarding),
+                sysctl(lan_if, Leaf::Forwarding),
+                sysctl(lan_if, Leaf::ProxyArp),
+                Op::Route {
+                    dst: *phone_ip,
+                    tun: tun.clone(),
+                    src: self.host_ip,
+                },
+            ])
+            .collect()
     }
 }
 

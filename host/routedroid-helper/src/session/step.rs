@@ -4,6 +4,7 @@
 //! from recovery, without touching anyone else's state.
 
 use anyhow::{Context, Result};
+use routedroid_dhcp::Held;
 use routedroid_helper_ipc::IfName;
 use tracing::{info, warn};
 
@@ -21,6 +22,7 @@ pub fn apply<K: Kernel>(
 ) -> Result<()> {
     let session = plan.session();
     match op {
+        Op::Lease { .. } => Ok(()),
         Op::Tun { name } => {
             *tun = Some(
                 env.kernel
@@ -48,6 +50,19 @@ pub fn apply<K: Kernel>(
 pub fn undo<K: Kernel>(env: &Env<K>, session: SessionId, op: &Op) -> Result<()> {
     let kernel = &env.kernel;
     match op {
+        Op::Lease {
+            lan_if,
+            client_id,
+            address,
+            server_id,
+            server_mac,
+        } => kernel.release_lease(&Held {
+            iface: lan_if.to_string(),
+            client_id: client_id.clone(),
+            address: *address,
+            server_id: *server_id,
+            server_mac: server_mac.clone(),
+        }),
         Op::Tun { name } => match owned_link(kernel, name, session)? {
             Some(link) => {
                 warn!(tun = %name, "TUN outlived its owner; deleting");

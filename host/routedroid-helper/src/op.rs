@@ -12,6 +12,16 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Op {
+    /// A DHCP lease held for the phone. Applying it only records it (it was
+    /// acquired before the plan); undo sends a RELEASE, which the client-id
+    /// confines to this lease. `server_*` are as at acquisition.
+    Lease {
+        lan_if: IfName,
+        client_id: String,
+        address: Ipv4Addr,
+        server_id: Ipv4Addr,
+        server_mac: String,
+    },
     /// The session's TUN, alias-tagged. It dies with the helper's fd, so undo
     /// only matters for a leftover (which a live fd holder would explain).
     Tun { name: IfName },
@@ -31,6 +41,9 @@ impl Op {
     /// The stable name crash stages and logs use, e.g. `route:10.0.0.5/32@phone0`.
     pub fn label(&self) -> String {
         match self {
+            Op::Lease {
+                lan_if, address, ..
+            } => format!("lease:{address}@{lan_if}"),
             Op::Tun { name } => format!("tun:{name}"),
             Op::NftTable { tun } => format!("nft:inet:{}", nft_table_name(tun)),
             Op::Sysctl { ifname, leaf } => {

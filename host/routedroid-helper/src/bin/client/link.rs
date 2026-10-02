@@ -2,7 +2,7 @@
 //! their reply, packets out, and packets or replies in.
 
 use anyhow::{Context, Result, bail};
-use routedroid_helper_ipc::{Datagram, MAX_DATAGRAM, Reply, Request, SeqPacket};
+use routedroid_helper_ipc::{Datagram, Lease, MAX_DATAGRAM, Reply, Request, SeqPacket};
 
 pub struct Link {
     conn: SeqPacket,
@@ -23,12 +23,15 @@ impl Link {
         }
     }
 
-    /// Send `request` and wait for its reply; packets in between are dropped.
+    /// Send `request` and wait for its reply; packets in between are
+    /// dropped, and lease renewals printed.
     pub async fn request(&mut self, request: &Request) -> Result<Reply> {
         self.conn.send_control(request).await.context("send")?;
         loop {
-            if let Incoming::Reply(reply) = self.recv().await? {
-                return Ok(reply);
+            match self.recv().await? {
+                Incoming::Reply(Reply::Lease { lease }) => print_lease(&lease),
+                Incoming::Reply(reply) => return Ok(reply),
+                Incoming::Packet(_) => {}
             }
         }
     }
@@ -46,4 +49,16 @@ impl Link {
             Datagram::Packet(packet) => Ok(Incoming::Packet(packet)),
         }
     }
+}
+
+/// One line for the rigs to grep.
+pub fn print_lease(lease: &Lease) {
+    let dns: Vec<String> = lease.dns.iter().map(ToString::to_string).collect();
+    println!(
+        "LEASE server={} router={} dns={} expires_at={}",
+        lease.server,
+        lease.router.map_or("-".into(), |r| r.to_string()),
+        dns.join(","),
+        lease.expires_at
+    );
 }

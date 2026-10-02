@@ -6,7 +6,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use routedroid_ipc::{DnsChoice, EndReason, NetworkInfo, Outcome};
+use routedroid_helper_ipc::DeviceId;
+use routedroid_ipc::{DnsChoice, EndReason, Lease, NetworkInfo, Outcome};
 use tokio::sync::watch;
 use tracing::{info, warn};
 
@@ -20,7 +21,8 @@ use crate::fault::{Fault, Kind, Result};
 use crate::host_network::{HostNetwork, default_gateway};
 use crate::session::Counters;
 
-const HELPER_START_TIMEOUT: Duration = Duration::from_secs(15);
+/// The helper may spend up to 30 s on a lease, ARP probes included.
+const HELPER_START_TIMEOUT: Duration = Duration::from_secs(45);
 
 /// Everything one device connection needs for its whole life, in one place:
 /// the connection's task owns it and drops it when the connection is over.
@@ -72,6 +74,7 @@ impl ConnectionRun {
             &self.helper_socket,
             &spec.lan_if,
             spec.phone_ip,
+            DeviceId::from_serial(&spec.serial),
             &spec.tun,
             spec.mtu,
         );
@@ -86,7 +89,7 @@ impl ConnectionRun {
             })??;
         let placed = self.placed(&network);
         info!(serial = adb.serial(), tun = %network.tun, host_ip = %network.host_ip,
-              lan_prefix = network.lan_prefix, phone_ip = %spec.phone_ip, dns = ?placed.dns,
+              lan_prefix = network.lan_prefix, phone_ip = %network.phone_ip, dns = ?placed.dns,
               helper_session = %network.session, "host network ready");
         self.sink.set_network(placed.clone());
 
@@ -105,11 +108,16 @@ impl ConnectionRun {
         outcome
     }
 
-    /// Where the phone now is on the LAN, and the DNS it will be given.
+    /// Where the phone now is on the LAN, and the DNS it will be given:
+    /// with `auto`, the lease's servers, else the LAN's default gateway.
     fn placed(&self, network: &HostNetwork) -> NetworkInfo {
+        let leased_dns = network.lease.as_ref().map(|l| l.dns.clone());
         let dns = match &self.spec.dns {
             DnsChoice::Servers(servers) => servers.clone(),
             DnsChoice::None => Vec::new(),
+            DnsChoice::Auto if leased_dns.as_ref().is_some_and(|d| !d.is_empty()) => {
+                leased_dns.unwrap_or_default()
+            }
             DnsChoice::Auto => match default_gateway(&self.spec.lan_if) {
                 Some(gateway) => vec![gateway],
                 None => {
@@ -119,11 +127,19 @@ impl ConnectionRun {
             },
         };
         NetworkInfo {
-            phone_ip: self.spec.phone_ip,
+            phone_ip: network.phone_ip,
             host_ip: network.host_ip,
             lan_prefix: network.lan_prefix,
             dns,
-            lease: None,
+            lease: network.lease.as_ref().map(lease),
         }
+    }
+}
+
+/// The lease as clients see it.
+pub(super) fn lease(lease: &routedroid_helper_ipc::Lease) -> Lease {
+    Lease {
+        server: lease.server,
+        expires_at: lease.expires_at,
     }
 }

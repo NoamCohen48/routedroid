@@ -84,7 +84,14 @@ pub async fn run(client: Client, args: StartArgs, json: bool) -> Result<i32> {
     if json {
         print_json_line(&response)?;
     } else {
-        println!("started {} on {} (TUN {tun})", args.serial, args.lan_if);
+        let address = match args.phone_ip {
+            Some(ip) => format!("as {ip}"),
+            None => "leasing an address by DHCP".into(),
+        };
+        println!(
+            "started {} on {}, {address} (TUN {tun})",
+            args.serial, args.lan_if
+        );
     }
     if args.detach {
         return Ok(0);

@@ -21,6 +21,7 @@ path = "src/bin/client/main.rs"
 required-features = ["testing"]
 
 [dependencies]
+routedroid-dhcp.workspace = true
 routedroid-helper-ipc.workspace = true
 routedroid-proto.workspace = true
 anyhow.workspace = true
