@@ -1,39 +1,61 @@
 # Emulator end-to-end rigs
 
-The results below are the Phase 1 acceptance run (implementation-plan §4). Two rigs, both without root, both against the real app on a real adb server:
+All rigs run without root against the installed app over the real adb server. Each one first
+runs `prepare-device.sh SERIAL`, which:
 
-- `userns.sh [SERIAL] [sigint|app|early]` — full `routedroid start` session. The
-  helper runs in an unprivileged user+network namespace (dummy `lan0` 10.90.0.1/24 and the
-  TUN live there); the CLI and adb stay in the host namespace; the helper socket is a Unix
-  path so it crosses the boundary. Taps the consent dialogs, checks ICMP both ways, 200 KB
-  TCP into `toybox nc` on the phone, ends the session (Ctrl-C on the host or the app's Stop
-  button) and verifies both sides tore down.
-- `fake_host.py SERIAL all|CASE...` — a misbehaving host in Python (stdlib only): does the
-  reverse/record/launch dance itself, then breaks the protocol on purpose and checks the
-  app's reaction (`SLOW=1` adds the 30 s keepalive case).
+- grants VPN consent with appops;
+- grants the notification permission on API 33+;
+- clears leftover dialogs.
 
-Prerequisites: `cargo build --release -p routedroid -p routedroid-helper`, the app installed
-(`android/app/build/outputs/apk/debug/app-debug.apk`), `socat`, `unshare`/`nsenter`.
+No rig therefore waits for a tap.
 
-## Results, 2026-09-21
+| Rig | What it does |
+|---|---|
+| `userns.sh [SERIAL] [sigint\|app\|early]` | Runs a full `routedroid start` session, details below. `SQUAT=N` adds N silent local connections that take the app port first; the app must still get through. |
+| `fake_host.py SERIAL all\|CASE...` | A misbehaving host in Python (stdlib only). It does the reverse/record/launch steps itself, then breaks the protocol on purpose and checks how the app reacts. `SLOW=1` adds the 30 s keepalive case. |
+| `hostile.sh SERIAL` | Builds and installs `android/testing/hostile`, lets it attack the exported surface, then checks the real host can still start a session. Each probe reports PASS, FAIL or INCONCLUSIVE, and anything but PASS fails the run. |
 
-| Acceptance item | Emulator, Android 14 (API 34) | Samsung SM-J810G, Android 10, USB |
+How `userns.sh` sets up and checks a session:
+
+- **Setup:**
+  - The helper runs in an unprivileged user and network namespace that holds a dummy
+    `lan0` (10.90.0.1/24) and the TUN.
+  - `routedroidd`, the CLI and adb stay in the host namespace.
+  - The helper socket is a Unix path, so it crosses the namespace boundary.
+- **Traffic checks:** ICMP both ways, 200 KB of TCP from PC to phone, and 2 MB of TCP from
+  phone to PC.
+- **Ending the session:** Ctrl-C on the host, the app's Stop button, or Ctrl-C right after
+  launch (`early`).
+- **Teardown checks:** both sides tore down. The app check reads `DeviceLink: session ended:
+  UserStopped|HostStopped` from logcat.
+
+Prerequisites:
+
+- the release binaries: `cargo build --release -p routedroid -p routedroidd -p routedroid-helper`
+  in `host/`;
+- the app installed: `android/app/build/outputs/apk/debug/app-debug.apk`;
+- `socat`, `unshare` and `nsenter`.
+
+## Results, 2026-10-02 (protocol v1 with the port in the record; rebuilt app)
+
+| Check | Emulator, Android 14 (API 34) | Samsung SM-J810G, Android 10, USB |
 |---|---|---|
-| One statically configured address end to end (`routedroid start … --phone-ip 10.90.0.7`) | PASS | PASS |
-| ICMP both directions, TCP PC → phone 200 KB md5-equal | PASS | PASS |
-| TCP phone → PC 2 MB md5-equal (bulk frames from the phone while ACKs flow back) | PASS (after review fix, see notes) | not run |
-| Host Ctrl-C → STOP → app "session ended cleanly", VPN address gone | PASS | PASS |
-| App Stop button → host "peer sent STOP", exit 0 | PASS | not run |
-| Helper acknowledges Stop, TUN gone, reverse mapping removed | PASS | PASS |
-| Both sides pass the same fixtures | `cargo test -p routedroid-proto`, `./gradlew :protocol:testDebugUnitTest` | — |
-| Hostile app: forged record write, read, launch without record | all denied, no service (`:hostile`) | not run |
+| `userns.sh sigint` (13 checks) | PASS | PASS |
+| `userns.sh app` (14 checks: Stop button → host sees STOP) | PASS | PASS |
+| `userns.sh early` (8 checks) | PASS | PASS |
+| `SQUAT=3 userns.sh sigint` | PASS | not run |
+| `hostile.sh` | PASS | PASS |
+| `cargo test --workspace`, `./gradlew :protocol:test :app:testDebugUnitTest` | PASS | — |
 
-`fake_host.py` (app reaction; "closed" = socket closed, no VPN address on the phone):
+`fake_host.py` cases. "Closed" means the socket closed with no VPN on the phone:
 
-| case | expected | emulator | Samsung |
+| Case | Expected | Emulator | Samsung |
 |---|---|---|---|
 | `wrong_secret` | closes silently after HELLO_ACK, no AUTH, no VPN | PASS | PASS |
-| `no_record` | launch without record: never connects | PASS | PASS |
+| `no_record` | launch without a record never connects | PASS | PASS |
+| `bad_record` | reserved byte ≠ 0 or port 0: record refused, launch never connects | PASS | PASS |
+| `session_mismatch` | launch for another session never connects; the record still serves the right one | PASS | PASS |
+| `superseded` | a new launch ends the active session with VPN_ERROR `internal`; the new one comes up | PASS | PASS |
 | `bad_frame_negotiated` (header version 2) | VPN_ERROR `protocol_error`, closed | PASS | PASS |
 | `huge_control` (length 0xFFFFFFFF) | rejected on the header, VPN_ERROR `protocol_error` | PASS | PASS |
 | `config_rejected` (mtu ≠ negotiated) | VPN_ERROR `config_rejected` | PASS | PASS |
@@ -41,35 +63,26 @@ Prerequisites: `cargo build --release -p routedroid -p routedroid-helper`, the a
 | `active_garbage` (IP_PACKET length 100 000) | VPN_ERROR `protocol_error`, VPN torn down | PASS | PASS |
 | `active_out_of_state` (HELLO_ACK while Active) | VPN_ERROR `protocol_error` | PASS | PASS |
 | `bad_ipv4_is_dropped` | dropped, session stays up, PING answered | PASS | PASS |
-| `host_stop`, `host_error` | closed, VPN gone | PASS | PASS |
-| `keepalive_dead` (host silent) | app PINGs, closes after 30 s | PASS | not run |
+| `host_stop`, `host_error` | closed, nothing sent back, VPN gone | PASS | PASS |
+| `keepalive_dead` (host silent) | PING every 10 s, VPN_ERROR `internal` and close at 30 s | PASS | PASS |
+
+`hostile.sh` probes. All of them must be denied or have no effect:
+
+| Probe | Result |
+|---|---|
+| Forged, well-formed record written to the provider | `SecurityException` (DUMP) |
+| Provider opened in modes `r` and `rw` | `SecurityException` |
+| `ContentResolver.call()` on the provider | `SecurityException` |
+| `startService(ACTION_STOP)` | `SecurityException` (BIND_VPN_SERVICE) |
+| 24 launches with no, garbage or guessed sessions | no VPN; the real host starts right after |
 
 Notes:
 
-- The app rate-limits bootstrap launches (3 per 10 s); the negative runner sleeps 4 s
-  between cases for that reason. The first run tripped the limit, which is the intended
-  behaviour.
-- Found and fixed during the run: the host's helper relay task swallowed the helper's
-  `Stopped` reply, so `routedroid start` logged "helper did not acknowledge Stop" although
-  cleanup had happened. Control replies now go through the relay to `stop()`.
-- The privileged side in this run was the Phase 0 helper spike, since renamed `routedroid-helper`.
-- `toybox nc` on the Android 14 emulator truncates a regular-file stdin when used as a
-  client (8 KiB on loopback), so the bulk phone → PC check makes the phone the *listener*
+- `keepalive_dead` found a bug in this run: after asking for a PING, the keepalive thread
+  slept until the 30 s dead deadline instead of the next idle interval, so it sent only one
+  PING. Fixed, with a regression test in `KeepaliveTest`.
+- The old per-launch rate limit (3 per 10 s) is gone: it let any app lock the host out. The
+  runner no longer sleeps between cases for it.
+- `toybox nc` on the Android 14 emulator truncates a regular-file stdin when it is the client
+  (8 KiB on loopback). The phone-to-PC bulk check therefore makes the phone the *listener*
   that sends the file.
-
-## Post-review fixes (same day)
-
-The end-of-phase code review found, and these were fixed and re-verified with both rigs:
-
-- host frame reads were raced inside `select!` and not cancellation-safe: a TUN packet
-  arriving mid-frame lost bytes and desynchronised the stream (only visible with bulk
-  phone → PC traffic; now a dedicated reader task, covered by the 2 MB check);
-- no host deadline before Active: a silent connection to the reverse port held the TUN and
-  reverse mapping until Ctrl-C (now 15 s to reach Configuring, 120 s for the consent;
-  unit-tested with paused time);
-- Ctrl-C before the app connected skipped cleanup; `content write` provider errors on
-  stderr were missed; the secret record outlived the handshake in host memory; the helper
-  `Stopped` ack could still be lost to a late packet;
-- app: backing out of the bootstrap screen during authentication leaked the socket
-  (host then waited); a guessed-session launch consumed the host's record; org.json
-  exceptions escaped the decoders as `internal` instead of `config_rejected`/`protocol_error`.
