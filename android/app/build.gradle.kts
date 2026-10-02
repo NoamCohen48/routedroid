@@ -28,8 +28,26 @@ android {
 
     buildFeatures { buildConfig = true }
 
+    // Release signing is opt-in: with no key configured, assembleRelease still builds an
+    // unsigned APK to sign elsewhere. Each value comes from a Gradle property
+    // (-Proutedroid.signing.storeFile=…, or ~/.gradle/gradle.properties) or the matching
+    // ROUTEDROID_SIGNING_* environment variable, never from the repository.
+    fun signing(name: String): String? = providers.gradleProperty("routedroid.signing.$name")
+        .orElse(providers.environmentVariable("ROUTEDROID_SIGNING_" + name.replace(Regex("([A-Z])"), "_$1").uppercase()))
+        .orNull
+    val storeFile = signing("storeFile")
+    if (storeFile != null) {
+        signingConfigs.create("release") {
+            this.storeFile = file(storeFile)
+            storePassword = signing("storePassword") ?: error("routedroid.signing.storePassword is not set")
+            keyAlias = signing("keyAlias") ?: error("routedroid.signing.keyAlias is not set")
+            keyPassword = signing("keyPassword") ?: storePassword
+        }
+    }
+
     buildTypes {
         release {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

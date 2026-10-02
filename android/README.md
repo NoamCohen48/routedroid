@@ -42,6 +42,20 @@ cd android
 - Lint is strict: warnings are errors.
 - The APK lands in `app/build/outputs/apk/debug/app-debug.apk`.
 
+### Release
+
+`./gradlew :app:assembleRelease` builds with R8 and resource shrinking. Without a key it
+produces `app-release-unsigned.apk` to sign elsewhere. To sign it in the build, give the
+key through Gradle properties (for example in `~/.gradle/gradle.properties`) or the
+environment; nothing about the key lives in the repository:
+
+| Property | Environment |
+|---|---|
+| `routedroid.signing.storeFile` | `ROUTEDROID_SIGNING_STORE_FILE` |
+| `routedroid.signing.storePassword` | `ROUTEDROID_SIGNING_STORE_PASSWORD` |
+| `routedroid.signing.keyAlias` | `ROUTEDROID_SIGNING_KEY_ALIAS` |
+| `routedroid.signing.keyPassword` | `ROUTEDROID_SIGNING_KEY_PASSWORD` (defaults to the store password) |
+
 ## How a session starts
 
 The host (`routedroid start`) does all of this; nothing on the phone is started by hand.
