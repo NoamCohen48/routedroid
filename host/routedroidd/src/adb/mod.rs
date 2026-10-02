@@ -12,6 +12,7 @@ mod android;
 mod device;
 mod devices;
 mod reverse;
+mod track;
 
 pub use device::AdbDevice;
 pub use devices::{parse_devices, Device, DeviceState};

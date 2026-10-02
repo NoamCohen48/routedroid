@@ -16,10 +16,18 @@ pub struct Device {
     pub model: Option<String>,
 }
 
+/// `adb devices -l` output, header included.
 pub fn parse_devices(text: &str) -> Vec<Device> {
+    let body = match text.split_once("List of devices attached") {
+        Some((_, body)) => body,
+        None => "",
+    };
+    parse_list(body)
+}
+
+/// Device lines without the header, as `track-devices -l` sends them.
+pub fn parse_list(text: &str) -> Vec<Device> {
     text.lines()
-        .skip_while(|l| !l.starts_with("List of devices"))
-        .skip(1)
         .filter_map(|line| {
             let mut it = line.split_whitespace();
             let serial = it.next()?.to_string();

@@ -1,5 +1,6 @@
-//! Keeps the daemon's picture of adb current: poll `adb devices -l`, hold the
-//! latest list, and say when it changed. It speaks adb's vocabulary only —
+//! Keeps the daemon's picture of adb current: follow `adb track-devices -l`
+//! (polling `adb devices -l` while that is unavailable), hold the latest
+//! list, and say when it changed. It speaks adb's vocabulary only —
 //! serial, state, model — and knows nothing about device connections, so
 //! nothing here can depend on the rest of the daemon.
 
@@ -32,14 +33,7 @@ impl AttachedDevices {
     pub async fn start(adb: Adb) -> Self {
         let current = Arc::new(watch::channel(Snapshot::default()).0);
         publish(&adb, &current).await;
-        let polling = Arc::clone(&current);
-        let polled_adb = adb.clone();
-        let poll = Background::spawn(async move {
-            loop {
-                tokio::time::sleep(POLL).await;
-                publish(&polled_adb, &polling).await;
-            }
-        });
+        let poll = Background::spawn(follow(adb.clone(), Arc::clone(&current)));
         Self {
             adb,
             current,
@@ -60,7 +54,7 @@ impl AttachedDevices {
         self.current.subscribe()
     }
 
-    /// Read adb now. For the moments where up to `POLL` of staleness would be
+    /// Read adb now. For the moments where a push still in flight would be
     /// wrong — refusing a start on a phone that was just plugged in.
     pub async fn refresh(&self) -> Result<Snapshot> {
         let devices = self.adb.devices().await?;
@@ -73,6 +67,31 @@ impl AttachedDevices {
             .iter()
             .find(|device| device.serial == serial)
             .cloned()
+    }
+}
+
+/// Follow adb's pushes for as long as it sends them. When tracking cannot
+/// start or stops (the adb server restarted, say), fall back to one poll per
+/// `POLL` and try tracking again, so the list is never more than that stale.
+async fn follow(adb: Adb, current: Arc<watch::Sender<Snapshot>>) {
+    loop {
+        match adb.track() {
+            Ok(mut tracker) => loop {
+                match tracker.next().await {
+                    Ok(Some(devices)) => {
+                        store(&current, devices);
+                    }
+                    Ok(None) => break,
+                    Err(fault) => {
+                        tracing::debug!("tracking devices failed: {fault}");
+                        break;
+                    }
+                }
+            },
+            Err(fault) => tracing::debug!("cannot track devices: {fault}"),
+        }
+        tokio::time::sleep(POLL).await;
+        publish(&adb, &current).await;
     }
 }
 
