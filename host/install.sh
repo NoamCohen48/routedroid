@@ -27,10 +27,15 @@ CLIENTS=(routedroid routedroidd routedroid-tui)
 [[ $EUID -eq 0 ]] || { echo "run with sudo"; exit 2; }
 
 if [[ ${1:-} == --uninstall ]]; then
-    systemctl disable --now $UNIT.socket 2>/dev/null || true
+    systemctl disable --now "$UNIT.socket" 2>/dev/null || true
+    # Waits for every instance, ExecStopPost cleanup included, to finish.
     systemctl stop "$UNIT@*.service" 2>/dev/null || true
-    rm -f $SYSTEM_UNITS/$UNIT.socket $SYSTEM_UNITS/$UNIT.service "$SYSTEM_UNITS/$UNIT@.service"
-    rm -f $USER_UNITS/routedroid.service
+    # The binary is about to go: replay anything an instance left behind first.
+    if [[ -x $LIBEXECDIR/routedroid-helper ]] && ! "$LIBEXECDIR/routedroid-helper" cleanup; then
+        echo "warning: cleanup left journals in /var/lib/routedroid/journal; see above" >&2
+    fi
+    rm -f "$SYSTEM_UNITS/$UNIT.socket" "$SYSTEM_UNITS/$UNIT.service" "$SYSTEM_UNITS/$UNIT@.service"
+    rm -f "$USER_UNITS/routedroid.service"
     systemctl daemon-reload
     for bin in "${CLIENTS[@]}"; do rm -f "$BINDIR/$bin"; done
     rm -rf "$LIBEXECDIR" /run/routedroid
@@ -46,9 +51,11 @@ getent group routedroid >/dev/null || groupadd --system routedroid
 USER_TO_ADD=${SUDO_USER:-}
 if [[ -n $USER_TO_ADD ]] && ! id -nG "$USER_TO_ADD" | tr ' ' '\n' | grep -qx routedroid; then
     usermod -aG routedroid "$USER_TO_ADD"
-    echo "added $USER_TO_ADD to group routedroid (takes effect in new logins; use 'sg routedroid -c ...' or newgrp meanwhile)"
+    echo "added $USER_TO_ADD to group routedroid: it may now have the helper attach phones to"
+    echo "  the interfaces and addresses /etc/routedroid/helper.toml allows (proxy ARP for them"
+    echo "  on that LAN). Takes effect in new logins; 'sg routedroid -c ...' or newgrp meanwhile."
 fi
-install -d -m 0755 "$BINDIR" "$LIBEXECDIR" /etc/routedroid $USER_UNITS
+install -d -m 0755 "$BINDIR" "$LIBEXECDIR" /etc/routedroid "$USER_UNITS"
 if [[ ! -e /etc/routedroid/helper.toml ]]; then
     install -m 0644 /dev/stdin /etc/routedroid/helper.toml <<'POLICY'
 # Which LAN interfaces may carry phones, and which addresses phones may take
@@ -68,14 +75,14 @@ unit() { # unit SOURCE DEST: install with the paths filled in
     sed -e "s|@BINDIR@|$BINDIR|g" -e "s|@LIBEXECDIR@|$LIBEXECDIR|g" "$1" | install -m 0644 /dev/stdin "$2"
 }
 # An older non-template unit must go: with Accept=yes systemd looks for the template.
-systemctl disable --now $UNIT.socket 2>/dev/null || true
-rm -f $SYSTEM_UNITS/$UNIT.service
-unit "$HERE/routedroid-helper/systemd/$UNIT.socket" $SYSTEM_UNITS/$UNIT.socket
+systemctl disable --now "$UNIT.socket" 2>/dev/null || true
+rm -f "$SYSTEM_UNITS/$UNIT.service"
+unit "$HERE/routedroid-helper/systemd/$UNIT.socket" "$SYSTEM_UNITS/$UNIT.socket"
 unit "$HERE/routedroid-helper/systemd/$UNIT@.service" "$SYSTEM_UNITS/$UNIT@.service"
-unit "$HERE/routedroidd/systemd/routedroid.service" $USER_UNITS/routedroid.service
+unit "$HERE/routedroidd/systemd/routedroid.service" "$USER_UNITS/routedroid.service"
 systemctl daemon-reload
-systemctl enable --now $UNIT.socket
-systemctl status --no-pager $UNIT.socket | head -5
+systemctl enable --now "$UNIT.socket"
+echo "$UNIT.socket: $(systemctl is-active "$UNIT.socket")"
 echo
 echo "installed. Next, as yourself (not root):"
 echo "  systemctl --user enable --now routedroid"
