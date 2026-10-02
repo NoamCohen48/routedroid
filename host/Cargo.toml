@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "routedroid-proto",
     "routedroid-helper-ipc",
+    "routedroid-helper",
 ]
 # cargo fuzz targets: nightly-only, built on their own.
 exclude = ["fuzz"]

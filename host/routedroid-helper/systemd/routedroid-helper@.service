@@ -1,0 +1,66 @@
+# Privileged helper (architecture §5.3): one instance per controller
+# connection (the socket unit is Accept=yes), no restart, and an independent
+# root-owned cleanup after any exit. Each `serve` also replays orphaned
+# journals before it accepts; an orphan's journal keeps reserving its TUN name
+# and phone address, so it never blocks other sessions. Instances share the
+# LAN interface's sysctls through reference-counted claims in
+# /var/lib/routedroid/sysctl.
+[Unit]
+Description=Routedroid privileged helper (session %i)
+Requires=routedroid-helper.socket
+CollectMode=inactive-or-failed
+# Every controller connect is a fresh start by design; the default 5-in-10s
+# rate limit would refuse quick reconnects (and the kill matrix) as a crash loop.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=no
+# The accepted connection arrives as LISTEN_FDS (Accept=yes).
+NonBlocking=yes
+ExecStart=@LIBEXECDIR@/routedroid-helper serve
+# Runs after ExecStart exits for ANY reason, including SIGKILL. Failure -> unit failed.
+ExecStopPost=@LIBEXECDIR@/routedroid-helper cleanup
+# SIGTERM ends the relay and the helper undoes the session itself; the whole
+# cgroup (an `nft` child included) is killed only if that overruns.
+TimeoutStopSec=10
+# Journals and claims in /var/lib/routedroid; socket and crash hook in /run/routedroid.
+StateDirectory=routedroid
+StateDirectoryMode=0700
+RuntimeDirectory=routedroid
+RuntimeDirectoryPreserve=yes
+UMask=0077
+Environment=RUST_LOG=info
+# Least privilege: root uid (for /proc/sys and nft) but only network capabilities.
+# CAP_NET_RAW (with AF_PACKET) is for DHCP on the phone's behalf.
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+# /proc/sys is read-only except the per-interface IPv4 leaves the helper
+# claims (conf/<if>/forwarding and proxy_arp); ip_forward, conf/all and
+# conf/default stay out of reach even for a buggy helper.
+ProtectKernelTunables=yes
+ReadWritePaths=/proc/sys/net/ipv4/conf
+ProtectProc=invisible
+PrivateIPC=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# Everything is netlink (links, addresses, routes, nft) or the TUN; the
+# packets it relays never touch an IP socket of its own.
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_PACKET
+IPAddressDeny=any
+DevicePolicy=closed
+DeviceAllow=/dev/net/tun rw

@@ -1,0 +1,41 @@
+[package]
+name = "routedroid-helper"
+version.workspace = true
+description = "Routedroid privileged helper: one socket-activated instance per phone connection, write-ahead journal, systemd cleanup, and a SOCK_SEQPACKET packet relay"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Test rigs only: the SIGKILL crash hook and the stand-in controller binary.
+# Never enabled in an installed build.
+testing = []
+
+[[bin]]
+name = "routedroid-helper"
+path = "src/main.rs"
+
+[[bin]]
+name = "routedroid-helper-client"
+path = "src/bin/client/main.rs"
+required-features = ["testing"]
+
+[dependencies]
+routedroid-helper-ipc.workspace = true
+routedroid-proto.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+libc.workspace = true
+netlink-packet-core.workspace = true
+netlink-packet-route.workspace = true
+netlink-sys.workspace = true
+rustix = { workspace = true, features = ["fs", "net", "process", "rand"] }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
+toml = { workspace = true, features = ["parse", "serde"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true
