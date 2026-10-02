@@ -41,21 +41,30 @@ async fn answers_find_their_calls_in_any_order_and_events_flow_meanwhile() {
     let status_id = request_id(&mut daemon).await;
     say(
         &mut daemon,
-        &format!(r#"{{"id":{status_id},"type":"status","connections":[]}}"#),
+        &format!(r#"{{"msg":"response","id":{status_id},"type":"status","connections":[]}}"#),
     )
     .await;
     assert!(matches!(
         quick.await.unwrap().unwrap(),
         Response::Status { .. }
     ));
-    say(&mut daemon, r#"{"event":"shutdown"}"#).await;
+    say(&mut daemon, r#"{"msg":"event","event":"shutdown"}"#).await;
     assert!(matches!(
         events.next().await.unwrap(),
         Some(Event::Shutdown)
     ));
     assert!(!slow.is_finished());
-    say(&mut daemon, &format!(r#"{{"id":{stop_id},"type":"ok"}}"#)).await;
-    assert!(matches!(slow.await.unwrap().unwrap(), Response::Ok));
+    let stopped =
+        r#""type":"stopped","serial":"s","outcome":{"result":"clean","reason":"stopped"}"#;
+    say(
+        &mut daemon,
+        &format!(r#"{{"msg":"response","id":{stop_id},{stopped}}}"#),
+    )
+    .await;
+    assert!(matches!(
+        slow.await.unwrap().unwrap(),
+        Response::Stopped { .. }
+    ));
 }
 
 #[tokio::test]
@@ -103,7 +112,7 @@ async fn an_other_api_is_incompatible_not_unreachable() {
         let id = request_id(&mut daemon).await;
         say(
             &mut daemon,
-            &format!(r#"{{"id":{id},"type":"version","daemon":"9.9","api":999}}"#),
+            &format!(r#"{{"msg":"response","id":{id},"type":"version","daemon":"9.9","api":999}}"#),
         )
         .await;
     });
@@ -113,4 +122,24 @@ async fn an_other_api_is_incompatible_not_unreachable() {
         result,
         Err(ConnectError::Incompatible { api: 999, .. })
     ));
+}
+
+#[tokio::test]
+async fn an_error_answer_is_a_daemon_error_with_its_kind() {
+    let (client, mut daemon) = pair();
+    let call =
+        tokio::spawn(async move { client.call_ok(Request::Stop { serial: "s".into() }).await });
+    let id = request_id(&mut daemon).await;
+    let line = r#""type":"error","kind":"usage","message":"s is not connected""#;
+    say(
+        &mut daemon,
+        &format!(r#"{{"msg":"response","id":{id},{line}}}"#),
+    )
+    .await;
+    let error = call.await.unwrap().unwrap_err();
+    let error = error.downcast_ref::<DaemonError>().expect("a DaemonError");
+    assert_eq!(
+        (error.kind, error.message.as_str()),
+        (Kind::Usage, "s is not connected")
+    );
 }

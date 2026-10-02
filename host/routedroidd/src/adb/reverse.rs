@@ -2,7 +2,7 @@
 //! `device::ports`; this file only speaks adb.
 
 use super::AdbDevice;
-use routedroid_ipc::fault::Result;
+use crate::fault::Result;
 
 /// One line of `adb reverse --list`: `<serial-or-transport> tcp:9000 tcp:41234`.
 #[derive(Debug, Clone, PartialEq, Eq)]

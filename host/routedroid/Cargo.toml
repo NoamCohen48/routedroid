@@ -17,3 +17,4 @@ clap = { version = "4", features = ["derive", "env"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync", "signal"] }
 serde = "1"
+humantime = "2"

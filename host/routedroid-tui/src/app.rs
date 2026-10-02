@@ -1,50 +1,53 @@
 //! UI state: what the panes draw. Pure `apply` methods fold daemon messages in;
 //! they return follow-up commands instead of talking to the daemon themselves.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashMap};
 
-use routedroid_ipc::{ConnectionInfo, DeviceInfo};
+use routedroid_ipc::{ConnectionInfo, DeviceInfo, InterfaceInfo};
 
 use crate::form::StartForm;
 use crate::messages::{Command, Incoming};
 
 mod events;
+mod log;
+
+pub use log::{Level, Log};
 
 #[cfg(test)]
 mod tests;
 
-pub const LOG_CAPACITY: usize = 200;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mode {
     Normal,
-    StartForm(StartForm),
+    StartForm(Box<StartForm>),
     ConfirmStop { serial: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DaemonLink {
+    Connecting,
     Connected,
     Disconnected { reason: String },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Level {
-    Info,
-    Error,
-}
-
+/// How a phone's last connection (or start attempt) ended, kept on its row
+/// until it is started again.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LogLine {
-    pub level: Level,
+pub struct LastEnd {
     pub text: String,
+    pub failed: bool,
+    pub time: String,
 }
 
 pub struct App {
     pub devices: Vec<DeviceInfo>,
     pub connections: BTreeMap<String, ConnectionInfo>,
+    pub interfaces: Vec<InterfaceInfo>,
+    pub last_end: HashMap<String, LastEnd>,
+    /// The form as each phone's user last left it.
+    drafts: HashMap<String, StartForm>,
     pub cursor: usize,
-    pub log: VecDeque<LogLine>,
+    pub log: Log,
     pub daemon: DaemonLink,
     pub mode: Mode,
     pub quit: bool,
@@ -55,9 +58,12 @@ impl App {
         Self {
             devices: Vec::new(),
             connections: BTreeMap::new(),
+            interfaces: Vec::new(),
+            last_end: HashMap::new(),
+            drafts: HashMap::new(),
             cursor: 0,
-            log: VecDeque::new(),
-            daemon: DaemonLink::Connected,
+            log: Log::default(),
+            daemon: DaemonLink::Connecting,
             mode: Mode::Normal,
             quit: false,
         }
@@ -77,18 +83,31 @@ impl App {
     }
 
     pub fn info(&mut self, text: impl Into<String>) {
-        self.push_log(Level::Info, text.into());
+        self.log.push(Level::Info, text.into());
     }
 
     pub fn error(&mut self, text: impl Into<String>) {
-        self.push_log(Level::Error, text.into());
+        self.log.push(Level::Error, text.into());
     }
 
-    pub fn push_log(&mut self, level: Level, text: String) {
-        if self.log.len() == LOG_CAPACITY {
-            self.log.pop_front();
-        }
-        self.log.push_back(LogLine { level, text });
+    /// The form for `serial`: its draft if it has one, else a fresh one.
+    pub fn open_form(&mut self, serial: String) -> Vec<Command> {
+        let form = match self.drafts.get(&serial) {
+            Some(draft) => {
+                let mut form = draft.clone();
+                form.offer(&self.interfaces);
+                form
+            }
+            None => StartForm::new(serial, &self.interfaces),
+        };
+        self.mode = Mode::StartForm(Box::new(form));
+        vec![Command::RefreshInterfaces]
+    }
+
+    /// Leave the form, keeping what was typed for next time.
+    pub fn close_form(&mut self, form: Box<StartForm>) {
+        self.drafts.insert(form.serial.clone(), *form);
+        self.mode = Mode::Normal;
     }
 
     /// Folds one message in; returns what to ask the daemon next.
@@ -97,7 +116,11 @@ impl App {
             Incoming::Connected => {
                 self.daemon = DaemonLink::Connected;
                 self.info("connected to routedroidd");
-                vec![Command::RefreshDevices, Command::RefreshStatus]
+                vec![
+                    Command::RefreshDevices,
+                    Command::RefreshStatus,
+                    Command::RefreshInterfaces,
+                ]
             }
             Incoming::Disconnected { reason } => {
                 self.error(format!("disconnected: {reason}"));
@@ -105,34 +128,54 @@ impl App {
                 vec![]
             }
             Incoming::Event(event) => self.apply_event(event),
-            Incoming::Devices(devices) => {
-                self.set_devices(devices);
-                vec![]
-            }
+            Incoming::Devices(devices) => self.set_devices(devices),
             Incoming::Connections(connections) => {
-                self.connections = connections
-                    .into_iter()
-                    .map(|c| (c.serial.clone(), c))
-                    .collect();
+                let by_serial = connections.into_iter().map(|c| (c.serial.clone(), c));
+                self.connections = by_serial.collect();
                 vec![]
             }
-            Incoming::Started { serial } => {
-                self.info(format!("{serial}: start accepted"));
+            Incoming::Interfaces(interfaces) => {
+                if let Mode::StartForm(form) = &mut self.mode {
+                    form.offer(&interfaces);
+                }
+                self.interfaces = interfaces;
                 vec![]
             }
-            Incoming::Stopped { serial } => {
-                self.info(format!("{serial}: stopped"));
+            Incoming::Started { serial, tun } => {
+                self.last_end.remove(&serial);
+                self.info(format!("{serial}: start accepted (TUN {tun})"));
                 vec![]
             }
-            Incoming::Failed { what, message } => {
-                self.error(format!("{what} failed: {message}"));
+            Incoming::Stopped { serial, outcome } => {
+                self.info(format!("{serial}: {outcome}"));
+                vec![]
+            }
+            Incoming::Failed {
+                what,
+                serial,
+                message,
+            } => {
+                if let (Some(serial), "start") = (&serial, what) {
+                    let text = format!("start refused: {message}");
+                    let end = LastEnd {
+                        text,
+                        failed: true,
+                        time: log::now(),
+                    };
+                    self.last_end.insert(serial.clone(), end);
+                }
+                let about = serial
+                    .map(|serial| format!("{serial}: "))
+                    .unwrap_or_default();
+                self.error(format!("{about}{what} failed: {message}"));
                 vec![]
             }
         }
     }
 
-    pub(super) fn set_devices(&mut self, devices: Vec<DeviceInfo>) {
+    pub(super) fn set_devices(&mut self, devices: Vec<DeviceInfo>) -> Vec<Command> {
         self.devices = devices;
         self.move_cursor(0);
+        vec![]
     }
 }

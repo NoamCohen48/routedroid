@@ -1,7 +1,8 @@
 //! The one task that owns the daemon connection: runs each UI command as its
 //! own call (a `stop` that waits for a teardown holds up neither events nor
 //! other commands), forwards events, and reconnects every few seconds when
-//! the daemon goes away.
+//! the daemon goes away. It never refreshes on its own: `Connected` tells
+//! the UI, which asks for what it shows.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -26,38 +27,28 @@ pub async fn run(
     loop {
         let Some(connected) = client.take() else {
             match Client::connect(&socket).await {
-                Ok(connected) => {
-                    client = Some(connected);
-                    if incoming.send(Incoming::Connected).await.is_err() {
-                        return;
-                    }
-                }
-                Err(_) => {
-                    if !wait_disconnected(&mut commands, &incoming).await {
-                        return;
-                    }
-                }
+                Ok(connected) => client = Some(connected),
+                Err(_) if wait_disconnected(&mut commands, &incoming).await => {}
+                Err(_) => return,
             }
             continue;
         };
-        match serve(connected, &mut commands, &incoming).await {
-            Ok(()) => return,
-            Err(error) => {
-                if incoming
-                    .send(Incoming::Disconnected {
-                        reason: format!("{error:#}"),
-                    })
-                    .await
-                    .is_err()
-                {
-                    return;
-                }
-            }
+        let Err(error) = serve(connected, &mut commands, &incoming).await else {
+            return;
+        };
+        let reason = format!("{error:#}");
+        if incoming
+            .send(Incoming::Disconnected { reason })
+            .await
+            .is_err()
+        {
+            return;
         }
     }
 }
 
-/// Answers commands with a failure while waiting one reconnect interval; `false` when the UI quit.
+/// Answers commands with a failure while waiting one reconnect interval;
+/// `false` when the UI quit.
 async fn wait_disconnected(
     commands: &mut mpsc::Receiver<Command>,
     incoming: &mpsc::Sender<Incoming>,
@@ -67,15 +58,14 @@ async fn wait_disconnected(
     loop {
         tokio::select! {
             _ = &mut deadline => return true,
-            command = commands.recv() => match command {
-                None => return false,
-                Some(command) => {
-                    let failed = Incoming::Failed { what: name(&command).into(), message: "not connected".into() };
-                    if incoming.send(failed).await.is_err() {
-                        return false;
-                    }
+            command = commands.recv() => {
+                let Some(command) = command else { return false };
+                let (what, serial) = name(&command);
+                let failed = Incoming::Failed { what, serial, message: "not connected".into() };
+                if incoming.send(failed).await.is_err() {
+                    return false;
                 }
-            },
+            }
         }
     }
 }
@@ -88,36 +78,28 @@ async fn serve(
 ) -> Result<()> {
     let (calls, mut events) = client.into_parts();
     calls.call_ok(Request::Subscribe).await?;
-    for command in [Command::RefreshDevices, Command::RefreshStatus] {
-        let outcome = execute(&calls, command).await?;
-        incoming.send(outcome).await.ok();
-    }
+    incoming.send(Incoming::Connected).await?;
     // Dropped (aborting what is still running) when the connection breaks:
     // their answers could not arrive anyway.
     let mut running = JoinSet::new();
     loop {
         tokio::select! {
             event = events.next() => match event? {
-                Some(event) => {
-                    incoming.send(Incoming::Event(event)).await.ok();
-                }
+                Some(event) => incoming.send(Incoming::Event(event)).await?,
                 None => anyhow::bail!("routedroidd closed the connection"),
             },
-            command = commands.recv() => match command {
-                None => return Ok(()),
-                Some(command) => {
-                    let (calls, incoming) = (calls.clone(), incoming.clone());
-                    running.spawn(async move {
-                        let what = name(&command);
-                        // A broken connection also ends `events`, which reconnects.
-                        let outcome = execute(&calls, command).await.unwrap_or_else(|error| Incoming::Failed {
-                            what: what.into(),
-                            message: format!("{error:#}"),
-                        });
-                        incoming.send(outcome).await.ok();
+            command = commands.recv() => {
+                let Some(command) = command else { return Ok(()) };
+                let (calls, incoming) = (calls.clone(), incoming.clone());
+                running.spawn(async move {
+                    let (what, serial) = name(&command);
+                    // A broken connection also ends `events`, which reconnects.
+                    let outcome = execute(&calls, command).await.unwrap_or_else(|error| {
+                        Incoming::Failed { what, serial, message: format!("{error:#}") }
                     });
-                }
-            },
+                    let _ = incoming.send(outcome).await;
+                });
+            }
             Some(_) = running.join_next() => {}
         };
     }
@@ -125,40 +107,40 @@ async fn serve(
 
 /// One call; a daemon `Error` becomes `Incoming::Failed`, a transport error propagates.
 async fn execute(calls: &Calls, command: Command) -> Result<Incoming> {
-    let what = name(&command);
+    let (what, serial) = name(&command);
     let request = match command {
         Command::RefreshDevices => Request::Devices,
         Command::RefreshStatus => Request::Status,
+        Command::RefreshInterfaces => Request::Interfaces,
         Command::Start(request) => Request::Start(request),
         Command::Stop { serial } => Request::Stop { serial },
     };
-    let serial_of_stop = match &request {
-        Request::Stop { serial } => Some(serial.clone()),
-        _ => None,
-    };
     Ok(match calls.call(request).await? {
         Response::Error { kind, message } => Incoming::Failed {
-            what: what.into(),
-            message: format!("{message} ({})", kind.as_str()),
+            what,
+            serial,
+            message: format!("{message} ({kind})"),
         },
         Response::Devices { devices } => Incoming::Devices(devices),
         Response::Status { connections } => Incoming::Connections(connections),
-        Response::Started { serial } => Incoming::Started { serial },
-        Response::Ok => Incoming::Stopped {
-            serial: serial_of_stop.unwrap_or_default(),
-        },
-        Response::Version { .. } => Incoming::Failed {
-            what: what.into(),
-            message: "unexpected version reply".into(),
+        Response::Interfaces { interfaces } => Incoming::Interfaces(interfaces),
+        Response::Started { serial, tun } => Incoming::Started { serial, tun },
+        Response::Stopped { serial, outcome } => Incoming::Stopped { serial, outcome },
+        other @ (Response::Version { .. } | Response::Subscribed) => Incoming::Failed {
+            what,
+            serial,
+            message: format!("unexpected answer {other:?}"),
         },
     })
 }
 
-fn name(command: &Command) -> &'static str {
+/// What a command is called in the log, and the phone it is about.
+fn name(command: &Command) -> (&'static str, Option<String>) {
     match command {
-        Command::RefreshDevices => "devices",
-        Command::RefreshStatus => "status",
-        Command::Start(_) => "start",
-        Command::Stop { .. } => "stop",
+        Command::RefreshDevices => ("devices", None),
+        Command::RefreshStatus => ("status", None),
+        Command::RefreshInterfaces => ("interfaces", None),
+        Command::Start(request) => ("start", Some(request.serial.clone())),
+        Command::Stop { serial } => ("stop", Some(serial.clone())),
     }
 }

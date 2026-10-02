@@ -25,7 +25,7 @@ use std::time::Duration;
 use anyhow::Context;
 use tokio::process::Command;
 
-use routedroid_ipc::fault::{Fault, FaultExt, Kind, Result};
+use crate::fault::{Fault, FaultExt, Kind, Result};
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 

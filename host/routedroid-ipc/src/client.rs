@@ -18,8 +18,8 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::unix::OwnedWriteHalf;
 use tokio::sync::{mpsc, oneshot, Mutex};
 
-use crate::api::{Event, Request, Response};
 use crate::wire::ClientMessage;
+use crate::{Event, Kind, Request, Response};
 
 pub use connect::ConnectError;
 pub use reader::Closed;
@@ -81,12 +81,10 @@ impl Calls {
         answered.await.map_err(|_| self.shared.why_closed())
     }
 
-    /// Like `call`, but an `Error` response becomes an `Err`.
+    /// Like `call`, but an `Error` response becomes a [`DaemonError`].
     pub async fn call_ok(&self, request: Request) -> Result<Response> {
         match self.call(request).await? {
-            Response::Error { kind, message } => {
-                Err(crate::fault::Fault::msg(kind, message).into())
-            }
+            Response::Error { kind, message } => Err(DaemonError { kind, message }.into()),
             other => Ok(other),
         }
     }
@@ -108,6 +106,21 @@ impl Events {
         }
     }
 }
+
+/// The daemon answered a request with an error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DaemonError {
+    pub kind: Kind,
+    pub message: String,
+}
+
+impl std::fmt::Display for DaemonError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for DaemonError {}
 
 #[cfg(test)]
 mod tests;

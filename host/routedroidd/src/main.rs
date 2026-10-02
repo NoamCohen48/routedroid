@@ -9,6 +9,7 @@ mod adb;
 mod app_listener;
 mod daemon;
 mod device;
+mod fault;
 mod host_network;
 mod logging;
 mod server;

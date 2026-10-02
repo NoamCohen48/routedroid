@@ -1,43 +1,46 @@
-//! `routedroid start`: ask the daemon to connect a phone and, unless detached,
-//! follow it until it ends. Ctrl-C asks the daemon to stop it and waits for
-//! the final `ended` event, so the exit code reflects how the connection ended.
+//! `routedroid start`: ask the daemon to connect a phone and, unless
+//! detached, follow it until it ends. Every default (MTU, timeout, TUN name,
+//! DNS) is the daemon's: an option left out is simply not sent.
+
+mod follow;
 
 use std::net::Ipv4Addr;
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::Args;
-use routedroid_ipc::{
-    Client, ConnectionState, Event, Kind, Outcome, Request, Response, StartRequest,
-};
+use routedroid_ipc::{Client, DnsChoice, Request, Response, StartRequest};
 
-use crate::connect::connect;
-use crate::output::state_line;
+use super::answer;
+use crate::output::print_json_line;
 
 #[derive(Debug, Args)]
 pub struct StartArgs {
     /// ADB serial of the phone (see `routedroid devices`).
     #[arg(long, short = 's', env = "ANDROID_SERIAL")]
     pub serial: String,
-    /// LAN interface the phone joins (e.g. eno1).
+    /// LAN interface the phone joins (see `routedroid interfaces`).
     #[arg(long)]
     pub lan_if: String,
-    /// Address the phone gets on that LAN (must be free; automatic DHCP comes in Phase 3).
+    /// Address the phone gets on that LAN; leased by DHCP when left out.
     #[arg(long)]
-    pub phone_ip: Ipv4Addr,
-    /// TUN interface name the helper creates; the daemon picks a free phoneN by default.
+    pub phone_ip: Option<Ipv4Addr>,
+    /// TUN interface name (phoneN); the daemon picks a free one by default.
     #[arg(long)]
     pub tun: Option<String>,
-    /// Packet MTU offered in HELLO_ACK (576..=65535); the daemon's default otherwise.
-    #[arg(long, value_parser = clap::value_parser!(u32).range(576..=65535))]
+    /// Packet MTU offered to the phone.
+    #[arg(long)]
     pub mtu: Option<u32>,
-    /// DNS server(s) to hand the phone; defaults to none.
-    #[arg(long = "dns")]
+    /// DNS server for the phone (repeatable); by default the lease's servers,
+    /// else the LAN's gateway.
+    #[arg(long = "dns", conflicts_with = "no_dns")]
     pub dns: Vec<Ipv4Addr>,
-    /// How long to wait for the app to connect after launch.
-    #[arg(long, default_value = "90s", value_parser = parse_seconds)]
-    pub connect_timeout: Duration,
+    /// Give the phone no DNS server at all.
+    #[arg(long)]
+    pub no_dns: bool,
+    /// How long the app has to connect after launch, e.g. `90s` or `2m`.
+    #[arg(long, value_parser = humantime::parse_duration)]
+    pub connect_timeout: Option<Duration>,
     /// Start over a network ADB serial (host:port or mDNS). Unverified in
     /// version 1: the VPN default route may cut ADB itself (decision 0001, gate 5).
     #[arg(long)]
@@ -47,111 +50,47 @@ pub struct StartArgs {
     pub detach: bool,
 }
 
-fn parse_seconds(text: &str) -> std::result::Result<Duration, String> {
-    text.trim_end_matches('s')
-        .parse::<u64>()
-        .map(Duration::from_secs)
-        .map_err(|error| error.to_string())
-}
-
 impl StartArgs {
     fn request(&self) -> StartRequest {
+        let dns = match (self.no_dns, self.dns.as_slice()) {
+            (true, _) => DnsChoice::None,
+            (false, []) => DnsChoice::Auto,
+            (false, servers) => DnsChoice::Servers(servers.to_vec()),
+        };
         StartRequest {
             serial: self.serial.clone(),
             lan_if: self.lan_if.clone(),
             phone_ip: self.phone_ip,
             tun: self.tun.clone(),
             mtu: self.mtu,
-            dns: self.dns.clone(),
-            connect_timeout_secs: Some(self.connect_timeout.as_secs()),
+            dns,
+            // Rounded up: a sub-second timeout still means "a moment", not "none".
+            connect_timeout_secs: self.connect_timeout.map(|d| d.as_secs_f64().ceil() as u64),
             allow_network_adb: self.allow_network_adb,
         }
     }
 }
 
-pub async fn run(client: &mut Client, socket: &Path, args: StartArgs) -> Result<i32> {
-    // Subscribe first so no state change between `Started` and our first read is missed.
+pub async fn run(client: Client, args: StartArgs, json: bool) -> Result<i32> {
+    // Ctrl-C is ours from before the request: one that lands while the
+    // daemon is still answering must stop the connection, not orphan it.
+    let interrupts = follow::interrupts();
+    // Subscribe first so no state change between `started` and our first read is missed.
     client.call_ok(Request::Subscribe).await?;
-    match client.call_ok(Request::Start(args.request())).await? {
-        Response::Started { serial } => println!("started: {serial}"),
-        other => bail!("unexpected answer to start: {other:?}"),
+    let response = client.call_ok(Request::Start(args.request())).await?;
+    let tun = answer!(&response, Response::Started { tun, .. } => tun.clone());
+    if json {
+        print_json_line(&response)?;
+    } else {
+        println!("started {} on {} (TUN {tun})", args.serial, args.lan_if);
     }
     if args.detach {
         return Ok(0);
     }
-    tokio::spawn(stop_on_ctrl_c(socket.to_path_buf(), args.serial.clone()));
-    let outcome = follow(client, &args.serial).await?;
-    Ok(exit_code(&outcome))
+    follow::Follow::new(client, args.serial, json)
+        .run(interrupts)
+        .await
 }
 
-/// Prints each state of our connection until it ends; returns how it ended.
-async fn follow(client: &mut Client, serial: &str) -> Result<Outcome> {
-    loop {
-        let Some(event) = client.next_event().await? else {
-            bail!("routedroidd closed the connection")
-        };
-        match event {
-            Event::Connection { serial: other, .. } if other != serial => {}
-            Event::Connection {
-                state: ConnectionState::Ended(outcome),
-                ..
-            } => {
-                println!("{}", state_line(&ConnectionState::Ended(outcome.clone())));
-                return Ok(outcome);
-            }
-            Event::Connection { state, .. } => println!("{}", state_line(&state)),
-            Event::Shutdown => eprintln!("routedroidd is shutting down"),
-            // We may have missed our `ended`; ask instead of waiting forever.
-            Event::Lagged { .. } => {
-                if let Some(outcome) = ended_meanwhile(client, serial).await? {
-                    println!("{}", state_line(&ConnectionState::Ended(outcome.clone())));
-                    return Ok(outcome);
-                }
-            }
-            Event::Traffic { .. } | Event::Devices { .. } => {}
-        }
-    }
-}
-
-/// After missed events: `Some(outcome)` if our phone is no longer connected.
-async fn ended_meanwhile(client: &mut Client, serial: &str) -> Result<Option<Outcome>> {
-    match client.call_ok(Request::Status).await? {
-        Response::Status { connections } if connections.iter().any(|c| c.serial == serial) => {
-            Ok(None)
-        }
-        Response::Status { .. } => Ok(Some(Outcome {
-            ok: false,
-            kind: None,
-            message: "the connection ended while events were missed".into(),
-        })),
-        other => bail!("unexpected answer to status: {other:?}"),
-    }
-}
-
-/// First Ctrl-C asks the daemon to disconnect the phone (over its own connection,
-/// so the event stream is never interrupted); a second one gives up waiting.
-async fn stop_on_ctrl_c(socket: PathBuf, serial: String) {
-    if tokio::signal::ctrl_c().await.is_err() {
-        return;
-    }
-    eprintln!("stopping (press Ctrl-C again to abandon the session)");
-    tokio::spawn(async move {
-        if let Ok(stopper) = connect(&socket).await {
-            let _ = stopper.call(Request::Stop { serial }).await;
-        }
-    });
-    if tokio::signal::ctrl_c().await.is_ok() {
-        std::process::exit(130);
-    }
-}
-
-fn exit_code(outcome: &Outcome) -> i32 {
-    if outcome.ok {
-        0
-    } else {
-        outcome
-            .kind
-            .map(Kind::exit_code)
-            .unwrap_or(Kind::Internal.exit_code())
-    }
-}
+#[cfg(test)]
+mod tests;

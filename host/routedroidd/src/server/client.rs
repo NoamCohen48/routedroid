@@ -118,7 +118,7 @@ impl<A: Answer> ClientConnection<A> {
                 &self.out,
                 ServerMessage::Response {
                     id,
-                    response: Response::Ok,
+                    response: Response::Subscribed,
                 },
             )
             .await;

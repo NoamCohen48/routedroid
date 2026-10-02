@@ -3,6 +3,8 @@
 use anyhow::Result;
 use routedroid_ipc::{Client, Request};
 
+use crate::output::print_json_line;
+
 pub async fn run(client: &mut Client) -> Result<i32> {
     client.call_ok(Request::Subscribe).await?;
     loop {
@@ -11,7 +13,7 @@ pub async fn run(client: &mut Client) -> Result<i32> {
             _ = tokio::signal::ctrl_c() => return Ok(0),
         };
         match event {
-            Some(event) => println!("{}", serde_json::to_string(&event)?),
+            Some(event) => print_json_line(&event)?,
             None => return Ok(0),
         }
     }

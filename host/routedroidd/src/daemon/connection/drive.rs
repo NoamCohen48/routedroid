@@ -4,40 +4,35 @@
 //! protocol's own word for what runs here is a *session*.
 
 use std::net::Ipv4Addr;
-use std::time::Duration;
 
-use routedroid_ipc::fault::{Fault, Kind, Result};
-use routedroid_ipc::ConnectionState;
-use routedroid_proto::messages::{ErrorCode, Prefix};
+use routedroid_ipc::{ConnectionState, EndReason, NetworkInfo};
+use routedroid_proto::messages::Prefix;
 use tokio::sync::watch;
 use tracing::info;
 
+use super::end;
 use super::run::ConnectionRun;
 use crate::app_listener::{AppListener, Expected};
 use crate::device::AdbBridge;
+use crate::fault::Result;
 use crate::host_network::HostNetwork;
-use crate::session::{Machine, Progress, SessionConfig, SessionDriver, SessionEnd};
+use crate::session::{Machine, Progress, SessionConfig, SessionDriver};
 
-const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(90);
-
-impl ConnectionRun<'_> {
+impl ConnectionRun {
     pub(super) async fn drive(
         &self,
-        mtu: u32,
         listener: AppListener,
+        placed: &NetworkInfo,
         bridge: &mut AdbBridge,
         network: &mut HostNetwork,
         mut stop_rx: watch::Receiver<bool>,
-    ) -> Result<&'static str> {
+    ) -> Result<EndReason> {
+        let mtu = self.spec.mtu;
         let secret = bridge.bootstrap().await?;
         self.sink.set(ConnectionState::WaitingForApp);
         // The app dials in (over adb reverse, not over the VPN): the phone
         // never listens, so nothing on it can be reached before AUTH.
-        let connect_timeout = self
-            .request
-            .connect_timeout_secs
-            .map(Duration::from_secs)
-            .unwrap_or(DEFAULT_CONNECT_TIMEOUT);
+        let connect_timeout = self.spec.connect_timeout;
         let host_port = listener.port();
         let expected = Expected {
             session: bridge.session.clone(),
@@ -46,7 +41,7 @@ impl ConnectionRun<'_> {
         };
         let app = tokio::select! {
             accepted = listener.accept(connect_timeout, &expected) => accepted?,
-            _ = stop_rx.changed() => return Ok("stopped before the app connected"),
+            _ = stop_rx.changed() => return Ok(EndReason::StoppedEarly),
         };
         info!(
             host_port,
@@ -57,9 +52,9 @@ impl ConnectionRun<'_> {
 
         let config = SessionConfig {
             mtu,
-            addresses: vec![Prefix::new(self.request.phone_ip, 32)],
+            addresses: vec![Prefix::new(placed.phone_ip, 32)],
             routes: vec![Prefix::new(Ipv4Addr::UNSPECIFIED, 0)],
-            dns: self.request.dns.clone(),
+            dns: placed.dns.clone(),
             session_name: "Routedroid".into(),
             expected_session: bridge.session.clone(),
             expected_device_port: bridge.device_port(),
@@ -95,37 +90,6 @@ impl ConnectionRun<'_> {
             "traffic"
         );
         self.sink.set(ConnectionState::Stopping);
-        match summary.end {
-            // A stop we asked for is a success whatever phase it interrupted.
-            SessionEnd::LocalStop if !summary.reached_active => {
-                Ok("stopped before the connection was active")
-            }
-            SessionEnd::LocalStop | SessionEnd::PeerStop | SessionEnd::PeerClosed
-                if summary.reached_active =>
-            {
-                Ok("session ended cleanly")
-            }
-            SessionEnd::VpnError(e) | SessionEnd::Refused(e)
-                if e.known_code() == Some(ErrorCode::ConsentTimeout) =>
-            {
-                Err(Fault::msg(
-                    Kind::Vpn,
-                    "VPN permission was not granted on the phone within 2 minutes",
-                ))
-            }
-            // Peer-supplied text: `{:?}` escapes control characters before it reaches a terminal.
-            SessionEnd::VpnError(e) => Err(Fault::msg(
-                Kind::Vpn,
-                format!("{}: {:?}", e.code, e.message),
-            )),
-            SessionEnd::Refused(e) if e.code == "auth_failed" => {
-                Err(Fault::msg(Kind::Auth, e.message))
-            }
-            SessionEnd::Refused(e) => Err(Fault::msg(
-                Kind::Protocol,
-                format!("{}: {:?}", e.code, e.message),
-            )),
-            other => Err(Fault::msg(Kind::Vpn, other.to_string())),
-        }
+        end::reason(summary.end, summary.reached_active)
     }
 }

@@ -21,7 +21,7 @@ use ratatui::DefaultTerminal;
 use routedroid_ipc::{Client, ConnectError};
 use tokio::sync::mpsc;
 
-use app::{App, Level};
+use app::App;
 use messages::{Command, Incoming};
 
 /// Exit codes when the daemon is not reachable at start, or speaks another
@@ -70,7 +70,9 @@ async fn main() {
     ));
 
     let terminal = ratatui::init();
+    let _ = crossterm::execute!(std::io::stdout(), crossterm::event::EnableBracketedPaste);
     let outcome = run_ui(terminal, command_sender, incoming_receiver).await;
+    let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableBracketedPaste);
     ratatui::restore();
     client_task.abort();
     if let Err(error) = outcome {
@@ -95,6 +97,10 @@ async fn run_ui(
             },
             terminal_event = terminal_events.next() => match terminal_event {
                 Some(Ok(TerminalEvent::Key(key))) => keys::handle(&mut app, key),
+                Some(Ok(TerminalEvent::Paste(text))) => {
+                    keys::paste(&mut app, &text);
+                    vec![]
+                }
                 Some(Ok(_)) => vec![],
                 Some(Err(error)) => return Err(error.into()),
                 None => return Ok(()),
@@ -104,9 +110,7 @@ async fn run_ui(
             // Never block rendering on the connection task.
             match commands.try_send(command) {
                 Ok(()) => {}
-                Err(mpsc::error::TrySendError::Full(_)) => {
-                    app.push_log(Level::Error, "busy; try again".into())
-                }
+                Err(mpsc::error::TrySendError::Full(_)) => app.error("busy; try again"),
                 Err(mpsc::error::TrySendError::Closed(_)) => anyhow::bail!("connection task ended"),
             }
         }

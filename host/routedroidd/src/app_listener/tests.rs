@@ -67,5 +67,5 @@ async fn nobody_in_time_is_a_timeout() {
         .await
         .err()
         .unwrap();
-    assert_eq!(error.kind(), Kind::Vpn);
+    assert_eq!(error.kind(), Kind::Timeout);
 }

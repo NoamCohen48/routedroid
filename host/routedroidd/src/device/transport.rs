@@ -5,7 +5,7 @@
 //! lives here, in one place, and `start` applies it; nothing else in the
 //! host cares how the phone is attached.
 
-use routedroid_ipc::fault::{Fault, Kind, Result};
+use crate::fault::{Fault, Kind, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Transport {

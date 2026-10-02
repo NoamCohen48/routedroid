@@ -6,10 +6,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use routedroid_ipc::fault::Result;
+use crate::fault::Result;
 use tokio::sync::watch;
-use tokio::task::JoinHandle;
 
+use super::background::Background;
 use crate::adb::{Adb, Device};
 
 const POLL: Duration = Duration::from_secs(2);
@@ -23,15 +23,7 @@ pub struct AttachedDevices {
     adb: Adb,
     current: Arc<watch::Sender<Snapshot>>,
     /// Dropped with the last handle, which stops the polling.
-    _poll: Arc<PollTask>,
-}
-
-struct PollTask(JoinHandle<()>);
-
-impl Drop for PollTask {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
+    _poll: Arc<Background>,
 }
 
 impl AttachedDevices {
@@ -42,7 +34,7 @@ impl AttachedDevices {
         publish(&adb, &current).await;
         let polling = Arc::clone(&current);
         let polled_adb = adb.clone();
-        let poll = tokio::spawn(async move {
+        let poll = Background::spawn(async move {
             loop {
                 tokio::time::sleep(POLL).await;
                 publish(&polled_adb, &polling).await;
@@ -51,7 +43,7 @@ impl AttachedDevices {
         Self {
             adb,
             current,
-            _poll: Arc::new(PollTask(poll)),
+            _poll: Arc::new(poll),
         }
     }
 

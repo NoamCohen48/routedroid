@@ -1,25 +1,11 @@
-//! Human-readable one-liners for states and events, shared by the panes and the log.
+//! One-liners for the log and the panes. Connection states describe
+//! themselves (`Display` in the ipc crate), the same way the CLI prints them.
 
 use routedroid_ipc::{ConnectionState, DeviceInfo, Event};
 
-pub fn connection_state(state: &ConnectionState) -> String {
-    match state {
-        ConnectionState::Starting => "starting".into(),
-        ConnectionState::WaitingForApp => "waiting for app".into(),
-        ConnectionState::Handshaking => "handshaking".into(),
-        ConnectionState::Active => "active".into(),
-        ConnectionState::Stopping => "stopping".into(),
-        ConnectionState::Ended(outcome) if outcome.ok => format!("ended: {}", outcome.message),
-        ConnectionState::Ended(outcome) => match outcome.kind {
-            Some(kind) => format!("failed ({}): {}", kind.as_str(), outcome.message),
-            None => format!("failed: {}", outcome.message),
-        },
-    }
-}
-
 /// Whether an `Ended` state is a failure worth painting red.
 pub fn is_failure(state: &ConnectionState) -> bool {
-    matches!(state, ConnectionState::Ended(outcome) if !outcome.ok)
+    matches!(state, ConnectionState::Ended { outcome } if !outcome.is_clean())
 }
 
 pub fn usable(device: &DeviceInfo) -> String {
@@ -32,8 +18,9 @@ pub fn usable(device: &DeviceInfo) -> String {
 /// One log line per event; `None` for events too frequent to log (traffic).
 pub fn event(event: &Event) -> Option<String> {
     match event {
-        Event::Connection { serial, state } => {
-            Some(format!("{serial}: {}", connection_state(state)))
+        Event::Connection { serial, state } => Some(format!("{serial}: {state}")),
+        Event::Network { serial, network } => {
+            Some(format!("{serial}: on the LAN as {}", network.phone_ip))
         }
         Event::Traffic { .. } => None,
         Event::Devices { devices } => {

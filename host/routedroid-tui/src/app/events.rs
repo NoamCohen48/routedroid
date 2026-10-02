@@ -2,7 +2,8 @@
 
 use routedroid_ipc::{ConnectionState, Event};
 
-use super::{App, Level};
+use super::log::now;
+use super::{App, LastEnd, Level};
 use crate::describe;
 use crate::messages::Command;
 
@@ -14,41 +15,48 @@ impl App {
                 Event::Shutdown => Level::Error,
                 _ => Level::Info,
             };
-            self.push_log(level, line);
+            self.log.push(level, line);
         }
         match event {
             Event::Connection { serial, state } => self.apply_connection(serial, state),
-            Event::Traffic {
-                serial,
-                packets_to_phone,
-                packets_from_phone,
-            } => {
+            Event::Network { serial, network } => match self.connections.get_mut(&serial) {
+                Some(connection) => {
+                    connection.network = Some(network);
+                    vec![]
+                }
+                None => vec![Command::RefreshStatus],
+            },
+            Event::Traffic { serial, traffic } => {
                 if let Some(connection) = self.connections.get_mut(&serial) {
-                    connection.packets_to_phone = packets_to_phone;
-                    connection.packets_from_phone = packets_from_phone;
+                    connection.traffic = traffic;
                 }
                 vec![]
             }
-            Event::Devices { devices } => {
-                self.set_devices(devices);
-                vec![]
-            }
+            Event::Devices { devices } => self.set_devices(devices),
             Event::Shutdown => vec![],
             Event::Lagged { .. } => vec![Command::RefreshDevices, Command::RefreshStatus],
         }
     }
 
     fn apply_connection(&mut self, serial: String, state: ConnectionState) -> Vec<Command> {
-        let ended = matches!(state, ConnectionState::Ended(_));
         if let Some(device) = self
             .devices
             .iter_mut()
             .find(|device| device.serial == serial)
         {
-            device.connection = if ended { None } else { Some(state.clone()) };
+            device.connection = match state {
+                ConnectionState::Ended { .. } => None,
+                _ => Some(state.clone()),
+            };
         }
-        if ended {
+        if let ConnectionState::Ended { outcome } = state {
             self.connections.remove(&serial);
+            let end = LastEnd {
+                text: outcome.to_string(),
+                failed: !outcome.is_clean(),
+                time: now(),
+            };
+            self.last_end.insert(serial, end);
             return vec![];
         }
         match self.connections.get_mut(&serial) {

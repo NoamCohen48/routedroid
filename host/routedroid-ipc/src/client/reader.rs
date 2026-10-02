@@ -10,8 +10,8 @@ use tokio::net::unix::OwnedReadHalf;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
-use crate::api::{Event, Response};
 use crate::wire::ServerMessage;
+use crate::{Event, Response};
 
 /// The daemon closed the connection.
 #[derive(Debug)]

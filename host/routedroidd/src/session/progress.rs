@@ -12,6 +12,8 @@ pub struct Counters {
     pub reached_active: AtomicBool,
     pub to_phone: AtomicU64,
     pub from_phone: AtomicU64,
+    pub bytes_to_phone: AtomicU64,
+    pub bytes_from_phone: AtomicU64,
     /// Phone packets that failed the §6 checks (dropped, not violations).
     pub malformed: AtomicU64,
     /// Phone packets dropped because the helper's queue was full.
@@ -41,6 +43,12 @@ impl Counters {
 
     pub(super) fn bump(counter: &AtomicU64) {
         counter.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// One packet of `len` bytes delivered in one direction.
+    pub(super) fn carried(packets: &AtomicU64, bytes: &AtomicU64, len: usize) {
+        packets.fetch_add(1, Ordering::Relaxed);
+        bytes.fetch_add(len as u64, Ordering::Relaxed);
     }
 }
 

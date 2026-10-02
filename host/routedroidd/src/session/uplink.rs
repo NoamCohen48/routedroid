@@ -47,7 +47,14 @@ impl Uplink {
             return Ok(());
         }
         match (self.inject)(packet) {
-            Ok(true) => Counters::bump(&self.counters.from_phone),
+            Ok(true) => {
+                let counters = &self.counters;
+                Counters::carried(
+                    &counters.from_phone,
+                    &counters.bytes_from_phone,
+                    packet.len(),
+                )
+            }
             Ok(false) => Counters::bump(&self.counters.congested),
             Err(e) => return Err(format!("inject into helper: {e}")),
         }

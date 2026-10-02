@@ -9,8 +9,8 @@ use tokio::net::UnixStream;
 use tokio::sync::Mutex;
 
 use super::{Calls, Client, Events, Shared};
-use crate::api::{Request, Response};
 use crate::API_VERSION;
+use crate::{Request, Response};
 
 #[derive(Debug)]
 pub enum ConnectError {

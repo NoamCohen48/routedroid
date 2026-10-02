@@ -11,9 +11,13 @@ mod devices;
 mod log;
 mod popups;
 mod status_bar;
+mod text;
+
+/// Past this many rows the device table scrolls instead of growing.
+const MAX_DEVICE_ROWS: u16 = 8;
 
 pub fn draw(frame: &mut Frame, app: &App) {
-    let device_rows = app.devices.len().max(1) as u16;
+    let device_rows = (app.devices.len().max(1) as u16).min(MAX_DEVICE_ROWS);
     let [devices_area, connection_area, log_area, status_area] = Layout::vertical([
         Constraint::Length(device_rows + 3),
         Constraint::Length(connection::HEIGHT),

@@ -17,7 +17,7 @@ use tokio::task::JoinSet;
 use tokio::time::{sleep_until, timeout, Instant};
 use tracing::{debug, info, warn};
 
-use routedroid_ipc::fault::{Fault, FaultExt, Kind, Result};
+use crate::fault::{Fault, FaultExt, Kind, Result};
 
 /// How long a connection has to send its HELLO.
 const SCREEN_DEADLINE: Duration = Duration::from_secs(5);
@@ -91,7 +91,10 @@ impl AppListener {
                     }
                 }
                 () = sleep_until(deadline) => {
-                    return Err(Fault::msg(Kind::Vpn, "the app did not connect in time"));
+                    return Err(Fault::msg(
+                        Kind::Timeout,
+                        "the app did not connect in time (is the phone unlocked, and the app installed?)",
+                    ));
                 }
             }
         }

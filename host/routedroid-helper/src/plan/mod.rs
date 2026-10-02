@@ -17,8 +17,8 @@ mod facts;
 
 pub use facts::Facts;
 
-pub const TUN_PREFIX: &str = "phone";
 pub use routedroid_helper_ipc::MTU_RANGE;
+pub use routedroid_helper_ipc::TUN_PREFIX;
 
 /// The controller's `Start`, already type-checked by the IPC layer.
 #[derive(Debug, Clone, PartialEq, Eq)]

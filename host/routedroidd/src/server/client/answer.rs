@@ -3,13 +3,13 @@
 
 use std::future::Future;
 
-use routedroid_ipc::fault::{Fault, Kind};
 use routedroid_ipc::wire::ClientMessage;
 use routedroid_ipc::{DeviceInfo, Request, Response, API_VERSION};
 use tokio::sync::watch;
 
 use super::super::view;
 use crate::daemon::{AttachedDevices, DeviceConnections, Snapshot};
+use crate::fault::{Fault, Kind};
 
 /// What a client connection may ask of the daemon.
 pub trait Answer: Clone + Send + Sync + 'static {
@@ -37,26 +37,33 @@ impl Answer for Handles {
                 devices: self.devices_view().await,
             },
             Request::Status => Response::Status {
-                connections: self.connections.info().await,
+                connections: self.connections.info(),
+            },
+            Request::Interfaces => Response::Error {
+                kind: Kind::Internal,
+                message: "interfaces: not available yet".into(),
             },
             Request::Start(start) => {
                 let serial = start.serial.clone();
                 match self.connections.start(start).await {
-                    Ok(()) => Response::Started { serial },
+                    Ok(tun) => Response::Started {
+                        serial,
+                        tun: tun.to_string(),
+                    },
                     Err(fault) => error(fault),
                 }
             }
             Request::Stop { serial } => match self.connections.stop(&serial).await {
-                Ok(()) => Response::Ok,
+                Ok(outcome) => Response::Stopped { serial, outcome },
                 Err(fault) => error(fault),
             },
-            Request::Subscribe => Response::Ok,
+            Request::Subscribe => Response::Subscribed,
         }
     }
 
     /// What adb reports, joined with the connections we have on those phones.
     async fn devices_view(&self) -> Vec<DeviceInfo> {
-        view::devices(&self.devices.current(), &self.connections.states().await)
+        view::devices(&self.devices.current(), &self.connections.states())
     }
 
     fn device_changes(&self) -> watch::Receiver<Snapshot> {

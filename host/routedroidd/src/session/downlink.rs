@@ -31,10 +31,11 @@ pub async fn pump(
         }
     }
     while let Some(packet) = from_helper.recv().await {
+        let len = packet.len();
         if out.send(Frame::ip_packet(packet)).await.is_err() {
             return SessionEnd::Transport("TCP writer gone".into());
         }
-        Counters::bump(&counters.to_phone);
+        Counters::carried(&counters.to_phone, &counters.bytes_to_phone, len);
     }
     SessionEnd::HelperClosed
 }

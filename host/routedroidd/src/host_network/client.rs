@@ -7,8 +7,8 @@ use routedroid_helper_ipc::{Datagram, IfName, Reply, Request, SeqPacket, MAX_DAT
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
+use crate::fault::{Fault, FaultExt, Kind, Result};
 use crate::session::{Inject, PacketEndpoints, QUEUE_DEPTH};
-use routedroid_ipc::fault::{Fault, FaultExt, Kind, Result};
 
 const STOP_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
@@ -42,24 +42,20 @@ async fn request(conn: &SeqPacket, request: &Request) -> anyhow::Result<Reply> {
     }
 }
 
-fn if_name(name: &str) -> Result<IfName> {
-    IfName::new(name).map_err(|e| Fault::msg(Kind::Usage, e.to_string()))
-}
-
 impl HostNetwork {
     /// Connect, agree on the IPC version and issue `Start`; the helper
     /// picks host address and prefix.
     pub async fn start(
         socket: &Path,
-        lan_if: &str,
+        lan_if: &IfName,
         phone_ip: Ipv4Addr,
-        tun: &str,
+        tun: &IfName,
         mtu: u32,
     ) -> Result<Self> {
         let start = Request::Start {
-            lan_if: if_name(lan_if)?,
+            lan_if: lan_if.clone(),
             phone_ip,
-            tun: if_name(tun)?,
+            tun: tun.clone(),
             mtu,
         };
         let conn = SeqPacket::connect(socket)

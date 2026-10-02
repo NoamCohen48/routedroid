@@ -24,7 +24,9 @@ impl Answer for Fake {
         if matches!(request, Request::Stop { .. }) {
             self.release.notified().await;
         }
-        Response::Ok
+        Response::Status {
+            connections: vec![],
+        }
     }
 
     async fn devices_view(&self) -> Vec<DeviceInfo> {
@@ -90,14 +92,40 @@ fn stopping() -> Event {
 async fn a_pending_stop_holds_up_neither_events_nor_other_requests() {
     let mut peer = Peer::start();
     peer.send(r#"{"id":1,"type":"subscribe"}"#).await;
-    assert_eq!(peer.next().await["id"], 1);
+    let subscribed = peer.next().await;
+    assert_eq!(
+        (&subscribed["msg"], &subscribed["id"], &subscribed["type"]),
+        (&"response".into(), &1.into(), &"subscribed".into())
+    );
     peer.send(r#"{"id":2,"type":"stop","serial":"s"}"#).await;
     peer.send(r#"{"id":3,"type":"status"}"#).await;
     assert_eq!(peer.next().await["id"], 3);
     peer.bus.publish(stopping());
-    assert_eq!(peer.next().await["event"], "connection");
+    let event = peer.next().await;
+    assert_eq!(
+        (&event["msg"], &event["event"]),
+        (&"event".into(), &"connection".into())
+    );
     peer.release.notify_one();
     assert_eq!(peer.next().await["id"], 2);
+}
+
+#[tokio::test]
+async fn a_client_that_falls_behind_is_told_it_lagged() {
+    let mut peer = Peer::start();
+    peer.send(r#"{"id":1,"type":"subscribe"}"#).await;
+    peer.next().await;
+    for _ in 0..1000 {
+        peer.bus.publish(stopping());
+    }
+    let mut lagged = false;
+    for _ in 0..300 {
+        if peer.next().await["event"] == "lagged" {
+            lagged = true;
+            break;
+        }
+    }
+    assert!(lagged, "a lagged event among the first lines");
 }
 
 #[tokio::test]

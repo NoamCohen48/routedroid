@@ -2,7 +2,7 @@
 //! callers never build shell command lines themselves.
 
 use super::AdbDevice;
-use routedroid_ipc::fault::{Fault, Kind, Result};
+use crate::fault::{Fault, Kind, Result};
 
 impl AdbDevice {
     /// `content write --uri URI` with `bytes` on stdin: the only way to hand

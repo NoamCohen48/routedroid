@@ -1,9 +1,13 @@
-//! The "connect a phone" form: three text fields, Tab between them, Enter to submit.
+//! The "connect a phone" form: every start option, Tab between them, Enter
+//! to submit. The LAN interface is picked from the daemon's list when it has
+//! one. A draft is kept per phone, so Esc or a failed start loses nothing.
 
-use std::net::Ipv4Addr;
+mod input;
+mod request;
 
-use anyhow::{Context, Result};
-use routedroid_ipc::StartRequest;
+use routedroid_ipc::InterfaceInfo;
+
+pub use input::LineInput;
 
 #[cfg(test)]
 mod tests;
@@ -13,16 +17,32 @@ pub enum Field {
     LanIf,
     PhoneIp,
     Dns,
+    Mtu,
+    Tun,
+    Timeout,
+    NetworkAdb,
 }
 
 impl Field {
-    pub const ALL: [Field; 3] = [Field::LanIf, Field::PhoneIp, Field::Dns];
+    pub const ALL: [Field; 7] = [
+        Field::LanIf,
+        Field::PhoneIp,
+        Field::Dns,
+        Field::Mtu,
+        Field::Tun,
+        Field::Timeout,
+        Field::NetworkAdb,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
             Field::LanIf => "LAN interface",
-            Field::PhoneIp => "Phone IP",
-            Field::Dns => "DNS (optional, comma-separated)",
+            Field::PhoneIp => "Phone IP (empty: DHCP)",
+            Field::Dns => "DNS (empty: automatic, \"none\", or a list)",
+            Field::Mtu => "MTU (empty: default)",
+            Field::Tun => "TUN name (empty: next phoneN)",
+            Field::Timeout => "App connect timeout (e.g. 90s, 2m)",
+            Field::NetworkAdb => "Allow network ADB (Space toggles)",
         }
     }
 
@@ -37,36 +57,111 @@ impl Field {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartForm {
     pub serial: String,
-    pub lan_if: String,
-    pub phone_ip: String,
-    pub dns: String,
+    /// Interfaces a phone may join through; empty: type the name instead.
+    pub choices: Vec<InterfaceInfo>,
+    pub lan_if: LineInput,
+    pub phone_ip: LineInput,
+    pub dns: LineInput,
+    pub mtu: LineInput,
+    pub tun: LineInput,
+    pub timeout: LineInput,
+    pub allow_network_adb: bool,
     pub focused: Field,
 }
 
 impl StartForm {
-    pub fn new(serial: String) -> Self {
-        Self {
+    pub fn new(serial: String, interfaces: &[InterfaceInfo]) -> Self {
+        let mut form = Self {
             serial,
-            lan_if: String::new(),
-            phone_ip: String::new(),
-            dns: String::new(),
+            choices: Vec::new(),
+            lan_if: LineInput::default(),
+            phone_ip: LineInput::default(),
+            dns: LineInput::default(),
+            mtu: LineInput::default(),
+            tun: LineInput::default(),
+            timeout: LineInput::default(),
+            allow_network_adb: false,
             focused: Field::LanIf,
+        };
+        form.offer(interfaces);
+        form
+    }
+
+    /// New interface list: keep the pick if it is still there, else take the
+    /// one with the default route.
+    pub fn offer(&mut self, interfaces: &[InterfaceInfo]) {
+        self.choices = interfaces
+            .iter()
+            .filter(|i| i.ineligible.is_none())
+            .cloned()
+            .collect();
+        let kept = self.choices.iter().any(|i| i.name == self.lan_if.value());
+        if !kept {
+            let best = self
+                .choices
+                .iter()
+                .find(|i| i.default_route)
+                .or(self.choices.first());
+            if let Some(best) = best {
+                self.lan_if = LineInput::new(&best.name);
+            }
         }
     }
 
-    pub fn value(&self, field: Field) -> &str {
-        match field {
-            Field::LanIf => &self.lan_if,
+    pub fn picking(&self) -> bool {
+        self.focused == Field::LanIf && !self.choices.is_empty()
+    }
+
+    /// Cycle the picked interface by `step`.
+    pub fn pick(&mut self, step: isize) {
+        let count = self.choices.len() as isize;
+        if count == 0 {
+            return;
+        }
+        let at = self
+            .choices
+            .iter()
+            .position(|i| i.name == self.lan_if.value());
+        let next = at.map_or(0, |at| (at as isize + step).rem_euclid(count)) as usize;
+        self.lan_if = LineInput::new(&self.choices[next].name);
+    }
+
+    /// The text field behind `field`, if it is one (the interface is one
+    /// only when there is nothing to pick from).
+    pub fn editable(&self, field: Field) -> Option<&LineInput> {
+        Some(match field {
+            Field::LanIf if self.choices.is_empty() => &self.lan_if,
+            Field::LanIf | Field::NetworkAdb => return None,
             Field::PhoneIp => &self.phone_ip,
             Field::Dns => &self.dns,
-        }
+            Field::Mtu => &self.mtu,
+            Field::Tun => &self.tun,
+            Field::Timeout => &self.timeout,
+        })
     }
 
-    fn value_mut(&mut self) -> &mut String {
-        match self.focused {
-            Field::LanIf => &mut self.lan_if,
+    pub fn input(&mut self, field: Field) -> Option<&mut LineInput> {
+        Some(match field {
+            Field::LanIf if self.choices.is_empty() => &mut self.lan_if,
+            Field::LanIf | Field::NetworkAdb => return None,
             Field::PhoneIp => &mut self.phone_ip,
             Field::Dns => &mut self.dns,
+            Field::Mtu => &mut self.mtu,
+            Field::Tun => &mut self.tun,
+            Field::Timeout => &mut self.timeout,
+        })
+    }
+
+    /// The text shown for a field.
+    pub fn shown(&self, field: Field) -> String {
+        match field {
+            Field::LanIf => self.lan_if.value().to_string(),
+            Field::PhoneIp => self.phone_ip.value().to_string(),
+            Field::Dns => self.dns.value().to_string(),
+            Field::Mtu => self.mtu.value().to_string(),
+            Field::Tun => self.tun.value().to_string(),
+            Field::Timeout => self.timeout.value().to_string(),
+            Field::NetworkAdb => if self.allow_network_adb { "[x]" } else { "[ ]" }.into(),
         }
     }
 
@@ -75,48 +170,7 @@ impl StartForm {
     }
 
     pub fn focus_previous(&mut self) {
-        self.focused = Field::ALL[(self.focused.index() + Field::ALL.len() - 1) % Field::ALL.len()];
-    }
-
-    pub fn insert(&mut self, character: char) {
-        if !character.is_control() {
-            self.value_mut().push(character);
-        }
-    }
-
-    pub fn backspace(&mut self) {
-        self.value_mut().pop();
-    }
-
-    /// Validates the fields; the error names the offending one.
-    pub fn to_request(&self) -> Result<StartRequest> {
-        let lan_if = self.lan_if.trim();
-        anyhow::ensure!(!lan_if.is_empty(), "LAN interface is required");
-        let phone_ip: Ipv4Addr = self
-            .phone_ip
-            .trim()
-            .parse()
-            .with_context(|| format!("phone IP {:?} is not an IPv4 address", self.phone_ip))?;
-        let dns = self
-            .dns
-            .split(',')
-            .map(str::trim)
-            .filter(|entry| !entry.is_empty())
-            .map(|entry| {
-                entry
-                    .parse::<Ipv4Addr>()
-                    .with_context(|| format!("DNS {entry:?} is not an IPv4 address"))
-            })
-            .collect::<Result<Vec<_>>>()?;
-        Ok(StartRequest {
-            serial: self.serial.clone(),
-            lan_if: lan_if.to_string(),
-            phone_ip,
-            tun: None,
-            mtu: None,
-            dns,
-            connect_timeout_secs: None,
-            allow_network_adb: false,
-        })
+        let count = Field::ALL.len();
+        self.focused = Field::ALL[(self.focused.index() + count - 1) % count];
     }
 }

@@ -12,6 +12,7 @@ mod connection;
 mod connections;
 mod devices;
 mod events;
+mod spec;
 
 use std::path::PathBuf;
 
@@ -57,8 +58,8 @@ impl Daemon {
     pub async fn stop_all(&self) {
         self.events.publish(routedroid_ipc::Event::Shutdown);
         let mut stopping = tokio::task::JoinSet::new();
-        for connection in self.connections.take_all().await {
-            stopping.spawn(async move { connection.stop_and_wait().await });
+        for connection in self.connections.take_all() {
+            stopping.spawn(connection.stopper().stop());
         }
         while stopping.join_next().await.is_some() {}
     }

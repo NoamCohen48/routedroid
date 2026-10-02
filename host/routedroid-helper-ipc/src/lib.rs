@@ -18,6 +18,9 @@ pub use seqpacket::{Activated, Activation, Listener, SeqPacket};
 /// datagram layout. The helper refuses a controller that says otherwise.
 pub const VERSION: u32 = 1;
 
+/// Every TUN the helper creates is named with this prefix; it refuses others.
+pub const TUN_PREFIX: &str = "phone";
+
 /// The TUN MTUs a `Start` may ask for; the helper refuses others.
 pub const MTU_RANGE: std::ops::RangeInclusive<u32> = 576..=9000;
 

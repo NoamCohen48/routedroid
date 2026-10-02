@@ -8,7 +8,7 @@
 use tracing::{info, warn};
 
 use crate::adb::{AdbDevice, ReverseMapping};
-use routedroid_ipc::fault::{Fault, Kind, Result};
+use crate::fault::{Fault, Kind, Result};
 
 /// Below 32768, where Android's ephemeral range starts.
 pub const DEVICE_PORT_RANGE: std::ops::RangeInclusive<u16> = 20_000..=32_767;
