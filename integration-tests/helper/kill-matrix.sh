@@ -9,37 +9,36 @@
 #
 # For every crash stage the helper (or client) is SIGKILLed there, cleanup runs,
 # and route / nft / sysctl / link state is compared with the baseline snapshot.
-set -euo pipefail
+set -u -o pipefail
 MODE=${1:?userns|systemd}
 HERE=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source-path=SCRIPTDIR source=../lib.sh
+source "$HERE/../lib.sh"
 # Both binaries come from `cargo build --release -p routedroid-helper --features testing`.
 BIN=${BIN:-$HERE/../../host/target/release/routedroid-helper}
 CLIENT=${CLIENT:-$HERE/../../host/target/release/routedroid-helper-client}
-S=$(mktemp -d /tmp/rd-helper.XXXXXX)
-pass=0; fail=0
+rig_tmp helper
 log() { printf '\n== %s\n' "$*"; }
-check() { local name=$1; shift; if "$@"; then echo "PASS  $name"; pass=$((pass+1)); else echo "FAIL  $name"; fail=$((fail+1)); fi; }
 
 TUN=phone0
 if [[ $MODE == userns ]]; then
     LAN_IF=lan0; PHONE_IP=10.90.0.7
-    unshare -Urn --propagation unchanged sh -c 'ip link set lo up; exec sleep infinity' &
-    NSPID=$!; sleep 0.5
-    NS="nsenter -t $NSPID -U -n --preserve-credentials"
-    $NS ip link add $LAN_IF type dummy; $NS ip addr add 10.90.0.1/24 dev $LAN_IF; $NS ip link set $LAN_IF up
+    userns_start || exit 1
+    in_ns ip link add $LAN_IF type dummy
+    in_ns ip addr add 10.90.0.1/24 dev $LAN_IF
+    in_ns ip link set $LAN_IF up
     SOCK=$S/helper.sock; CRASH=$S/crash-at
-    printf '[[interface]]\nname = "%s"\nphone_addresses = ["%s/32"]\n' $LAN_IF $PHONE_IP > "$S/helper.toml"
-    HELPER="$NS $BIN --state-dir $S/state --policy $S/helper.toml --crash-file $CRASH"
-    SUDO=""
+    printf '[[interface]]\nname = "%s"\nphone_addresses = ["%s/32"]\n' "$LAN_IF" "$PHONE_IP" > "$S/helper.toml"
+    HELPER=("${NS[@]}" "$BIN" --state-dir "$S/state" --policy "$S/helper.toml" --crash-file "$CRASH")
     # A killed helper leaves its socket file; wait for the new one, not that.
-    start_helper() { rm -f "$SOCK"; $HELPER serve --once --socket "$SOCK" > "$S/helper-$1.log" 2>&1 & HPID=$!; for _ in $(seq 1 30); do [[ -S $SOCK ]] && break; sleep 0.1; done; }
-    wait_helper_exit() { for _ in $(seq 1 100); do kill -0 "$HPID" 2>/dev/null || break; sleep 0.1; done; ! kill -0 "$HPID" 2>/dev/null; }
-    run_cleanup() { $HELPER cleanup >> "$S/cleanup-$1.log" 2>&1; }
-    run_check() { $HELPER check >/dev/null 2>&1; }
+    start_helper() { rm -f "$SOCK"; "${HELPER[@]}" serve --once --socket "$SOCK" > "$S/helper-$1.log" 2>&1 & HPID=$!; for _ in $(seq 1 30); do [[ -S $SOCK ]] && break; sleep 0.1; done; }
+    wait_helper_exit() { for _ in $(seq 1 100); do kill -0 "$HPID" 2>/dev/null || return 0; sleep 0.1; done; return 1; }
+    run_cleanup() { "${HELPER[@]}" cleanup >> "$S/cleanup-$1.log" 2>&1; }
+    run_check() { "${HELPER[@]}" check >/dev/null 2>&1; }
     kill_helper() { kill -KILL "$HPID" 2>/dev/null || true; }
-    snapshot() { $NS ip -4 route show > "$1/route"; $NS nft list ruleset > "$1/nft" 2>/dev/null || true
-                 for k in net.ipv4.conf.$LAN_IF.forwarding net.ipv4.conf.$LAN_IF.proxy_arp; do printf '%s=%s\n' "$k" "$($NS sysctl -n "$k")"; done > "$1/sysctl"
-                 $NS ip -br link | awk '{print $1}' | sort > "$1/links"; }
+    snapshot() { in_ns ip -4 route show > "$1/route"; in_ns nft list ruleset > "$1/nft" 2>/dev/null || true
+                 for k in "net.ipv4.conf.$LAN_IF.forwarding" "net.ipv4.conf.$LAN_IF.proxy_arp"; do printf '%s=%s\n' "$k" "$(in_ns sysctl -n "$k")"; done > "$1/sysctl"
+                 in_ns ip -br link | awk '{print $1}' | sort > "$1/links"; }
     cleanup_all() { kill "$NSPID" 2>/dev/null || true; }
 else
     [[ $EUID -eq 0 ]] || { echo "systemd mode needs root"; exit 2; }
@@ -47,31 +46,33 @@ else
     UNIT=routedroid-helper
     SOCK=/run/routedroid/helper.sock; CRASH=/run/routedroid/crash-at
     CLIENT_USER=${SUDO_USER:-$USER}
-    systemctl is-active --quiet $UNIT.socket || { echo "$UNIT.socket not active; run host/install.sh"; exit 2; }
-    HELPER="$BIN --crash-file $CRASH"
-    NS=""
-    start_helper() { systemctl reset-failed $UNIT.service $UNIT.socket 2>/dev/null || true; :; }   # socket activation starts it on connect
+    systemctl is-active --quiet "$UNIT.socket" || { echo "$UNIT.socket not active; run host/install.sh"; exit 2; }
+    HELPER=("$BIN" --crash-file "$CRASH")
+    NS=()
+    start_helper() { systemctl reset-failed "$UNIT.service" "$UNIT.socket" 2>/dev/null || true; :; }   # socket activation starts it on connect
     # "deactivating" still counts as running: ExecStopPost=cleanup is in flight.
-    unit_settled() { case $(systemctl show -p ActiveState --value $UNIT.service) in inactive|failed) return 0;; *) return 1;; esac; }
+    unit_settled() { case $(systemctl show -p ActiveState --value "$UNIT.service") in inactive|failed) return 0;; *) return 1;; esac; }
     wait_helper_exit() { for _ in $(seq 1 100); do unit_settled && break; sleep 0.1; done; unit_settled; }
     run_cleanup() { :; }     # ExecStopPost already ran; journalctl shows it
-    run_check() { $HELPER check >/dev/null 2>&1; }
-    kill_helper() { systemctl kill -s KILL $UNIT.service 2>/dev/null || true; }
+    run_check() { "${HELPER[@]}" check >/dev/null 2>&1; }
+    kill_helper() { systemctl kill -s KILL "$UNIT.service" 2>/dev/null || true; }
     # Live counters (Docker/firewalld chains) change on their own; compare structure only.
     snapshot() { ip -4 route show > "$1/route"; nft list ruleset 2>/dev/null | sed -E 's/counter packets [0-9]+ bytes [0-9]+/counter/g' > "$1/nft" || true
-                 for k in net.ipv4.conf.$LAN_IF.forwarding net.ipv4.conf.$LAN_IF.proxy_arp; do printf '%s=%s\n' "$k" "$(sysctl -n "$k")"; done > "$1/sysctl"
+                 for k in "net.ipv4.conf.$LAN_IF.forwarding" "net.ipv4.conf.$LAN_IF.proxy_arp"; do printf '%s=%s\n' "$k" "$(sysctl -n "$k")"; done > "$1/sysctl"
                  ip -br link | awk '{print $1}' | sort > "$1/links"; }
     cleanup_all() { rm -f "$CRASH"; }
 fi
-trap 'rm -f "$CRASH" 2>/dev/null; cleanup_all; echo; echo "artifacts in $S"' EXIT
+trap 'rm -f "$CRASH" 2>/dev/null; cleanup_all' EXIT
 
 client() { # client NAME args...   (runs as the unprivileged user in systemd mode)
     local name=$1; shift
-    if [[ $MODE == systemd ]]; then sudo -u "$CLIENT_USER" "$CLIENT" --socket "$SOCK" --lan-if "$LAN_IF" --phone-ip "$PHONE_IP" --tun $TUN "$@" > "$S/client-$name.log" 2>&1
-    else "$CLIENT" --socket "$SOCK" --lan-if "$LAN_IF" --phone-ip "$PHONE_IP" --tun $TUN "$@" > "$S/client-$name.log" 2>&1; fi
+    local as=()
+    # The log is the rig's (root-owned) file; only the client runs as the user.
+    [[ $MODE == systemd ]] && as=(sudo -u "$CLIENT_USER")
+    "${as[@]}" "$CLIENT" --socket "$SOCK" --lan-if "$LAN_IF" --phone-ip "$PHONE_IP" --tun "$TUN" "$@" > "$S/client-$name.log" 2>&1
 }
 baseline_ok() { snapshot "$S/after"; diff -r "$S/before" "$S/after" > "$S/diff-$1.txt" && [[ ! -e /sys/class/net/$TUN || $MODE == userns ]]; }
-tun_absent() { if [[ $MODE == userns ]]; then ! $NS ip link show $TUN >/dev/null 2>&1; else ! ip link show $TUN >/dev/null 2>&1; fi; }
+tun_absent() { ! "${NS[@]}" ip link show "$TUN" >/dev/null 2>&1; }
 
 mkdir -p "$S/before" "$S/after"; snapshot "$S/before"
 echo "baseline: $(tr '\n' ' ' < "$S/before/sysctl")"
@@ -137,12 +138,11 @@ log "check fails while a journal is unresolved; the next serve cleans it up"
 echo "applied:route:$PHONE_IP/32@$TUN" > "$CRASH"; [[ $MODE == systemd ]] && chmod 600 "$CRASH"
 start_helper blocked; client blocked --hold 1 || true; wait_helper_exit || true; rm -f "$CRASH"
 if [[ $MODE == userns ]]; then
-    check "check fails before cleanup"           bash -c "! $HELPER check >/dev/null 2>&1"
+    check "check fails before cleanup"           eval '! run_check'
     start_helper recovered; kill -TERM "$HPID"
     check "serve cleaned up and stopped"         wait_helper_exit
 fi
 check "check passes after cleanup"               run_check
 check "baseline restored"                        baseline_ok blocked
 
-echo; echo "RESULT: $pass passed, $fail failed"
-[[ $fail -eq 0 ]]
+echo; rig_end

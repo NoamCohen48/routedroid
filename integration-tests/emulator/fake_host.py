@@ -14,7 +14,16 @@ NAMES = {1: "HELLO", 2: "HELLO_ACK", 3: "CONFIGURE_VPN", 4: "VPN_READY", 5: "VPN
          0x10: "IP_PACKET", 0x20: "PING", 0x21: "PONG", 0x30: "STOP", 0x7F: "ERROR"}
 MTU = 1400
 DEVICE_PORT = 17900
+# §4: no body is longer than the control limit or the MTU, whichever is larger.
+MAX_BODY = 65536
+FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "protocol", "fixtures")
 SERIAL = None
+
+
+def check(ok, why="check failed"):
+    """An assertion that `python3 -O` cannot strip."""
+    if not ok:
+        raise AssertionError(why)
 
 
 def adb(*args, stdin=None):
@@ -40,6 +49,7 @@ def recv_frame(s):
     if h is None:
         return None
     n, v, t, f = struct.unpack(">IBBH", h)
+    check(n <= MAX_BODY, f"peer announced a {n}-byte body")
     body = recv_exact(s, n) if n else b""
     return t, body
 
@@ -57,20 +67,39 @@ def record(session, secret, port=DEVICE_PORT, reserved=0):
     return b"RDB1" + bytes([1, reserved]) + struct.pack(">H", port) + session.encode().ljust(40, b"\0") + secret
 
 
+def self_test():
+    """These builders are a third copy of the protocol: pin them to the golden fixtures."""
+    def load(name):
+        with open(os.path.join(FIXTURES, name)) as f:
+            return json.load(f)
+    for v in load("frames.json")["valid"]:
+        check(frame(v["type"], bytes.fromhex(v["body_hex"])).hex() == v["wire_hex"], f"frame {v['name']}")
+    for v in load("auth.json")["vectors"]:
+        secret = bytes.fromhex(v["secret_hex"])
+        t = transcript(v["session"], v["device_port"], bytes.fromhex(v["client_nonce_hex"]),
+                       bytes.fromhex(v["host_nonce_hex"]))
+        check(t.hex() == v["transcript_hex"], f"transcript {v['name']}")
+        check(proof(secret, "host", t).hex() == v["host_proof_hex"], f"host proof {v['name']}")
+        check(proof(secret, "android", t).hex() == v["android_proof_hex"], f"android proof {v['name']}")
+    for v in load("bootstrap.json")["vectors"]:
+        rec = record(v["session"], bytes.fromhex(v["secret_hex"]), port=v["device_port"])
+        check(rec.hex() == v["record_hex"], f"record {v['name']}")
+
+
 def write_record(rec):
     r = adb("shell", "content", "write", "--uri", "content://dev.routedroid.bootstrap/record", stdin=rec)
-    assert r.returncode == 0, r.stderr
+    check(r.returncode == 0, r.stderr)
 
 
 def start(session):
     r = adb("shell", "am", "start", "-n", "dev.routedroid/.bootstrap.BootstrapActivity", "--es", "session", session)
-    assert r.returncode == 0, r.stderr
+    check(r.returncode == 0, r.stderr)
 
 
 def reverse(host_port):
     adb("reverse", "--remove", f"tcp:{DEVICE_PORT}")
     r = adb("reverse", f"tcp:{DEVICE_PORT}", f"tcp:{host_port}")
-    assert r.returncode == 0, r.stderr
+    check(r.returncode == 0, r.stderr)
 
 
 def bootstrap(session, secret, host_port):
@@ -111,9 +140,9 @@ def launch(app_secret, host_secret=None):
     ls.close()
     s.settimeout(15)
     t, body = recv_frame(s)
-    assert t == HELLO, NAMES.get(t)
+    check(t == HELLO, NAMES.get(t))
     hello = json.loads(body)
-    assert hello["session"] == session and hello["device_port"] == DEVICE_PORT
+    check(hello["session"] == session and hello["device_port"] == DEVICE_PORT)
     return s, session, (host_secret or app_secret), bytes.fromhex(hello["client_nonce"])
 
 
@@ -123,8 +152,8 @@ def handshake(s, session, secret, cn):
     s.sendall(frame(HELLO_ACK, json.dumps({"protocol": 1, "mtu": MTU, "host_nonce": hn.hex(),
                                            "host_proof": proof(secret, "host", t).hex()}).encode()))
     ty, body = recv_frame(s)
-    assert ty == AUTH, NAMES.get(ty)
-    assert hmac.compare_digest(bytes.fromhex(json.loads(body)["android_proof"]), proof(secret, "android", t))
+    check(ty == AUTH, NAMES.get(ty))
+    check(hmac.compare_digest(bytes.fromhex(json.loads(body)["android_proof"]), proof(secret, "android", t)))
 
 
 def configure(s, mtu=MTU):
@@ -135,18 +164,18 @@ def configure(s, mtu=MTU):
 
 def expect_vpn_error(s, code):
     r = recv_frame(s)
-    assert r is not None, "app closed without VPN_ERROR"
+    check(r is not None, "app closed without VPN_ERROR")
     t, body = r
-    assert t == VPN_ERROR, f"got {NAMES.get(t)}"
+    check(t == VPN_ERROR, f"got {NAMES.get(t)}")
     e = json.loads(body)
-    assert e["code"] == code, e
-    assert recv_frame(s) is None, "socket still open after VPN_ERROR"
+    check(e["code"] == code, e)
+    check(recv_frame(s) is None, "socket still open after VPN_ERROR")
     return e
 
 
 def expect_closed(s):
     s.settimeout(10)
-    assert recv_frame(s) is None, "app kept the socket open"
+    check(recv_frame(s) is None, "app kept the socket open")
 
 
 # ---------------------------------------------------------------- cases
@@ -159,7 +188,7 @@ def case_wrong_secret():
     s.sendall(frame(HELLO_ACK, json.dumps({"protocol": 1, "mtu": MTU, "host_nonce": hn.hex(),
                                            "host_proof": proof(secret, "host", t).hex()}).encode()))
     expect_closed(s)
-    assert not vpn_up()
+    check(not vpn_up())
 
 
 def case_no_record():
@@ -199,7 +228,7 @@ def case_session_mismatch():
     ls.close()
     s.settimeout(15)
     t, body = recv_frame(s)
-    assert t == HELLO and json.loads(body)["session"] == session
+    check(t == HELLO and json.loads(body)["session"] == session)
     s.close()
 
 
@@ -220,7 +249,7 @@ def case_bad_frame_negotiated():
     handshake(s, session, secret, cn)
     s.sendall(frame(CONFIGURE_VPN, b"{}", version=2))
     expect_vpn_error(s, "protocol_error")
-    assert not vpn_up()
+    check(not vpn_up())
 
 
 def case_huge_control():
@@ -237,7 +266,7 @@ def case_config_rejected():
     handshake(s, session, secret, cn)
     configure(s, mtu=1300)
     expect_vpn_error(s, "config_rejected")
-    assert not vpn_up()
+    check(not vpn_up())
 
 
 def case_config_malformed():
@@ -254,10 +283,10 @@ def active(s, session, secret, cn):
     handshake(s, session, secret, cn)
     configure(s)
     t, body = recv_frame(s)
-    assert t == VPN_READY, NAMES.get(t)
+    check(t == VPN_READY, NAMES.get(t))
     r = json.loads(body)
-    assert r["mtu"] == MTU and r["addresses"] == [{"address": "10.91.0.7", "prefix": 32}], r
-    assert vpn_up()
+    check(r["mtu"] == MTU and r["addresses"] == [{"address": "10.91.0.7", "prefix": 32}], r)
+    check(vpn_up())
 
 
 def case_active_garbage():
@@ -267,7 +296,7 @@ def case_active_garbage():
     s.sendall(frame(IP_PACKET, b"", length=100_000))
     expect_vpn_error(s, "protocol_error")
     time.sleep(1)
-    assert not vpn_up(), "VPN still up after violation"
+    check(not vpn_up(), "VPN still up after violation")
 
 
 def case_active_out_of_state():
@@ -286,7 +315,7 @@ def case_bad_ipv4_is_dropped():
     s.sendall(frame(IP_PACKET, b"\x45\0\0\x10" + b"\0" * 27))  # total_length mismatch
     s.sendall(frame(PING))
     t, _ = recv_frame(s)
-    assert t == PONG, NAMES.get(t)
+    check(t == PONG, NAMES.get(t))
     s.sendall(frame(STOP)); s.close()
 
 
@@ -297,7 +326,7 @@ def case_host_stop():
     s.sendall(frame(STOP))
     expect_closed(s)
     time.sleep(1)
-    assert not vpn_up()
+    check(not vpn_up())
 
 
 def case_host_error():
@@ -307,7 +336,7 @@ def case_host_error():
     s.sendall(frame(ERROR, json.dumps({"code": "internal", "message": "test"}).encode()))
     expect_closed(s)
     time.sleep(1)
-    assert not vpn_up()
+    check(not vpn_up())
 
 
 def case_keepalive_dead():
@@ -322,21 +351,22 @@ def case_keepalive_dead():
         if r is None:
             break
         if r[0] == VPN_ERROR:  # §5.1: a silent host ends with internal
-            assert json.loads(r[1])["code"] == "internal", r[1]
-            assert recv_frame(s) is None, "socket still open after VPN_ERROR"
+            check(json.loads(r[1])["code"] == "internal", r[1])
+            check(recv_frame(s) is None, "socket still open after VPN_ERROR")
             break
-        assert r[0] == PING, NAMES.get(r[0])
+        check(r[0] == PING, NAMES.get(r[0]))
         pings += 1
-    assert pings >= 2, f"{pings} PINGs in 30 s of silence"
-    assert 28 < time.time() - t0 < 40, f"closed after {time.time() - t0:.0f}s"
+    check(pings >= 2, f"{pings} PINGs in 30 s of silence")
+    check(28 < time.time() - t0 < 40, f"closed after {time.time() - t0:.0f}s")
     time.sleep(1)
-    assert not vpn_up()
+    check(not vpn_up())
 
 
 CASES = {k[5:]: v for k, v in globals().items() if k.startswith("case_")}
 
 if __name__ == "__main__":
     SERIAL = sys.argv[1]
+    self_test()
     subprocess.run([os.path.join(os.path.dirname(os.path.abspath(__file__)), "prepare-device.sh"), SERIAL], check=True)
     names = list(CASES) if sys.argv[2:] == ["all"] else sys.argv[2:]
     if "keepalive_dead" in names and sys.argv[2:] == ["all"] and os.environ.get("SLOW") != "1":

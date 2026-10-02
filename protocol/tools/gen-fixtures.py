@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Generate protocol/fixtures/*.json from protocol/version-1.md.
+"""Generate protocol/fixtures/*.json, per protocol/version-1.md.
+
+The values are transcribed from the spec by hand; this script does not read it.
 
 Deterministic: rerunning produces identical files. Uses only the standard
 library so the fixtures do not depend on either implementation.
@@ -36,6 +38,8 @@ def j(obj):
 
 
 def ipv4_checksum(b):
+    if len(b) % 2:
+        b += b"\0"
     s = sum(struct.unpack(">%dH" % (len(b) // 2), b))
     while s >> 16:
         s = (s & 0xFFFF) + (s >> 16)
@@ -108,6 +112,8 @@ add("stop", "STOP", b"")
 PKT = icmp_echo("10.100.102.5", "10.100.102.222")
 add("ip_packet_icmp_echo", "IP_PACKET", PKT)
 # 20 bytes: a bare IPv4 header (protocol 59, no next header); the smallest legal body.
+# Its header checksum is 0, deliberately invalid: neither side verifies IPv4 checksums
+# (the kernel does), so this pins that a validator must not start rejecting it.
 add("ip_packet_min", "IP_PACKET",
     bytes([0x45, 0, 0, 20, 0, 0, 0, 0, 64, 59, 0, 0, 10, 0, 0, 2, 10, 0, 0, 1]))
 add("ip_packet_mtu", "IP_PACKET", icmp_echo("10.0.0.2", "10.0.0.1", payload=b"\x00" * (MTU - 28)))

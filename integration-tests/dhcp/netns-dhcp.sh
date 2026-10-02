@@ -26,6 +26,7 @@ if [[ $(id -u) -ne 0 ]]; then
     command -v unshare >/dev/null || { echo "not root and no unshare(1); run with sudo"; exit 2; }
     echo "[lab] not root: re-executing in an unprivileged user+net+mount namespace"
     export RD_DHCP_LAB_REEXEC=1
+    # shellcheck disable=SC2016 # $0 and $@ belong to the inner shell
     exec unshare -Urnm --propagation unchanged bash -c \
         'mount -t tmpfs none /run && mkdir -p /run/netns && exec "$0" "$@"' "$0" "$@"
 fi
@@ -110,7 +111,7 @@ on_exit() {
     local rc=$?
     teardown
     if [[ $rc -ne 0 && $FAILS -eq 0 ]]; then fail "script aborted (rc=$rc)"; fi
-    [[ ${KEEP_TMP:-0} -eq 1 ]] && log "kept $TMP" || rm -rf "$TMP"
+    if [[ ${KEEP_TMP:-0} -eq 1 || $FAILS -ne 0 ]]; then log "kept $TMP"; else rm -rf "$TMP"; fi
     if [[ $FAILS -eq 0 ]]; then log "ALL $PASSES CHECKS PASSED ($SKIPS skipped)"; exit 0; else log "$FAILS FAILED, $PASSES passed, $SKIPS skipped"; exit 1; fi
 }
 trap on_exit EXIT

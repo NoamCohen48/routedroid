@@ -9,6 +9,12 @@ runs `prepare-device.sh SERIAL`, which:
 
 No rig therefore waits for a tap.
 
+The shell rigs here and in `../helper/` share `../lib.sh`: one `check` helper, a namespace
+start that waits for the namespace instead of sleeping, and a scratch directory that is
+removed when every check passes and kept (its path printed) when one fails, or always with
+`KEEP_TMP=1`. `fake_host.py` first checks its own protocol builders against
+`protocol/fixtures/`, so it cannot drift from the real wire format unnoticed.
+
 | Rig | What it does |
 |---|---|
 | `userns.sh [SERIAL] [sigint\|app\|early]` | Runs a full `routedroid start` session, details below. `SQUAT=N` adds N silent local connections that take the app port first; the app must still get through. |

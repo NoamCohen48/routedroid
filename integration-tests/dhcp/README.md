@@ -28,8 +28,8 @@ sudo integration-tests/dhcp/netns-dhcp.sh
 Needs `dnsmasq`, `ip`, `python3`. Unprivileged mode needs user namespaces
 and the `veth` (and, for check 6, `8021q`) modules already loaded; check 6
 prints `SKIP` when VLAN netdevices cannot be created without root.
-`ROUTEDROID_DHCP=/path/to/binary` overrides the binary; `KEEP_TMP=1` keeps the
-logs, lease files, sniffer trace and state files. `ALL … PASSED` and exit 0
+`ROUTEDROID_DHCP=/path/to/binary` overrides the binary. The logs, lease files, sniffer
+trace and state files are kept when a check fails, or always with `KEEP_TMP=1`. `ALL … PASSED` and exit 0
 only when every check passes.
 
 Root-free unit tests: `(cd host && cargo test -p routedroid-dhcp)` — option
