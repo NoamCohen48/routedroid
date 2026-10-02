@@ -1,0 +1,92 @@
+# fmt, lints, tests and the no-root namespace rigs for the host; unit tests,
+# lint and a debug build for the app. The emulator rigs need a device and
+# run by hand (integration-tests/emulator/README.md).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: host
+    steps:
+      - uses: actions/checkout@v4
+      # rust-toolchain.toml picks the version; rustup installs it on first use.
+      - run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - name: Namespace rigs (helper)
+        run: |
+          # Ubuntu confines unprivileged user namespaces; the rigs need them.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo apt-get update -q && sudo apt-get install -yq nftables socat
+          cargo build --release --locked -p routedroid-helper --features testing
+          ../integration-tests/helper/kill-matrix.sh userns
+          ../integration-tests/helper/multi-session.sh
+
+  scripts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      # The golden fixtures are generated; a hand edit or a stale regeneration fails here.
+      - name: Fixtures match their generator
+        run: |
+          python3 protocol/tools/gen-fixtures.py
+          git diff --exit-code protocol/fixtures
+      - name: The emulator rig's protocol builders match the fixtures
+        run: python3 -c 'import importlib.util as u; s = u.spec_from_file_location("h", "integration-tests/emulator/fake_host.py"); m = u.module_from_spec(s); s.loader.exec_module(m); m.self_test()'
+      - name: shellcheck
+        run: shellcheck -x $(git ls-files '*.sh') integration-tests/lib.sh
+
+  fuzz:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: host/fuzz
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install nightly --profile minimal
+      - run: cargo +nightly install cargo-fuzz --locked
+      - name: One minute per target
+        run: |
+          for target in frame bodies bootstrap; do
+            cargo +nightly fuzz run "$target" -- -max_total_time=60
+          done
+
+  supply-chain:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: host/Cargo.toml
+
+  android:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon :protocol:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
