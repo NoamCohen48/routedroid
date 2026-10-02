@@ -2,11 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Declared on purpose: a third-party app cannot actually be granted it (signature|privileged|development). -->
     <uses-permission android:name="android.permission.DUMP" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <queries>
         <package android:name="dev.routedroid" />
         <provider android:authorities="dev.routedroid.bootstrap" />
     </queries>
-    <application android:label="Phase0 Hostile" android:allowBackup="false">
+    <application android:label="Routedroid hostile probe" android:allowBackup="false">
         <activity android:name=".HostileActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
