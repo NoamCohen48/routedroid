@@ -1366,6 +1366,7 @@ dependencies = [
  "netlink-packet-core",
  "netlink-packet-route",
  "netlink-sys",
+ "routedroid-dhcp",
  "routedroid-helper-ipc",
  "routedroid-proto",
  "rustix",

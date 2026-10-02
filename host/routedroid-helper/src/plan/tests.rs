@@ -17,6 +17,7 @@ fn request(phone_ip: &str) -> Request {
         phone_ip: ip(phone_ip),
         tun: IfName::new("phone0").unwrap(),
         mtu: 1400,
+        lease: None,
     }
 }
 
@@ -220,4 +221,48 @@ fn point_to_point_subnets_have_no_broadcast() {
     }];
     facts.routes.clear();
     build("10.0.0.3", &facts).unwrap();
+}
+
+#[test]
+fn a_lease_must_match_be_allowed_and_comes_first() {
+    let policy: Policy = format!("{POLICY}dhcp = true\n").parse().unwrap();
+    let leased = |phone_ip: &str, held: &str| {
+        let mut r = request(phone_ip);
+        r.lease = Some(crate::test_util::held(held));
+        Plan::build(SessionId::from_raw(7), r, &policy, &facts())
+    };
+    let plan = leased("10.0.0.144", "10.0.0.144").unwrap();
+    let ops = plan.ops();
+    assert_eq!(ops[0].label(), "lease:10.0.0.144@lan0");
+    assert_eq!(ops.len(), 7);
+    let mismatch = leased("10.0.0.144", "10.0.0.145").unwrap_err();
+    assert!(
+        mismatch.to_string().contains("the lease is for 10.0.0.145"),
+        "{mismatch}"
+    );
+    // The same checks as a requested address: a lease onto a neighbour is refused.
+    assert!(leased("10.0.0.9", "10.0.0.9").is_err());
+    let no_dhcp: Policy = POLICY.parse().unwrap();
+    let mut r = request("10.0.0.144");
+    r.lease = Some(crate::test_util::held("10.0.0.144"));
+    let refused = Plan::build(SessionId::from_raw(7), r, &no_dhcp, &facts()).unwrap_err();
+    assert_eq!(
+        refused.to_string(),
+        "the policy does not allow DHCP on lan0"
+    );
+}
+
+#[test]
+fn exclusions_name_every_address_a_lease_cannot_be() {
+    let excluded = exclusions(&facts());
+    for taken in [
+        "10.0.0.2",
+        "10.0.0.3",
+        "192.168.9.1",
+        "10.0.0.1",
+        "10.0.0.9",
+    ] {
+        assert!(excluded.contains(&ip(taken)), "{taken}: {excluded:?}");
+    }
+    assert!(!excluded.contains(&ip("10.0.0.5")));
 }

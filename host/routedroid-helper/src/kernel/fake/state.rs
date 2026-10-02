@@ -4,6 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::Ipv4Addr;
 
+use routedroid_dhcp::Held;
+
 use crate::kernel::{Address, Firewall, Link, LinkKind, NftTable, Route};
 use crate::op::SysctlKey;
 
@@ -16,6 +18,8 @@ pub struct State {
     pub tables: BTreeMap<String, (NftTable, Firewall)>,
     /// Values of existing interfaces' keys; unset ones read as "0".
     pub sysctls: BTreeMap<SysctlKey, String>,
+    /// Every lease RELEASEd, in order.
+    pub released: Vec<Held>,
     /// Names of trait methods that fail until removed.
     pub failing: BTreeSet<&'static str>,
     next_index: u32,

@@ -7,6 +7,7 @@ use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::{Result, bail};
+use routedroid_dhcp::Held;
 use routedroid_helper_ipc::IfName;
 
 use super::{
@@ -188,6 +189,11 @@ impl Kernel for Fake {
                 .cloned()
                 .unwrap_or_else(|| "0".into()),
         ))
+    }
+
+    fn release_lease(&self, lease: &Held) -> Result<()> {
+        self.call("release_lease")?.released.push(lease.clone());
+        Ok(())
     }
 
     fn sysctl_write(&self, key: &SysctlKey, value: &str) -> Result<()> {

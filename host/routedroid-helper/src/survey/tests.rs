@@ -9,6 +9,10 @@ const POLICY: &str = r#"
 [[interface]]
 name = "lan0"
 phone_addresses = ["10.0.0.200/29"]
+
+[[interface]]
+name = "br0"
+dhcp = true
 "#;
 
 /// lan0 (eligible, default route), wlan0 (no carrier), br0 with port eth1,
@@ -66,7 +70,7 @@ fn each_link_gets_a_verdict() {
         vec![
             ("lan0".into(), None),
             ("wlan0".into(), reason("no carrier (cable or Wi-Fi down)")),
-            ("br0".into(), reason("not in the helper policy")),
+            ("br0".into(), None),
             ("eth1".into(), reason("a port of br0; use that instead")),
             ("lo".into(), reason("loopback")),
             ("phone0".into(), reason("a phone's TUN")),
@@ -86,6 +90,9 @@ fn the_eligible_link_carries_its_details() {
     };
     assert_eq!(lan.addresses, vec![net("10.0.0.2", 24)]);
     assert_eq!(lan.phone_addresses, vec![net("10.0.0.200", 29)]);
+    assert!(!lan.dhcp);
+    let br0 = &all[2];
+    assert!(br0.dhcp && br0.phone_addresses.is_empty() && br0.ineligible.is_none());
     assert!(!all[1].up && !all[1].default_route);
 }
 

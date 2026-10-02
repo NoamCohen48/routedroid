@@ -102,3 +102,16 @@ fn claims_without_any_journal_are_collected() {
         assert_eq!(state.sysctls[&key("lan0", leaf)], "0", "{leaf:?} restored");
     }
 }
+
+#[test]
+fn a_crashed_sessions_lease_is_released() {
+    let lab = Lab::new();
+    let plan = lab.leased_plan(1, "phone0", "10.0.0.144").unwrap();
+    Session::start(Arc::clone(&lab.env), plan).unwrap().crash();
+    cleanup(&lab.env).unwrap();
+    assert_eq!(
+        lab.kernel.lock().released,
+        [crate::test_util::held("10.0.0.144")]
+    );
+    check(&lab.env.journal_dir).unwrap();
+}

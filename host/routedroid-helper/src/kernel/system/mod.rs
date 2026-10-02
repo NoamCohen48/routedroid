@@ -5,6 +5,7 @@ use std::net::Ipv4Addr;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
+use routedroid_dhcp::Held;
 use routedroid_helper_ipc::IfName;
 
 use super::{Address, Firewall, HostRoute, Kernel, Link, NftTable, Route};
@@ -89,6 +90,10 @@ impl Kernel for System {
 
     fn delete_nft_table(&self, handle: u64) -> Result<()> {
         nft::delete(&self.nft, handle)
+    }
+
+    fn release_lease(&self, lease: &Held) -> Result<()> {
+        routedroid_dhcp::release_now(lease)
     }
 
     fn sysctl_read(&self, key: &SysctlKey) -> Result<Option<String>> {

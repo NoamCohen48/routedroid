@@ -58,7 +58,7 @@ routed_via() { in_ns ip -4 route show "$1/32" | grep -q "$2"; }
 proxy_arp_held_by() { sysctl_is proxy_arp 1 && [[ $(claim_holders) -eq $1 ]]; }
 none_left() { ! compgen -G "$1" >/dev/null; }
 forward_dropped() {
-    in_ns nft list table inet routedroid_phone2 | grep -A4 'chain forward' \
+    in_ns nft list table inet routedroid_phone2 | grep -A8 'chain forward' \
         | grep 'iifname "phone2" counter packets' | grep -qv 'packets 0 '
 }
 baseline() { sysctl_is proxy_arp "$BASE_ARP" && sysctl_is forwarding "$BASE_FWD"; }
@@ -77,7 +77,7 @@ echo "== phone A cannot reach phone B through the host"
 client probe phone2 10.90.0.9 --bench 20 --bench-target $B_IP
 check "probe got no replies"       grep -q "replies=0" "$S/client-probe.log"
 check "forward chain dropped them" forward_dropped
-check "probe session torn down"    no_link phone2
+check "probe session torn down"    eventually no_link phone2
 
 echo "== refusals"
 client dup-tun phone0 10.90.0.10; check "duplicate TUN refused" grep -q "already exists" "$S/client-dup-tun.log"

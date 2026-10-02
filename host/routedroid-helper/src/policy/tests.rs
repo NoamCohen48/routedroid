@@ -11,7 +11,12 @@ phone_addresses = ["192.168.1.200/29", "192.168.1.250/32"]
 
 [[interface]]
 name = "eth0.100"
-phone_addresses = []
+dhcp = true
+
+[[interface]]
+name = "wlan0"
+phone_addresses = ["10.1.0.0/24"]
+dhcp = true
 "#;
 
 fn name(s: &str) -> IfName {
@@ -47,6 +52,34 @@ fn allows_only_listed_interfaces_and_addresses() {
 }
 
 #[test]
+fn leases_are_opt_in_and_bounded_by_the_blocks() {
+    let policy: Policy = TEXT.parse().unwrap();
+    let ip = |s: &str| s.parse::<Ipv4Addr>().unwrap();
+    assert!(!policy.dhcp("eno1") && policy.dhcp("eth0.100") && policy.dhcp("wlan0"));
+    assert_eq!(
+        policy.check_dhcp(&name("eno1")).unwrap_err().to_string(),
+        "the policy does not allow DHCP on eno1"
+    );
+    assert!(
+        policy
+            .check_leased(&name("eno1"), ip("192.168.1.203"))
+            .is_err()
+    );
+    policy
+        .check_leased(&name("eth0.100"), ip("172.16.9.9"))
+        .unwrap();
+    policy
+        .check_leased(&name("wlan0"), ip("10.1.0.77"))
+        .unwrap();
+    assert!(
+        policy
+            .check_leased(&name("wlan0"), ip("10.2.0.77"))
+            .is_err()
+    );
+    assert!(policy.check_dhcp(&name("docker0")).is_err());
+}
+
+#[test]
 fn an_empty_policy_allows_nothing() {
     let policy: Policy = "".parse().unwrap();
     assert!(
@@ -63,6 +96,8 @@ fn malformed_policies_are_refused() {
         "[[interface]]\nname = \"all\"\nphone_addresses = []\n",
         "[[interface]]\nname = \"eno1\"\nphone_addresses = [\"10.0.0.1/24\"]\n",
         "[[interface]]\nname = \"eno1\"\nphone_addresses = []\nextra = 1\n",
+        "[[interface]]\nname = \"eno1\"\nphone_addresses = []\ndhcp = false\n",
+        "[[interface]]\nname = \"eno1\"\ndhcp = \"yes\"\n",
         "allow_everything = true\n",
         "[[interface]]\nname = \"eno1\"\nphone_addresses = []\n[[interface]]\nname = \"eno1\"\nphone_addresses = []\n",
     ] {
