@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "routedroid-ipc",
     "routedroid-proto",
     "routedroid-helper-ipc",
     "routedroid-helper",
@@ -19,6 +20,7 @@ publish = false
 # Every external and internal dependency, versioned once; crates add features.
 [workspace.dependencies]
 routedroid-helper-ipc = { path = "routedroid-helper-ipc" }
+routedroid-ipc = { path = "routedroid-ipc" }
 routedroid-proto = { path = "routedroid-proto" }
 anyhow = "1"
 chrono = { version = "0.4", default-features = false }

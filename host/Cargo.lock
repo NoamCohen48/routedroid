@@ -417,6 +417,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "routedroid-ipc"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "routedroid-proto"
 version = "0.1.0"
 dependencies = [
