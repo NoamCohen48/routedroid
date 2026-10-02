@@ -1340,6 +1340,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "routedroid-dhcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "getrandom 0.3.4",
+ "libc",
+ "routedroid-helper-ipc",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "routedroid-helper"
 version = "0.1.0"
 dependencies = [
@@ -1349,6 +1366,7 @@ dependencies = [
  "netlink-packet-core",
  "netlink-packet-route",
  "netlink-sys",
+ "routedroid-dhcp",
  "routedroid-helper-ipc",
  "routedroid-proto",
  "rustix",
@@ -1367,6 +1385,7 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
+ "sha2",
  "socket2",
  "thiserror 2.0.20",
  "tokio",

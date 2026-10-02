@@ -25,7 +25,8 @@ const MAX_DNS: usize = 4;
 pub struct StartSpec {
     pub serial: String,
     pub lan_if: IfName,
-    pub phone_ip: Ipv4Addr,
+    /// `None` leases one from the LAN's DHCP server.
+    pub phone_ip: Option<Ipv4Addr>,
     pub tun: Option<IfName>,
     pub mtu: u32,
     pub dns: DnsChoice,
@@ -46,13 +47,11 @@ impl StartSpec {
             )));
         }
         let tun = request.tun.as_deref().map(tun_name).transpose()?;
-        let Some(phone_ip) = request.phone_ip else {
-            return Err(usage(
-                "phone_ip is required: leasing it by DHCP is not available yet",
-            ));
-        };
-        if !is_unicast_host(phone_ip) {
-            return Err(usage(format!("{phone_ip} is not a unicast host address")));
+        let phone_ip = request.phone_ip;
+        if let Some(ip) = phone_ip
+            && !is_unicast_host(ip)
+        {
+            return Err(usage(format!("{ip} is not a unicast host address")));
         }
         let mtu = request.mtu.unwrap_or(DEFAULT_MTU);
         if !MTU_RANGE.contains(&mtu) {
@@ -81,7 +80,8 @@ impl StartSpec {
 pub struct ConnectionSpec {
     pub serial: String,
     pub lan_if: IfName,
-    pub phone_ip: Ipv4Addr,
+    /// The requested address; `None` while (and after) leasing one.
+    pub phone_ip: Option<Ipv4Addr>,
     pub tun: IfName,
     pub mtu: u32,
     pub dns: DnsChoice,

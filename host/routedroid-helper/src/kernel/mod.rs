@@ -8,6 +8,7 @@
 use std::net::Ipv4Addr;
 
 use anyhow::Result;
+use routedroid_dhcp::Held;
 use routedroid_helper_ipc::IfName;
 
 use crate::op::SysctlKey;
@@ -125,6 +126,10 @@ pub trait Kernel: Send + Sync + 'static {
     fn create_firewall(&self, firewall: &Firewall) -> Result<()>;
     fn nft_table(&self, name: &str) -> Result<Option<NftTable>>;
     fn delete_nft_table(&self, handle: u64) -> Result<()>;
+
+    /// RELEASE a DHCP lease from its record. Fire and forget: the server
+    /// sends no reply, and one that never hears it lets the lease expire.
+    fn release_lease(&self, lease: &Held) -> Result<()>;
 
     /// `None` when the interface does not exist (any more).
     fn sysctl_read(&self, key: &SysctlKey) -> Result<Option<String>>;

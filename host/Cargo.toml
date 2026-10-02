@@ -7,6 +7,7 @@ members = [
     "routedroid-tui",
     "routedroid-proto",
     "routedroid-helper-ipc",
+    "routedroid-dhcp",
     "routedroid-helper",
 ]
 # cargo fuzz targets: nightly-only, built on their own.
@@ -22,6 +23,7 @@ publish = false
 
 # Every external and internal dependency, versioned once; crates add features.
 [workspace.dependencies]
+routedroid-dhcp = { path = "routedroid-dhcp", default-features = false }
 routedroid-helper-ipc = { path = "routedroid-helper-ipc" }
 routedroid-ipc = { path = "routedroid-ipc" }
 routedroid-proto = { path = "routedroid-proto" }

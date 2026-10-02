@@ -81,6 +81,13 @@ impl DeviceConnection {
         &self.spec
     }
 
+    /// The phone's address: requested, or leased once the helper has one.
+    pub fn phone_ip(&self) -> Option<std::net::Ipv4Addr> {
+        self.spec
+            .phone_ip
+            .or_else(|| self.network.borrow().as_ref().map(|n| n.phone_ip))
+    }
+
     pub fn state(&self) -> ConnectionState {
         self.state.borrow().clone()
     }

@@ -128,3 +128,31 @@ fn foreign_objects_with_our_names_are_never_touched() {
         "and never deleted by the rollback"
     );
 }
+
+#[test]
+fn a_held_lease_is_released_last() {
+    let lab = Lab::new();
+    let baseline = lab.kernel.snapshot();
+    let session = Session::start(
+        Arc::clone(&lab.env),
+        lab.leased_plan(1, "phone0", "10.0.0.144").unwrap(),
+    )
+    .unwrap();
+    assert!(lab.kernel.lock().released.is_empty());
+    lab.kernel.lock().failing.insert("release_lease");
+    let kept = Session::stop(session).unwrap_err();
+    assert!(format!("{kept:#}").contains("release_lease"), "{kept:#}");
+    assert_eq!(
+        lab.kernel.snapshot(),
+        baseline,
+        "everything else is undone first"
+    );
+    assert_eq!(lab.journals().len(), 1, "the lease keeps the journal");
+    lab.kernel.lock().failing.clear();
+    crate::recovery::cleanup(&lab.env).unwrap();
+    assert_eq!(
+        lab.kernel.lock().released,
+        [crate::test_util::held("10.0.0.144")]
+    );
+    assert!(lab.journals().is_empty());
+}

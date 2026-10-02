@@ -30,15 +30,19 @@ jobs:
           workspaces: host
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo clippy -p routedroid-helper --features testing --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
-      - name: Namespace rigs (helper)
+      - name: Namespace rigs (helper, DHCP)
         run: |
           # Ubuntu confines unprivileged user namespaces; the rigs need them.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          sudo apt-get update -q && sudo apt-get install -yq nftables socat
+          sudo apt-get update -q && sudo apt-get install -yq nftables dnsmasq socat
           cargo build --release --locked -p routedroid-helper --features testing
+          cargo build --release --locked -p routedroid-dhcp
           ../integration-tests/helper/kill-matrix.sh userns
           ../integration-tests/helper/multi-session.sh
+          ../integration-tests/helper/dhcp-session.sh
+          ../integration-tests/dhcp/netns-dhcp.sh
 
   scripts:
     runs-on: ubuntu-24.04
@@ -65,7 +69,7 @@ jobs:
       - run: cargo +nightly install cargo-fuzz --locked
       - name: One minute per target
         run: |
-          for target in frame bodies bootstrap; do
+          for target in frame bodies bootstrap dhcp; do
             cargo +nightly fuzz run "$target" -- -max_total_time=60
           done
 

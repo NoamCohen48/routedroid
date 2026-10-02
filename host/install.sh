@@ -10,7 +10,7 @@
 #   sudo ./install.sh [--uninstall]      (PREFIX defaults to /usr/local)
 #
 # Members of group `routedroid` can ask the helper for a TUN, a /32 route,
-# proxy ARP and forwarding on any interface and address
+# proxy ARP, forwarding and a DHCP lease on any interface and address
 # /etc/routedroid/helper.toml allows, and nothing else. A fresh install allows
 # nothing; edit the policy to enable. Uninstall removes binaries and units and
 # leaves the policy, /var/lib/routedroid and the group.
@@ -59,12 +59,16 @@ install -d -m 0755 "$BINDIR" "$LIBEXECDIR" /etc/routedroid "$USER_UNITS"
 if [[ ! -e /etc/routedroid/helper.toml ]]; then
     install -m 0644 /dev/stdin /etc/routedroid/helper.toml <<'POLICY'
 # Which LAN interfaces may carry phones, and which addresses phones may take
-# there. Owned by root, not writable by group or others, or the helper
-# refuses every session. `routedroid interfaces` shows what it allows. Example:
+# there: requested ones inside `phone_addresses`, and with `dhcp = true` an
+# address leased from the LAN's DHCP server (inside `phone_addresses` too, if
+# any are listed). Owned by root, not writable by group or others, or the
+# helper refuses every session. `routedroid interfaces` shows what it allows.
+# Example:
 #
 # [[interface]]
 # name = "eno1"
 # phone_addresses = ["192.168.1.200/29"]
+# dhcp = true
 POLICY
     echo "wrote /etc/routedroid/helper.toml (allows nothing yet; add your LAN interface)"
 fi

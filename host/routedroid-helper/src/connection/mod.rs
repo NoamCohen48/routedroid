@@ -1,7 +1,8 @@
 //! One controller's connection: `Hello`, then `Start` (both within
-//! [`SETUP_DEADLINE`]), then the relay, then the undo, which runs on every
-//! path out of the relay. The first invalid request closes the connection:
-//! a controller gets one well-formed attempt, not a retry loop.
+//! [`SETUP_DEADLINE`]), the phone's address settled (leased or probed),
+//! then the relay, then the undo, which runs on every path out of the
+//! relay. The first invalid request closes the connection: a controller
+//! gets one well-formed attempt, not a retry loop.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,14 +16,16 @@ use tracing::info;
 
 use crate::env::Env;
 use crate::kernel::System;
-use crate::plan::{Facts, Plan, Request as StartRequest};
-use crate::policy::Policy;
 use crate::session::Session;
-use crate::session_id::SessionId;
 
+mod address;
+mod keeper;
+mod lease;
 mod relay;
 mod setup;
 
+use address::{Refusal, Settled};
+use keeper::Kept;
 use relay::{Ended, Relay};
 use setup::setup;
 
@@ -42,21 +45,19 @@ pub async fn serve(
 ) -> Result<()> {
     let deadline = Instant::now() + SETUP_DEADLINE;
     let mut buf = vec![0u8; MAX_DATAGRAM];
-    let Some(request) = setup(&env, &conn, &mut buf, deadline).await? else {
+    let Some(start) = setup(&env, &conn, &mut buf, deadline).await? else {
         return Ok(());
     };
 
-    let prepared = {
-        let env = Arc::clone(&env);
-        spawn_blocking(move || prepare(&env, request)).await?
-    };
-    let plan = match prepared {
-        Ok(plan) => plan,
-        Err(e) => {
-            info!(reason = %format!("{e:#}"), "start refused");
-            let _ = conn
-                .send_control(&error(ErrorCode::Refused, format!("{e:#}")))
-                .await;
+    let Settled {
+        plan,
+        mut client,
+        bound,
+    } = match address::settle(&env, start).await {
+        Ok(settled) => settled,
+        Err(Refusal(code, reason)) => {
+            info!(?code, reason = %format!("{reason:#}"), "start refused");
+            let _ = conn.send_control(&error(code, format!("{reason:#}"))).await;
             return Ok(());
         }
     };
@@ -67,6 +68,7 @@ pub async fn serve(
     let session = match started {
         Ok(session) => session,
         Err(e) => {
+            lease::give_back(&mut client, bound.as_ref()).await;
             let _ = conn
                 .send_control(&error(ErrorCode::StartFailed, format!("{e:#}")))
                 .await;
@@ -74,18 +76,27 @@ pub async fn serve(
         }
     };
     let plan = session.plan();
-    info!(session = %plan.session(), tun = %plan.request().tun, phone = %plan.request().phone_ip, "session active");
+    let phone_ip = plan.request().phone_ip;
+    info!(session = %plan.session(), tun = %plan.request().tun, phone = %phone_ip, leased = bound.is_some(), "session active");
     env.hook.at("active");
 
-    let ended = relay_session(&conn, &session, shutdown).await;
+    let lease = bound.as_ref().map(|b| keeper::report(&b.lease));
+    let (keeper, mut kept) = keeper::spawn(client, bound, phone_ip);
+    let ended = relay_session(&conn, &session, lease, shutdown, &mut kept).await;
+    keeper.abort();
+    let _ = keeper.await;
     let stopped = spawn_blocking(move || session.stop())
         .await
         .context("undo panicked")?;
-    if ended == Ended::Stop {
-        let reply = match &stopped {
-            Ok(()) => Reply::Stopped,
-            Err(e) => error(ErrorCode::StopFailed, format!("{e:#}")),
-        };
+    let reply = match (&ended, &stopped) {
+        (Ended::Stop, Ok(())) => Some(Reply::Stopped),
+        (Ended::Failed(why), Ok(())) => Some(error(ErrorCode::SessionEnded, why.clone())),
+        (Ended::Stop | Ended::Failed(_), Err(e)) => {
+            Some(error(ErrorCode::StopFailed, format!("{e:#}")))
+        }
+        (Ended::Disconnected | Ended::Shutdown, _) => None,
+    };
+    if let Some(reply) = reply {
         let _ = conn.send_control(&reply).await;
     }
     stopped
@@ -95,14 +106,18 @@ pub async fn serve(
 async fn relay_session(
     conn: &SeqPacket,
     session: &Session<System>,
+    lease: Option<routedroid_helper_ipc::Lease>,
     shutdown: watch::Receiver<bool>,
+    kept: &mut tokio::sync::mpsc::Receiver<Kept>,
 ) -> Ended {
     let plan = session.plan();
     let started = Reply::Started {
         session: plan.session().to_string(),
         tun: plan.request().tun.clone(),
+        phone_ip: plan.request().phone_ip,
         host_ip: plan.host_ip(),
         lan_prefix: plan.lan_prefix(),
+        lease,
     };
     if let Err(e) = conn.send_control(&started).await {
         return Ended::Failed(format!("send Started: {e}"));
@@ -119,13 +134,6 @@ async fn relay_session(
         phone_ip: request.phone_ip,
         mtu: request.mtu as usize,
     }
-    .run(shutdown)
+    .run(shutdown, kept)
     .await
-}
-
-/// Read the operator's policy and the kernel, and decide.
-fn prepare(env: &Env<System>, request: StartRequest) -> Result<Plan> {
-    let policy = Policy::load(&env.policy)?;
-    let facts = Facts::gather(&env.kernel, &request.lan_if, &request.tun)?;
-    Plan::build(SessionId::random()?, request, &policy, &facts)
 }

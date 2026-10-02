@@ -1,13 +1,14 @@
 //! Control messages. The controller opens with `Hello`, then sends one
 //! `Start`; the session lives until `Stop` or until either side closes
 //! the connection. `Interfaces` may come before `Start`, any number of
-//! times: it only reads.
+//! times: it only reads. During a leased session the helper sends `Lease`
+//! after each renewal, unasked.
 
 use std::net::Ipv4Addr;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{IfName, Interface};
+use crate::{DeviceId, IfName, Interface};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -19,9 +20,12 @@ pub enum Request {
     },
     /// Bring up one phone. The helper derives the host address and LAN
     /// prefix from `lan_if` itself; the controller cannot pick them.
+    /// Without `phone_ip` the helper leases one from the LAN's DHCP server
+    /// under an identity derived from `device` and `lan_if`'s MAC.
     Start {
         lan_if: IfName,
-        phone_ip: Ipv4Addr,
+        phone_ip: Option<Ipv4Addr>,
+        device: DeviceId,
         tun: IfName,
         mtu: u32,
     },
@@ -42,8 +46,16 @@ pub enum Reply {
     Started {
         session: String,
         tun: IfName,
+        /// The requested address, or the leased one.
+        phone_ip: Ipv4Addr,
         host_ip: Ipv4Addr,
         lan_prefix: u8,
+        /// `None` for a requested address.
+        lease: Option<Lease>,
+    },
+    /// The lease was renewed; only during a leased session.
+    Lease {
+        lease: Lease,
     },
     Stopped,
     Pong,
@@ -54,6 +66,17 @@ pub enum Reply {
         code: ErrorCode,
         message: String,
     },
+}
+
+/// What the LAN's DHCP server granted the phone, beyond its address.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Lease {
+    pub server: Ipv4Addr,
+    pub router: Option<Ipv4Addr>,
+    pub dns: Vec<Ipv4Addr>,
+    /// Unix seconds when it runs out unless renewed.
+    pub expires_at: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -69,8 +92,14 @@ pub enum ErrorCode {
     Refused,
     /// Applying the session failed; whatever was applied has been undone.
     StartFailed,
+    /// No usable lease: no server answered, or every address offered was
+    /// in use.
+    NoLease,
     /// Some undo step failed; the journal is left for cleanup.
     StopFailed,
+    /// The session ended on the helper's side (the phone's address was lost,
+    /// the TUN failed) and has been undone. Unsolicited.
+    SessionEnded,
     /// A read-only request (`Interfaces`) could not be answered.
     QueryFailed,
 }

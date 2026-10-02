@@ -70,8 +70,10 @@ impl DeviceConnections {
         if live.contains_key(&start.serial) {
             return Err(usage(format!("{} is already connected", start.serial)));
         }
-        if let Some(other) = live.values().find(|c| c.spec().phone_ip == start.phone_ip) {
-            let (ip, serial) = (start.phone_ip, &other.spec().serial);
+        if let Some(ip) = start.phone_ip
+            && let Some(other) = live.values().find(|c| c.phone_ip() == Some(ip))
+        {
+            let serial = &other.spec().serial;
             return Err(usage(format!("{ip} is already used by {serial}")));
         }
         let taken = |name: &IfName| live.values().any(|c| &c.spec().tun == name);
