@@ -32,12 +32,20 @@ RuntimeDirectoryPreserve=yes
 UMask=0077
 Environment=RUST_LOG=info
 # Least privilege: root uid (for /proc/sys and nft) but only network capabilities.
+# CAP_NET_RAW (with AF_PACKET) is for DHCP on the phone's behalf.
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 ProtectKernelModules=yes
+# /proc/sys is read-only except the per-interface IPv4 leaves the helper
+# claims (conf/<if>/forwarding and proxy_arp); ip_forward, conf/all and
+# conf/default stay out of reach even for a buggy helper.
+ProtectKernelTunables=yes
+ReadWritePaths=/proc/sys/net/ipv4/conf
+ProtectProc=invisible
+PrivateIPC=yes
 ProtectKernelLogs=yes
 ProtectControlGroups=yes
 ProtectClock=yes
@@ -48,7 +56,11 @@ RestrictSUIDSGID=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
-RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# Everything is netlink (links, addresses, routes, nft) or the TUN; the
+# packets it relays never touch an IP socket of its own.
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_PACKET
+IPAddressDeny=any
 DevicePolicy=closed
 DeviceAllow=/dev/net/tun rw
-ReadWritePaths=/proc/sys/net/ipv4
