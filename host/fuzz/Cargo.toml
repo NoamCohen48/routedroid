@@ -1,5 +1,5 @@
 # cargo fuzz targets for everything that parses bytes a phone (or anyone on
-# it) can send. Outside the workspace: they need nightly and libFuzzer.
+# it) or a LAN station can send. Outside the workspace: they need nightly and libFuzzer.
 #   cargo +nightly fuzz run frame -- -max_total_time=60
 [package]
 name = "routedroid-fuzz"
@@ -12,6 +12,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+routedroid-dhcp = { path = "../routedroid-dhcp", default-features = false }
 routedroid-proto = { path = "../routedroid-proto" }
 
 [[bin]]
@@ -31,6 +32,13 @@ bench = false
 [[bin]]
 name = "bootstrap"
 path = "fuzz_targets/bootstrap.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dhcp"
+path = "fuzz_targets/dhcp.rs"
 test = false
 doc = false
 bench = false

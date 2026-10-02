@@ -67,7 +67,7 @@ jobs:
       - run: cargo +nightly install cargo-fuzz --locked
       - name: One minute per target
         run: |
-          for target in frame bodies bootstrap; do
+          for target in frame bodies bootstrap dhcp; do
             cargo +nightly fuzz run "$target" -- -max_total_time=60
           done
 
