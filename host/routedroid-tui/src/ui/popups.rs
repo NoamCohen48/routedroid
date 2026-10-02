@@ -36,7 +36,14 @@ pub fn start_form(frame: &mut Frame, form: &StartForm) {
             );
         }
         let color = if focused { Color::Cyan } else { Color::Reset };
-        lines.push(Line::from(value).fg(color));
+        let mut line = Line::from(Span::from(value).fg(color));
+        if let Some(hint) = (field == Field::PhoneIp)
+            .then(|| form.phone_hint())
+            .flatten()
+        {
+            line.push_span(Span::from(format!("  ({hint})")).dim());
+        }
+        lines.push(line);
         if focused {
             let row = area.y + 1 + lines.len() as u16 - 1;
             if let Some(input) = form.editable(field) {

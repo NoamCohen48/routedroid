@@ -6,7 +6,10 @@
 
 mod client;
 mod gateway;
+mod helper;
+mod interfaces;
 
 pub use client::HostNetwork;
 pub use gateway::default_gateway;
+pub use interfaces::interfaces;
 pub use routedroid_helper_ipc::DEFAULT_SOCKET;

@@ -10,6 +10,7 @@ fn interface(name: &str, default_route: bool, ineligible: Option<&str>) -> Inter
         up: true,
         addresses: vec![],
         default_route,
+        phone_addresses: vec![],
         ineligible: ineligible.map(Into::into),
     }
 }
@@ -113,4 +114,16 @@ fn invalid_fields_are_named_in_the_error() {
     form.dns = LineInput::default();
     form.timeout = LineInput::new("soon");
     assert!(error(&form).contains("timeout"));
+}
+
+#[test]
+fn the_phone_field_hints_the_allowed_blocks() {
+    let mut lan = interface("eno1", true, None);
+    lan.phone_addresses = vec![routedroid_ipc::Ipv4Net {
+        address: "10.0.0.200".parse().unwrap(),
+        prefix: 29,
+    }];
+    let form = StartForm::new("abc".into(), &[lan, interface("wlan0", false, None)]);
+    assert_eq!(form.phone_hint().as_deref(), Some("allowed: 10.0.0.200/29"));
+    assert_eq!(StartForm::new("abc".into(), &[]).phone_hint(), None);
 }

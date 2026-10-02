@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use routedroid_helper_ipc::{IfName, TUN_PREFIX};
-use routedroid_ipc::{ConnectionInfo, ConnectionState, Outcome, StartRequest};
+use routedroid_ipc::{ConnectionInfo, ConnectionState, InterfaceInfo, Outcome, StartRequest};
 
 use super::background::Background;
 use super::devices::AttachedDevices;
@@ -20,6 +20,7 @@ use super::DeviceConnection;
 use crate::adb::{Adb, DeviceState};
 use crate::device::unusable;
 use crate::fault::{Fault, Kind, Result};
+use crate::host_network;
 
 type Table = HashMap<String, DeviceConnection>;
 
@@ -111,6 +112,11 @@ impl DeviceConnections {
         if live.get(serial).is_some_and(|handle| handle.id() == id) {
             live.remove(serial);
         }
+    }
+
+    /// The helper's word on which links may carry phones.
+    pub async fn interfaces(&self) -> Result<Vec<InterfaceInfo>> {
+        host_network::interfaces(&self.helper_socket).await
     }
 
     pub fn info(&self) -> Vec<ConnectionInfo> {

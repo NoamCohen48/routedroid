@@ -9,7 +9,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use anyhow::{bail, Result};
 use routedroid_helper_ipc::IfName;
 
-use super::{Address, Firewall, HostRoute, Kernel, Link, NftTable, Route, ROUTE_PROTOCOL};
+use super::{
+    Address, Firewall, HostRoute, Kernel, Link, LinkKind, NftTable, Route, ROUTE_PROTOCOL,
+};
 use crate::op::{nft_table_name, SysctlKey};
 
 mod state;
@@ -67,6 +69,10 @@ impl Kernel for Fake {
         Ok(self.call("link")?.links.get(name.as_str()).cloned())
     }
 
+    fn links(&self) -> Result<Vec<Link>> {
+        Ok(self.call("links")?.links.values().cloned().collect())
+    }
+
     fn addresses(&self) -> Result<Vec<Address>> {
         Ok(self.call("addresses")?.addresses.clone())
     }
@@ -91,6 +97,7 @@ impl Kernel for Fake {
             bail!("create TUN {name}: EBUSY");
         }
         let index = state.add_link(name.as_str(), Some(alias));
+        state.links.get_mut(name.as_str()).expect("just added").kind = LinkKind::TunTap;
         Ok(FakeTun {
             state: self.clone(),
             index,

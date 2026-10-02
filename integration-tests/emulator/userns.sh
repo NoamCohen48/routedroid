@@ -39,6 +39,10 @@ for _ in $(seq 1 30); do [[ -S $S/control.sock ]] && break; sleep 0.1; done
 cleanup() { kill "$DPID" 2>/dev/null; wait "$DPID" 2>/dev/null; kill "$HPID" 2>/dev/null; kill "$NSPID" 2>/dev/null; }
 trap cleanup EXIT
 
+"$H/routedroid" --socket "$S/control.sock" interfaces > "$S/interfaces.txt" 2>&1
+check "interfaces: lan0 allowed" grep -Eq "^lan0 +up .*$HOST_IP/24 +$PHONE_IP/32$" "$S/interfaces.txt"
+check "interfaces: lo refused" grep -Eq '^lo .*no: loopback$' "$S/interfaces.txt"
+
 # Attached (no --detach): exits when the session ends, with the session's outcome as exit code.
 "$H/routedroid" --socket "$S/control.sock" start --serial "$SERIAL" --lan-if lan0 --phone-ip $PHONE_IP \
     --dns $HOST_IP > "$S/host.log" 2>&1 &

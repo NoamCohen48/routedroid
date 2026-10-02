@@ -1,7 +1,7 @@
 //! `routedroid interfaces`: where a phone may join the LAN, and why not elsewhere.
 
 use anyhow::Result;
-use routedroid_ipc::{Client, InterfaceInfo, Request, Response};
+use routedroid_ipc::{Client, InterfaceInfo, Ipv4Net, Request, Response};
 
 use super::answer;
 use crate::output::{header, print_json, print_table};
@@ -29,19 +29,25 @@ fn row(interface: &InterfaceInfo) -> Vec<String> {
         (true, false) => "up",
         (false, _) => "down",
     };
-    let addresses: Vec<String> = interface
-        .addresses
+    let verdict = match &interface.ineligible {
+        None => nets(&interface.phone_addresses),
+        Some(reason) => format!("no: {reason}"),
+    };
+    vec![
+        interface.name.clone(),
+        state.into(),
+        nets(&interface.addresses),
+        verdict,
+    ]
+}
+
+fn nets(nets: &[Ipv4Net]) -> String {
+    if nets.is_empty() {
+        return "-".into();
+    }
+    let nets: Vec<String> = nets
         .iter()
         .map(|net| format!("{}/{}", net.address, net.prefix))
         .collect();
-    let verdict = match &interface.ineligible {
-        None => "allowed".to_string(),
-        Some(reason) => format!("no: {reason}"),
-    };
-    let addresses = if addresses.is_empty() {
-        "-".into()
-    } else {
-        addresses.join(" ")
-    };
-    vec![interface.name.clone(), state.into(), addresses, verdict]
+    nets.join(" ")
 }

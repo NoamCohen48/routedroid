@@ -108,6 +108,20 @@ impl StartForm {
         }
     }
 
+    /// The blocks the helper allows phones to take on the picked interface.
+    pub fn phone_hint(&self) -> Option<String> {
+        let picked = self
+            .choices
+            .iter()
+            .find(|i| i.name == self.lan_if.value())?;
+        let blocks: Vec<String> = picked
+            .phone_addresses
+            .iter()
+            .map(|net| format!("{}/{}", net.address, net.prefix))
+            .collect();
+        (!blocks.is_empty()).then(|| format!("allowed: {}", blocks.join(" ")))
+    }
+
     pub fn picking(&self) -> bool {
         self.focused == Field::LanIf && !self.choices.is_empty()
     }

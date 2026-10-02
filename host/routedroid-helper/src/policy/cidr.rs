@@ -15,6 +15,14 @@ pub struct Cidr {
 }
 
 impl Cidr {
+    pub fn network(&self) -> Ipv4Addr {
+        self.network
+    }
+
+    pub fn prefix(&self) -> u8 {
+        self.len
+    }
+
     pub fn contains(&self, addr: Ipv4Addr) -> bool {
         u32::from(addr) & mask(self.len) == u32::from(self.network)
     }

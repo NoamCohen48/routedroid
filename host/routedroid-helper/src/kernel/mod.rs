@@ -26,7 +26,26 @@ pub const ROUTE_PROTOCOL: u8 = 82;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Link {
     pub index: u32,
+    pub name: String,
     pub alias: Option<String>,
+    pub kind: LinkKind,
+    /// Administratively up (`IFF_UP`).
+    pub up: bool,
+    /// The lower layer is up (`IFF_LOWER_UP`): a cable, an association.
+    pub carrier: bool,
+    /// The bridge or bond this link is a port of.
+    pub master: Option<u32>,
+}
+
+/// What a link is, as far as carrying a phone goes: proxy ARP needs a link
+/// that speaks ARP, which TUN/TAP devices and loopback do not usefully.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkKind {
+    Loopback,
+    Ethernet,
+    TunTap,
+    /// Any other link layer (WireGuard, PPP, CAN, ...).
+    Other,
 }
 
 /// One IPv4 address the host owns.
@@ -88,6 +107,7 @@ pub trait Kernel: Send + Sync + 'static {
     type Tun: Send + 'static;
 
     fn link(&self, name: &IfName) -> Result<Option<Link>>;
+    fn links(&self) -> Result<Vec<Link>>;
     fn addresses(&self) -> Result<Vec<Address>>;
     /// Addresses the kernel currently believes are on-link neighbours of `index`.
     fn neighbours(&self, index: u32) -> Result<Vec<Ipv4Addr>>;

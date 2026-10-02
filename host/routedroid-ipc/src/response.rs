@@ -64,6 +64,8 @@ pub struct InterfaceInfo {
     pub addresses: Vec<Ipv4Net>,
     /// The host's default route leaves through this interface.
     pub default_route: bool,
+    /// The blocks the helper's policy lets phones take here; empty if none.
+    pub phone_addresses: Vec<Ipv4Net>,
     /// `None` when a phone may join the LAN through it; otherwise why not.
     pub ineligible: Option<String>,
 }

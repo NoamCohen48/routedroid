@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::Ipv4Addr;
 
-use crate::kernel::{Address, Firewall, Link, NftTable, Route};
+use crate::kernel::{Address, Firewall, Link, LinkKind, NftTable, Route};
 use crate::op::SysctlKey;
 
 #[derive(Default)]
@@ -23,11 +23,17 @@ pub struct State {
 }
 
 impl State {
+    /// An Ethernet link, up, with carrier.
     pub fn add_link(&mut self, name: &str, alias: Option<&str>) -> u32 {
         self.next_index += 1;
         let link = Link {
             index: self.next_index,
+            name: name.to_owned(),
             alias: alias.map(str::to_owned),
+            kind: LinkKind::Ethernet,
+            up: true,
+            carrier: true,
+            master: None,
         };
         self.links.insert(name.to_owned(), link);
         self.next_index

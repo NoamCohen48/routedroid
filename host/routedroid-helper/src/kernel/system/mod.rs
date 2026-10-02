@@ -41,6 +41,10 @@ impl Kernel for System {
         link::find(name)
     }
 
+    fn links(&self) -> Result<Vec<Link>> {
+        link::all()
+    }
+
     fn addresses(&self) -> Result<Vec<Address>> {
         neighbourhood::addresses()
     }

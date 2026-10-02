@@ -7,13 +7,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
-use routedroid_helper_ipc::{
-    Datagram, ErrorCode, Reply, Request, SeqPacket, MAX_DATAGRAM, VERSION,
-};
+use routedroid_helper_ipc::{ErrorCode, Reply, SeqPacket, MAX_DATAGRAM};
 use tokio::sync::watch;
 use tokio::task::spawn_blocking;
-use tokio::time::{timeout_at, Instant};
-use tracing::{info, warn};
+use tokio::time::Instant;
+use tracing::info;
 
 use crate::env::Env;
 use crate::kernel::System;
@@ -23,12 +21,14 @@ use crate::session::Session;
 use crate::session_id::SessionId;
 
 mod relay;
+mod setup;
 
 use relay::{Ended, Relay};
+use setup::setup;
 
 pub const SETUP_DEADLINE: Duration = Duration::from_secs(10);
 
-fn error(code: ErrorCode, message: impl Into<String>) -> Reply {
+pub(crate) fn error(code: ErrorCode, message: impl Into<String>) -> Reply {
     Reply::Error {
         code,
         message: message.into(),
@@ -42,7 +42,7 @@ pub async fn serve(
 ) -> Result<()> {
     let deadline = Instant::now() + SETUP_DEADLINE;
     let mut buf = vec![0u8; MAX_DATAGRAM];
-    let Some(request) = setup(&conn, &mut buf, deadline).await? else {
+    let Some(request) = setup(&env, &conn, &mut buf, deadline).await? else {
         return Ok(());
     };
 
@@ -128,69 +128,4 @@ fn prepare(env: &Env<System>, request: StartRequest) -> Result<Plan> {
     let policy = Policy::load(&env.policy)?;
     let facts = Facts::gather(&env.kernel, &request.lan_if, &request.tun)?;
     Plan::build(SessionId::random()?, request, &policy, &facts)
-}
-
-/// `Hello` then `Start`. `None`: the controller left, stopped, or was refused.
-async fn setup(
-    conn: &SeqPacket,
-    buf: &mut [u8],
-    deadline: Instant,
-) -> Result<Option<StartRequest>> {
-    let mut greeted = false;
-    loop {
-        let received = match timeout_at(deadline, conn.recv(buf)).await {
-            Ok(received) => received?,
-            Err(_) => {
-                warn!("controller did not start a session in time");
-                let _ = conn
-                    .send_control(&error(
-                        ErrorCode::BadRequest,
-                        "no Start within the deadline",
-                    ))
-                    .await;
-                return Ok(None);
-            }
-        };
-        let Some(datagram) = received else {
-            return Ok(None);
-        };
-        let reply = match (greeted, Datagram::<Request>::decode(datagram)) {
-            (false, Ok(Datagram::Control(Request::Hello { version }))) if version == VERSION => {
-                greeted = true;
-                conn.send_control(&Reply::Hello { version: VERSION })
-                    .await?;
-                continue;
-            }
-            (false, Ok(Datagram::Control(Request::Hello { version }))) => error(
-                ErrorCode::VersionMismatch,
-                format!("controller speaks helper IPC {version}, helper speaks {VERSION}"),
-            ),
-            (false, _) => error(ErrorCode::BadRequest, "expected Hello"),
-            (
-                true,
-                Ok(Datagram::Control(Request::Start {
-                    lan_if,
-                    phone_ip,
-                    tun,
-                    mtu,
-                })),
-            ) => {
-                return Ok(Some(StartRequest {
-                    lan_if,
-                    phone_ip,
-                    tun,
-                    mtu,
-                }));
-            }
-            (true, Ok(Datagram::Control(Request::Ping))) => {
-                conn.send_control(&Reply::Pong).await?;
-                continue;
-            }
-            (true, Ok(Datagram::Control(Request::Stop))) => Reply::Stopped,
-            (true, Ok(_)) => error(ErrorCode::OutOfState, "expected Start"),
-            (true, Err(e)) => error(ErrorCode::BadRequest, e.to_string()),
-        };
-        conn.send_control(&reply).await?;
-        return Ok(None);
-    }
 }

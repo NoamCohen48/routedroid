@@ -1,4 +1,5 @@
 use super::*;
+use crate::Net;
 
 #[test]
 fn wire_shape_is_stable() {
@@ -23,6 +24,27 @@ fn wire_shape_is_stable() {
     assert_eq!(
         serde_json::to_string(&error).unwrap(),
         r#"{"type":"error","code":"start_failed","message":"m"}"#
+    );
+    let interfaces = Reply::Interfaces {
+        interfaces: vec![Interface {
+            name: "eno1".into(),
+            up: true,
+            addresses: vec![Net {
+                address: Ipv4Addr::new(10, 0, 0, 2),
+                prefix: 24,
+            }],
+            default_route: true,
+            phone_addresses: vec![],
+            ineligible: Some("not in the policy".into()),
+        }],
+    };
+    assert_eq!(
+        serde_json::to_string(&interfaces).unwrap(),
+        concat!(
+            r#"{"type":"interfaces","interfaces":[{"name":"eno1","up":true,"#,
+            r#""addresses":[{"address":"10.0.0.2","prefix":24}],"default_route":true,"#,
+            r#""phone_addresses":[],"ineligible":"not in the policy"}]}"#
+        )
     );
 }
 

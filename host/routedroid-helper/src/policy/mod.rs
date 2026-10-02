@@ -63,6 +63,14 @@ impl Policy {
             .with_context(|| format!("policy {}", path.display()))
     }
 
+    /// The blocks phones may take on `lan_if`; empty when it is not allowed.
+    pub fn phone_addresses(&self, lan_if: &str) -> &[Cidr] {
+        self.interfaces
+            .iter()
+            .find(|i| i.name.as_str() == lan_if)
+            .map_or(&[], |i| &i.phone_addresses)
+    }
+
     /// Why the operator does not allow `phone_ip` on `lan_if`, if they don't.
     pub fn check(&self, lan_if: &IfName, phone_ip: Ipv4Addr) -> Result<()> {
         let Some(interface) = self.interfaces.iter().find(|i| &i.name == lan_if) else {

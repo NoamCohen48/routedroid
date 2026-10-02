@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::{Address, Route};
+use crate::kernel::{Address, Link, LinkKind, Route};
 
 const POLICY: &str = r#"
 [[interface]]
@@ -36,7 +36,15 @@ fn facts() -> Facts {
         protocol: 4,
     };
     Facts {
-        lan: Some(2),
+        lan: Some(Link {
+            index: 2,
+            name: "lan0".into(),
+            alias: None,
+            kind: LinkKind::Ethernet,
+            up: true,
+            carrier: true,
+            master: None,
+        }),
         tun_exists: false,
         addresses: vec![
             address(3, "192.168.9.1", 24),
@@ -150,6 +158,24 @@ fn only_the_operators_interfaces_and_addresses() {
     );
     facts.lan = None;
     assert_eq!(refusal("10.0.0.5", &facts), "lan0 does not exist");
+}
+
+#[test]
+fn the_lan_must_be_able_to_carry_phones() {
+    let refused = |change: fn(&mut Link)| {
+        let mut facts = facts();
+        change(facts.lan.as_mut().unwrap());
+        refusal("10.0.0.5", &facts)
+    };
+    assert_eq!(
+        refused(|l| l.kind = LinkKind::Other),
+        "lan0 cannot carry phones: not Ethernet (proxy ARP needs ARP)"
+    );
+    assert_eq!(
+        refused(|l| l.master = Some(9)),
+        "lan0 cannot carry phones: a port of a bridge or bond; use that instead"
+    );
+    assert_eq!(refused(|l| l.up = false), "lan0 cannot carry phones: down");
 }
 
 #[test]

@@ -39,9 +39,9 @@ impl Answer for Handles {
             Request::Status => Response::Status {
                 connections: self.connections.info(),
             },
-            Request::Interfaces => Response::Error {
-                kind: Kind::Internal,
-                message: "interfaces: not available yet".into(),
+            Request::Interfaces => match self.connections.interfaces().await {
+                Ok(interfaces) => Response::Interfaces { interfaces },
+                Err(fault) => error(fault),
             },
             Request::Start(start) => {
                 let serial = start.serial.clone();

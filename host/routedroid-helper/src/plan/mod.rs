@@ -12,6 +12,7 @@ use crate::kernel::Firewall;
 use crate::op::{Leaf, Op};
 use crate::policy::{mask, Policy};
 use crate::session_id::SessionId;
+use crate::survey::unsuitable;
 
 mod facts;
 
@@ -61,9 +62,13 @@ impl Plan {
             "MTU {mtu} is outside {MTU_RANGE:?}"
         );
         policy.check(lan_if, phone_ip)?;
-        let Some(lan) = facts.lan else {
+        let Some(lan) = &facts.lan else {
             bail!("{lan_if} does not exist")
         };
+        if let Some(reason) = unsuitable(lan, &[]) {
+            bail!("{lan_if} cannot carry phones: {reason}");
+        }
+        let lan = lan.index;
         ensure!(!facts.tun_exists, "{tun} already exists");
 
         let subnet = |a: &crate::kernel::Address| u32::from(a.addr) & mask(a.prefix);

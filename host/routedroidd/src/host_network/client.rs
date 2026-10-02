@@ -2,11 +2,12 @@ use std::net::Ipv4Addr;
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{bail, Context};
-use routedroid_helper_ipc::{Datagram, IfName, Reply, Request, SeqPacket, MAX_DATAGRAM, VERSION};
+use anyhow::Context;
+use routedroid_helper_ipc::{Datagram, IfName, Reply, Request, SeqPacket, MAX_DATAGRAM};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
+use super::helper::{self, request};
 use crate::fault::{Fault, FaultExt, Kind, Result};
 use crate::session::{Inject, PacketEndpoints, QUEUE_DEPTH};
 
@@ -26,22 +27,6 @@ pub struct HostNetwork {
     pub session: String,
 }
 
-/// Send `request` and wait for its reply, skipping packets.
-async fn request(conn: &SeqPacket, request: &Request) -> anyhow::Result<Reply> {
-    conn.send_control(request).await.context("send to helper")?;
-    let mut buf = vec![0u8; MAX_DATAGRAM];
-    loop {
-        let Some(datagram) = conn.recv(&mut buf).await.context("recv from helper")? else {
-            bail!("helper closed the connection");
-        };
-        if let Datagram::Control(reply) =
-            Datagram::<Reply>::decode(datagram).context("decode helper reply")?
-        {
-            return Ok(reply);
-        }
-    }
-}
-
 impl HostNetwork {
     /// Connect, agree on the IPC version and issue `Start`; the helper
     /// picks host address and prefix.
@@ -58,27 +43,7 @@ impl HostNetwork {
             tun: tun.clone(),
             mtu,
         };
-        let conn = SeqPacket::connect(socket)
-            .with_context(|| format!("connect to helper socket {}", socket.display()))
-            .fault(Kind::Helper)?;
-        match request(&conn, &Request::Hello { version: VERSION })
-            .await
-            .fault(Kind::Helper)?
-        {
-            Reply::Hello { .. } => {}
-            Reply::Error { code, message } => {
-                return Err(Fault::msg(
-                    Kind::Helper,
-                    format!("helper refused the handshake: {code:?}: {message}"),
-                ))
-            }
-            other => {
-                return Err(Fault::msg(
-                    Kind::Helper,
-                    format!("unexpected helper reply {other:?}"),
-                ))
-            }
-        }
+        let conn = helper::connect(socket).await?;
         match request(&conn, &start).await.fault(Kind::Helper)? {
             Reply::Started {
                 session,

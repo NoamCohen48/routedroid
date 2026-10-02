@@ -28,6 +28,7 @@ mod serve;
 mod session;
 mod session_id;
 mod storage;
+mod survey;
 #[cfg(test)]
 mod test_util;
 

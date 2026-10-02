@@ -8,12 +8,12 @@ use std::net::Ipv4Addr;
 use anyhow::Result;
 use routedroid_helper_ipc::IfName;
 
-use crate::kernel::{Address, Kernel, Route};
+use crate::kernel::{Address, Kernel, Link, Route};
 
 #[derive(Debug, Clone, Default)]
 pub struct Facts {
-    /// The LAN interface's index, if it exists.
-    pub lan: Option<u32>,
+    /// The LAN interface, if it exists.
+    pub lan: Option<Link>,
     pub tun_exists: bool,
     /// Every IPv4 address the host owns, on any interface.
     pub addresses: Vec<Address>,
@@ -25,16 +25,16 @@ pub struct Facts {
 
 impl Facts {
     pub fn gather(kernel: &impl Kernel, lan_if: &IfName, tun: &IfName) -> Result<Self> {
-        let lan = kernel.link(lan_if)?.map(|link| link.index);
+        let lan = kernel.link(lan_if)?;
         Ok(Self {
+            neighbours: match &lan {
+                Some(link) => kernel.neighbours(link.index)?,
+                None => Vec::new(),
+            },
             lan,
             tun_exists: kernel.link(tun)?.is_some(),
             addresses: kernel.addresses()?,
             routes: kernel.routes()?,
-            neighbours: match lan {
-                Some(index) => kernel.neighbours(index)?,
-                None => Vec::new(),
-            },
         })
     }
 }

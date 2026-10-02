@@ -1,12 +1,13 @@
 //! Control messages. The controller opens with `Hello`, then sends one
 //! `Start`; the session lives until `Stop` or until either side closes
-//! the connection.
+//! the connection. `Interfaces` may come before `Start`, any number of
+//! times: it only reads.
 
 use std::net::Ipv4Addr;
 
 use serde::{Deserialize, Serialize};
 
-use crate::IfName;
+use crate::{IfName, Interface};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -27,6 +28,9 @@ pub enum Request {
     /// Undo everything and reply `Stopped`; the connection then ends.
     Stop,
     Ping,
+    /// List the host's links and where phones may join; answered with
+    /// `Reply::Interfaces`.
+    Interfaces,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,6 +47,9 @@ pub enum Reply {
     },
     Stopped,
     Pong,
+    Interfaces {
+        interfaces: Vec<Interface>,
+    },
     Error {
         code: ErrorCode,
         message: String,
@@ -64,6 +71,8 @@ pub enum ErrorCode {
     StartFailed,
     /// Some undo step failed; the journal is left for cleanup.
     StopFailed,
+    /// A read-only request (`Interfaces`) could not be answered.
+    QueryFailed,
 }
 
 #[cfg(test)]
