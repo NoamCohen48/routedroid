@@ -21,21 +21,21 @@ path = "src/bin/client/main.rs"
 required-features = ["testing"]
 
 [dependencies]
-routedroid-helper-ipc = { path = "../routedroid-helper-ipc" }
-anyhow = "1"
-clap = { version = "4", features = ["derive"] }
-libc = "0.2"
-rustix = { version = "1", features = ["fs", "net", "process", "rand"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tokio = { version = "1", features = ["full"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-netlink-packet-route = "0.33.0"
-netlink-packet-core = "0.9.0"
-netlink-sys = "0.9.0"
-toml = { version = "0.9", default-features = false, features = ["parse", "serde"] }
-routedroid-proto = { version = "0.1.0", path = "../routedroid-proto" }
+routedroid-helper-ipc.workspace = true
+routedroid-proto.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+libc.workspace = true
+netlink-packet-core.workspace = true
+netlink-packet-route.workspace = true
+netlink-sys.workspace = true
+rustix = { workspace = true, features = ["fs", "net", "process", "rand"] }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
+toml = { workspace = true, features = ["parse", "serde"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [lints]
 workspace = true

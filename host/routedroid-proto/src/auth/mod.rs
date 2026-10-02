@@ -66,7 +66,7 @@ impl std::fmt::Debug for Secret {
 
 pub fn random_bytes<const N: usize>() -> Result<[u8; N], getrandom::Error> {
     let mut b = [0u8; N];
-    getrandom::getrandom(&mut b)?;
+    getrandom::fill(&mut b)?;
     Ok(b)
 }
 

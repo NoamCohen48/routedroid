@@ -21,6 +21,39 @@ rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 publish = false
 
+# Every external and internal dependency, versioned once; crates add features.
+[workspace.dependencies]
+routedroid-helper-ipc = { path = "routedroid-helper-ipc" }
+routedroid-ipc = { path = "routedroid-ipc" }
+routedroid-proto = { path = "routedroid-proto" }
+anyhow = "1"
+chrono = { version = "0.4", default-features = false }
+clap = { version = "4", features = ["derive"] }
+crossterm = "0.29"
+futures-util = { version = "0.3", default-features = false }
+getrandom = { version = "0.3", features = ["std"] }
+hex = "0.4"
+hmac = "0.12"
+humantime = "2"
+libc = "0.2"
+netlink-packet-core = "0.9"
+netlink-packet-route = "0.33"
+netlink-sys = "0.9"
+ratatui = "0.30"
+rustix = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+socket2 = "0.6"
+subtle = "2"
+thiserror = "2"
+tokio = { version = "1", default-features = false }
+tokio-util = "0.7"
+toml = { version = "0.9", default-features = false }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+zeroize = "1"
+
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 unused_qualifications = "warn"

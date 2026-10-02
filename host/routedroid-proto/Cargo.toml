@@ -11,19 +11,19 @@ default = ["tokio"]
 tokio = ["dep:tokio"]
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-hmac = "0.12"
-sha2 = "0.10"
-subtle = "2"
-hex = "0.4"
-zeroize = "1"
-getrandom = { version = "0.2", features = ["std"] }
-thiserror = "1"
-tokio = { version = "1", features = ["io-util"], optional = true }
+getrandom.workspace = true
+hex.workspace = true
+hmac.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["io-util"], optional = true }
+zeroize.workspace = true
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt", "io-util"] }
+tokio = { workspace = true, features = ["macros", "rt", "io-util"] }
 
 [lints]
 workspace = true
