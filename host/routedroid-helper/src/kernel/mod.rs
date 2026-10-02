@@ -60,11 +60,61 @@ pub struct Address {
 /// One IPv4 route, from any table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Route {
+    pub table: u32,
     pub dst: Ipv4Addr,
     pub prefix: u8,
     pub gateway: Option<Ipv4Addr>,
     pub oif: Option<u32>,
     pub protocol: u8,
+}
+
+/// The kernel's main routing table (`RT_TABLE_MAIN`).
+pub const MAIN_TABLE: u32 = 254;
+
+/// One IPv4 policy-routing rule (`ip rule`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rule {
+    pub priority: u32,
+    pub table: u32,
+    /// `from src/src_len`; `None` matches every source.
+    pub src: Option<(Ipv4Addr, u8)>,
+    pub protocol: u8,
+}
+
+/// Where a phone's own traffic is routed: rule `from phone_ip/32 lookup
+/// table` at [`EGRESS_PRIORITY`], and in `table` only the LAN (its subnet
+/// and, if known, its gateway) over an `unreachable` default at the highest
+/// metric, so nothing the phone sends follows another interface's route,
+/// not even once the LAN's own routes are gone. Rule and routes carry
+/// [`ROUTE_PROTOCOL`]; undo removes exactly those.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Egress {
+    pub phone_ip: Ipv4Addr,
+    pub table: u32,
+    pub lan_net: Ipv4Addr,
+    pub prefix: u8,
+    pub gateway: Option<Ipv4Addr>,
+}
+
+/// Ahead of `main` (32766) and of the rules VPN clients install in the
+/// thousands, behind `local` (0), so the host's own addresses stay local.
+pub const EGRESS_PRIORITY: u32 = 1082;
+
+impl Egress {
+    /// The rule this egress installs.
+    pub fn rule(&self) -> Rule {
+        Rule {
+            priority: EGRESS_PRIORITY,
+            table: self.table,
+            src: Some((self.phone_ip, 32)),
+            protocol: ROUTE_PROTOCOL,
+        }
+    }
+
+    /// Whether `route` is one of this egress's own.
+    pub fn owns(&self, route: &Route) -> bool {
+        route.table == self.table && route.protocol == ROUTE_PROTOCOL
+    }
 }
 
 /// The session's `/32` towards the phone. Installed with [`ROUTE_PROTOCOL`];
@@ -113,6 +163,7 @@ pub trait Kernel: Send + Sync + 'static {
     /// Addresses the kernel currently believes are on-link neighbours of `index`.
     fn neighbours(&self, index: u32) -> Result<Vec<Ipv4Addr>>;
     fn routes(&self) -> Result<Vec<Route>>;
+    fn rules(&self) -> Result<Vec<Rule>>;
 
     /// A new TUN (fails if the name exists), alias-tagged, with `mtu`, up.
     fn create_tun(&self, name: &IfName, alias: &str, mtu: u32) -> Result<Self::Tun>;
@@ -121,6 +172,12 @@ pub trait Kernel: Send + Sync + 'static {
     /// Fails if any route for the destination already exists (no replace).
     fn add_route(&self, route: &HostRoute) -> Result<()>;
     fn delete_route(&self, route: &HostRoute) -> Result<()>;
+
+    /// The table's routes (via `lan_index`), then the rule; fails if the
+    /// rule or any of the routes exists.
+    fn add_egress(&self, egress: &Egress, lan_index: u32) -> Result<()>;
+    /// Remove the rule and every route [`Egress::owns`]; absent ones are fine.
+    fn delete_egress(&self, egress: &Egress) -> Result<()>;
 
     /// Create `inet routedroid_<tun>` atomically; fails if the table exists.
     fn create_firewall(&self, firewall: &Firewall) -> Result<()>;

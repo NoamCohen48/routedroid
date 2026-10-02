@@ -77,7 +77,8 @@ pub async fn serve(
     };
     let plan = session.plan();
     let phone_ip = plan.request().phone_ip;
-    info!(session = %plan.session(), tun = %plan.request().tun, phone = %phone_ip, leased = bound.is_some(), "session active");
+    info!(session = %plan.session(), tun = %plan.request().tun, phone = %phone_ip, leased = bound.is_some(),
+          gateway = ?plan.gateway(), "session active");
     env.hook.at("active");
 
     let lease = bound.as_ref().map(|b| keeper::report(&b.lease));

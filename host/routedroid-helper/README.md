@@ -49,8 +49,16 @@ controller.
 
 Mutations per session, in order (deny-first): the lease (if any), TUN, nftables table
 `inet routedroid_<tun>` (one table per session), `forwarding` on the TUN and LAN
-interface, `proxy_arp` on the LAN interface, `/32` route to the phone via the
-TUN. A phone address that is already routed anywhere on the host is refused.
+interface, `proxy_arp` on the LAN interface, the phone's egress, `/32` route
+to the phone via the TUN. A phone address that is already routed anywhere on
+the host is refused.
+
+The **egress** keeps the phone's traffic on its LAN whatever the host's own
+default route is: rule `from <phone>/32 lookup <phone as a number>` (priority
+1082, proto 82), and in that table the LAN's subnet, its gateway (the lease's
+router, else the LAN interface's own default route; with neither, the LAN
+only) and an `unreachable` default. `ip rule` and `ip route show table all`
+show it while a session runs.
 
 ## Run
 
@@ -78,7 +86,9 @@ dnsmasq in network namespaces: a leased start (address, lease, DNS,
 client-id), traffic, the renewal at T1 with its ACK kept from the phone
 (`RENEW=0` skips the 70 s wait), RELEASE on stop and after a helper crash, a
 station claiming the address ending the session (and the DECLINE), a requested
-address in use refused, DHCP off in the policy and no server refused.
+address in use refused, DHCP off in the policy and no server refused; egress
+through the LAN's router while the host's default route is elsewhere, the LAN
+only without a gateway, and the LAN interface vanishing mid-session — 32 checks.
 
 ## Multi-session test
 
@@ -86,7 +96,7 @@ address in use refused, DHCP off in the policy and no server refused.
 interface through one helper (`serve --socket` serves every connection, the
 stand-in for `Accept=yes` instances), a third one probing phone-to-phone
 traffic, duplicate TUN / address refusals, refcounted sysctl restore, and one
-client's SIGKILL leaving the other session intact — 30 checks.
+client's SIGKILL leaving the other session intact — 32 checks.
 
 ## Kill tests
 
@@ -95,8 +105,8 @@ user namespace; cleanup is invoked the way `ExecStopPost` would). `sudo
 kill-matrix.sh systemd LAN_IF PHONE_IP` runs the same matrix against the real
 units; the installed policy must allow `LAN_IF` and `PHONE_IP`. Stages: client SIGKILL after start / mid-traffic / before stop /
 disconnect without Stop; helper SIGKILL at `pending`, `applied`, `done` of each
-of the six mutations, while `active`, and at `undo_pending`, `undo_applied`,
-`undone` of each — 231 checks. The systemd mode needs a helper built with
+of the seven mutations, while `active`, and at `undo_pending`, `undo_applied`,
+`undone` of each — 264 checks. The systemd mode needs a helper built with
 `--features testing` installed. The crash hook is a root-owned file
 (`/run/routedroid/crash-at`) the helper compares stage names against; it is
 deleted the moment it fires, so only one process dies per injected stage and the
