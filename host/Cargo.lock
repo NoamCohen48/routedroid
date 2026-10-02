@@ -1381,6 +1381,7 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
+ "sha2",
  "socket2",
  "thiserror 2.0.20",
  "tokio",
