@@ -9,13 +9,14 @@ use routedroid_dhcp::Held;
 use routedroid_helper_ipc::IfName;
 
 use crate::journal::Reservation;
-use crate::kernel::Firewall;
+use crate::kernel::{Egress, Firewall};
 use crate::op::{Leaf, Op};
 use crate::policy::Policy;
 use crate::session_id::SessionId;
 use crate::survey::unsuitable;
 
 mod address;
+mod egress;
 mod facts;
 
 pub use address::exclusions;
@@ -34,6 +35,8 @@ pub struct Request {
     pub tun: IfName,
     pub mtu: u32,
     pub lease: Option<Held>,
+    /// The lease's router: the phone's gateway, if it is on the LAN.
+    pub router: Option<Ipv4Addr>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +45,7 @@ pub struct Plan {
     request: Request,
     host_ip: Ipv4Addr,
     lan_prefix: u8,
+    egress: Egress,
 }
 
 impl Plan {
@@ -57,6 +61,7 @@ impl Plan {
             tun,
             mtu,
             lease,
+            router,
         } = &request;
         let phone_ip = *phone_ip;
         ensure!(
@@ -88,11 +93,13 @@ impl Plan {
         }
         ensure!(!facts.tun_exists, "{tun} already exists");
         let host = address::check(phone_ip, lan_if, lan.index, facts)?;
+        let egress = egress::plan(phone_ip, *router, lan.index, &host, facts)?;
 
         Ok(Self {
             session,
             host_ip: host.addr,
             lan_prefix: host.prefix,
+            egress,
             request,
         })
     }
@@ -111,6 +118,11 @@ impl Plan {
 
     pub fn lan_prefix(&self) -> u8 {
         self.lan_prefix
+    }
+
+    /// The phone's gateway on the LAN; `None` confines it to the LAN.
+    pub fn gateway(&self) -> Option<Ipv4Addr> {
+        self.egress.gateway
     }
 
     pub fn reservation(&self) -> Reservation {
@@ -137,7 +149,8 @@ impl Plan {
     }
 
     /// Mutations in application order. Deny-first: the firewall exists before
-    /// anything forwards, and the route that attracts traffic comes last.
+    /// anything forwards, the phone's egress before it can send, and the
+    /// route that attracts traffic comes last.
     /// A held lease comes first, so it is given back last.
     pub fn ops(&self) -> Vec<Op> {
         let Request {
@@ -165,6 +178,14 @@ impl Plan {
                 sysctl(tun, Leaf::Forwarding),
                 sysctl(lan_if, Leaf::Forwarding),
                 sysctl(lan_if, Leaf::ProxyArp),
+                Op::Egress {
+                    phone_ip: *phone_ip,
+                    lan_if: lan_if.clone(),
+                    table: self.egress.table,
+                    lan_net: self.egress.lan_net,
+                    prefix: self.egress.prefix,
+                    gateway: self.egress.gateway,
+                },
                 Op::Route {
                     dst: *phone_ip,
                     tun: tun.clone(),

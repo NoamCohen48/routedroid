@@ -35,6 +35,14 @@ pub fn apply<K: Kernel>(
             env.claims
                 .acquire(&env.kernel, session, &SysctlKey::new(ifname.clone(), *leaf))
         }
+        Op::Egress { lan_if, .. } => {
+            let lan = env
+                .kernel
+                .link(lan_if)?
+                .with_context(|| format!("{lan_if} is gone"))?;
+            let egress = op.egress().expect("an egress op");
+            env.kernel.add_egress(&egress, lan.index)
+        }
         Op::Route { dst, tun, src } => {
             let link = owned_link(&env.kernel, tun, session)?
                 .with_context(|| format!("{tun} is not ours"))?;
@@ -50,6 +58,13 @@ pub fn apply<K: Kernel>(
 pub fn undo<K: Kernel>(env: &Env<K>, session: SessionId, op: &Op) -> Result<()> {
     let kernel = &env.kernel;
     match op {
+        // Nothing can carry a RELEASE off a vanished interface; the lease expires.
+        Op::Lease {
+            lan_if, address, ..
+        } if kernel.link(lan_if)?.is_none() => {
+            warn!(%lan_if, %address, "cannot RELEASE: the interface is gone; the lease will expire");
+            Ok(())
+        }
         Op::Lease {
             lan_if,
             client_id,
@@ -87,6 +102,8 @@ pub fn undo<K: Kernel>(env: &Env<K>, session: SessionId, op: &Op) -> Result<()> 
             env.claims
                 .release(kernel, session, &SysctlKey::new(ifname.clone(), *leaf))
         }
+        // Rule and routes are identified by table and protocol, both ours.
+        Op::Egress { .. } => kernel.delete_egress(&op.egress().expect("an egress op")),
         Op::Route { dst, tun, src } => {
             // The route lives and dies with our TUN: no tagged TUN, no route.
             let Some(link) = owned_link(kernel, tun, session)? else {

@@ -30,6 +30,7 @@ pub fn all() -> Result<Vec<Route>> {
 
 fn entries(message: &RouteMessage) -> Vec<Route> {
     let mut route = Route {
+        table: u32::from(message.header.table),
         dst: Ipv4Addr::UNSPECIFIED,
         prefix: message.header.destination_prefix_length,
         gateway: None,
@@ -42,6 +43,8 @@ fn entries(message: &RouteMessage) -> Vec<Route> {
             RouteAttribute::Destination(RouteAddress::Inet(dst)) => route.dst = *dst,
             RouteAttribute::Gateway(RouteAddress::Inet(gateway)) => route.gateway = Some(*gateway),
             RouteAttribute::Oif(oif) => route.oif = Some(*oif),
+            // Tables past 255 only fit the attribute.
+            RouteAttribute::Table(table) => route.table = *table,
             RouteAttribute::MultiPath(next_hops) => {
                 hops.extend(next_hops.iter().map(|hop| Route {
                     gateway: hop.attributes.iter().find_map(|a| match a {

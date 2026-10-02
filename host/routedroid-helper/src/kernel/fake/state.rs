@@ -6,7 +6,7 @@ use std::net::Ipv4Addr;
 
 use routedroid_dhcp::Held;
 
-use crate::kernel::{Address, Firewall, Link, LinkKind, NftTable, Route};
+use crate::kernel::{Address, Firewall, Link, LinkKind, NftTable, Route, Rule};
 use crate::op::SysctlKey;
 
 #[derive(Default)]
@@ -15,6 +15,7 @@ pub struct State {
     pub addresses: Vec<Address>,
     pub neighbours: Vec<(u32, Ipv4Addr)>,
     pub routes: Vec<Route>,
+    pub rules: Vec<Rule>,
     pub tables: BTreeMap<String, (NftTable, Firewall)>,
     /// Values of existing interfaces' keys; unset ones read as "0".
     pub sysctls: BTreeMap<SysctlKey, String>,

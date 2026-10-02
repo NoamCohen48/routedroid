@@ -151,6 +151,7 @@ impl Lab {
             phone_ip: phone_ip.parse().unwrap(),
             tun: IfName::new(tun).unwrap(),
             mtu: 1400,
+            router: lease.as_ref().map(|held| held.server_id),
             lease,
         };
         let facts = Facts::gather(&self.kernel, &request.lan_if, &request.tun)?;

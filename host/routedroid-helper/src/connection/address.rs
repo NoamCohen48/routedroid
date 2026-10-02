@@ -86,6 +86,7 @@ pub async fn settle(env: &Arc<Env<System>>, start: Start) -> Result<Settled, Ref
         tun,
         mtu,
         lease: bound.as_ref().map(|b| b.lease.held()),
+        router: bound.as_ref().and_then(|b| b.lease.router),
     };
     let plan = SessionId::random().and_then(|id| Plan::build(id, request, &policy, &facts));
     let plan = match plan {
