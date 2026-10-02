@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Routedroid</string>
+    <string name="about">Puts this phone on your PC\'s network through the USB cable. The PC starts each connection with <tt>routedroid start</tt>; this screen shows it and lets you stop it.</string>
+    <string name="stop">Stop</string>
+    <string name="diagnostics_toggle">Diagnostics</string>
+    <string name="notification_channel">Connection to the PC</string>
+
+    <string name="state_idle">Not connected</string>
+    <string name="state_disconnected">Disconnected</string>
+    <string name="state_authenticating">Connecting to the PC…</string>
+    <string name="state_awaiting_consent">Waiting for VPN permission</string>
+    <string name="state_configuring">Setting up the connection…</string>
+    <string name="state_active">Connected to the PC</string>
+    <string name="state_stopping">Stopping…</string>
+
+    <string name="detail_idle">Connect the phone by USB and run <tt>routedroid start</tt> on the PC.</string>
+    <string name="detail_active">This phone is %1$s on the PC\'s network.</string>
+    <string name="hint_retry">Check the USB cable, then run <tt>routedroid start</tt> on the PC again.</string>
+
+    <string name="end_user_stopped">You stopped the connection.</string>
+    <string name="end_consent_denied">VPN permission was declined.</string>
+    <string name="end_consent_expired">VPN permission came too late; the PC stopped waiting.</string>
+    <string name="end_revoked">VPN permission was taken away, perhaps by another VPN app.</string>
+    <string name="end_superseded">The PC started a new connection.</string>
+    <string name="end_config_rejected">The PC sent settings this phone cannot use (%1$s).</string>
+    <string name="end_establish_failed">Android could not create the VPN (%1$s).</string>
+    <string name="end_failed">Something went wrong on this phone (%1$s).</string>
+    <string name="end_host_unreachable">Could not reach the PC over USB.</string>
+    <string name="end_auth_failed">The PC could not prove it started this connection.</string>
+    <string name="end_host_stopped">The PC stopped the connection.</string>
+    <string name="end_host_closed">The connection to the PC was lost.</string>
+    <string name="end_host_silent">The PC stopped responding.</string>
+    <string name="end_host_refused">The PC refused the connection (%1$s).</string>
+    <string name="end_timed_out">The PC did not answer in time (waiting for %1$s).</string>
+    <string name="end_violation">The PC broke the protocol (%1$s).</string>
+
+    <string name="bootstrap_authenticating">Connecting to the PC…</string>
+    <string name="bootstrap_consent">The PC is waiting. Allow the VPN connection to put this phone on its network.</string>
+
+    <!-- Diagnostics rows, one per line; each ends in its number. -->
+    <string name="diag_mtu">MTU: %1$s</string>
+    <string name="diag_routes">Routes: %1$s</string>
+    <string name="diag_dns">DNS: %1$s</string>
+    <string name="diag_sent">Sent: packets %1$d, bytes %2$d</string>
+    <string name="diag_received">Received: packets %1$d, bytes %2$d</string>
+    <string name="diag_not_sent">Not sent: non-IPv4 %1$d, over the MTU %2$d</string>
+    <string name="diag_not_delivered">Not delivered: invalid %1$d</string>
+</resources>

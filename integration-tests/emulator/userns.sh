@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# End-to-end on an emulator without root: the helper runs in an
+# unprivileged user+network namespace (owns a dummy `lan0` and the TUN), while
+# `routedroidd` runs in the host namespace with the real adb server and the
+# `routedroid` CLI drives it over the control socket. The helper socket is a
+# Unix path, so it crosses the namespace boundary.
+#
+#   userns.sh [SERIAL] [sigint|app|early]   # how the session is ended
+#   SQUAT=N userns.sh ...    # N silent local connections take the app port
+#                            # as soon as it exists (any local user or phone
+#                            # app can); the app must still get through
+#   (early: Ctrl-C as soon as the app is launched; on an emulator with consent
+#   already granted the app usually connects first, so this mostly proves a stop
+#   right after Active with no traffic — a real early stop needs a fresh install)
+#
+# Needs: host/target/release/{routedroid,routedroidd,routedroid-helper}, the app
+# installed on the emulator (android/app/build/outputs/apk/debug/app-debug.apk), socat.
+set -u -o pipefail
+HERE=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source-path=SCRIPTDIR source=../lib.sh
+source "$HERE/../lib.sh"
+SERIAL=${1:-emulator-5554}; STOP_MODE=${2:-sigint}
+H=$HERE/../../host/target/release
+rig_tmp e2e
+PHONE_IP=10.90.0.7; HOST_IP=10.90.0.1
+"$HERE/prepare-device.sh" "$SERIAL"
+
+userns_start || exit 1
+in_ns ip link add lan0 type dummy
+in_ns ip addr add $HOST_IP/24 dev lan0
+in_ns ip link set lan0 up
+printf '[[interface]]\nname = "lan0"\nphone_addresses = ["%s/32"]\n' $PHONE_IP > "$S/helper.toml"
+in_ns "$H/routedroid-helper" --state-dir "$S/state" --policy "$S/helper.toml" serve --socket "$S/helper.sock" > "$S/helper.log" 2>&1 &
+HPID=$!
+wait_for_socket "$S/helper.sock"
+"$H/routedroidd" --log debug --socket "$S/control.sock" --helper-socket "$S/helper.sock" > "$S/daemon.log" 2>&1 &
+DPID=$!
+wait_for_socket "$S/control.sock"
+# Daemon first and wait for it, so its Stop reaches the helper before the helper dies.
+cleanup() { kill "$DPID" 2>/dev/null; wait "$DPID" 2>/dev/null; kill "$HPID" 2>/dev/null; kill "$NSPID" 2>/dev/null; }
+trap cleanup EXIT
+
+"$H/routedroid" --socket "$S/control.sock" interfaces > "$S/interfaces.txt" 2>&1
+check "interfaces: lan0 allowed" grep -Eq "^lan0 +up .*$HOST_IP/24 +$PHONE_IP/32$" "$S/interfaces.txt"
+check "interfaces: lo refused" grep -Eq '^lo .*no: loopback$' "$S/interfaces.txt"
+
+# Attached (no --detach): exits when the session ends, with the session's outcome as exit code.
+"$H/routedroid" --socket "$S/control.sock" start --serial "$SERIAL" --lan-if lan0 --phone-ip $PHONE_IP \
+    --dns $HOST_IP > "$S/host.log" 2>&1 &
+RPID=$!
+
+if [[ ${SQUAT:-0} -gt 0 ]]; then
+    (
+        for _ in $(seq 1 200); do
+            port=$(sed 's/\x1b\[[0-9;]*m//g' "$S/daemon.log" | grep -o 'host_port=[0-9]*' | head -1 | cut -d= -f2)
+            [[ -n $port ]] && break; sleep 0.02
+        done
+        for _ in $(seq 1 "$SQUAT"); do sleep 20 | socat - "TCP4:127.0.0.1:$port" >/dev/null 2>&1 & done
+        wait
+    ) &
+fi
+
+# Tap the notification / VPN consent dialogs if they appear.
+tap_button() { # tap_button TEXT -> 0 if tapped
+    adb -s "$SERIAL" shell rm -f /sdcard/ui.xml
+    adb -s "$SERIAL" shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || return 1
+    local b
+    b=$(adb -s "$SERIAL" shell cat /sdcard/ui.xml 2>/dev/null | grep -o "text=\"$1\"[^>]*bounds=\"\[[0-9]*,[0-9]*\]" | head -1 | grep -o '\[[0-9]*,[0-9]*\]' | tr -d '[]')
+    [[ -n $b ]] || return 1
+    adb -s "$SERIAL" shell input tap "${b%,*}" "${b#*,}"
+}
+if [[ $STOP_MODE == early ]]; then
+    for _ in $(seq 1 30); do grep -q 'waiting for the app' "$S/host.log" && break; sleep 0.5; done
+    check "app launched" grep -q 'waiting for the app' "$S/host.log"
+    kill -INT $RPID
+fi
+for _ in $(seq 1 40); do
+    [[ $STOP_MODE == early ]] && break
+    sleep 1
+    grep -q 'session Active' "$S/daemon.log" && break
+    kill -0 $RPID 2>/dev/null || break
+    for txt in Allow OK; do tap_button "$txt" && { echo "tapped $txt"; sleep 1; }; done
+done
+[[ $STOP_MODE == early ]] || check "session Active" grep -q 'session Active' "$S/daemon.log"
+[[ ${SQUAT:-0} -gt 0 ]] && check "app got through past $SQUAT squatters" \
+    bash -c "sed 's/\x1b\[[0-9;]*m//g' '$S/daemon.log' | grep -q 'past other connections others=$SQUAT'"
+
+if [[ $STOP_MODE != early ]] && grep -q 'session Active' "$S/daemon.log"; then
+    check "ping PC -> phone" in_ns ping -c 3 -W 2 $PHONE_IP
+    check "ping phone -> PC" adb -s "$SERIAL" shell ping -c 3 -W 2 $HOST_IP
+    head -c 200000 /dev/urandom > "$S/blob"
+    adb -s "$SERIAL" shell 'toybox nc -l -p 7000 > /data/local/tmp/blob' & sleep 1
+    in_ns sh -c "timeout 10 socat - TCP4:$PHONE_IP:7000 < '$S/blob'"; sleep 1
+    check "TCP PC -> phone 200 KB" [ "$(md5sum < "$S/blob" | cut -d' ' -f1)" = "$(adb -s "$SERIAL" shell md5sum /data/local/tmp/blob | cut -d' ' -f1)" ]
+    # Bulk phone -> PC: exercises host frame reads while ACKs flow the other way. The phone
+    # is the listener and sends the file (toybox nc as a client truncates file stdin).
+    head -c 2000000 /dev/urandom > "$S/big"; adb -s "$SERIAL" push "$S/big" /data/local/tmp/big >/dev/null
+    adb -s "$SERIAL" shell 'toybox nc -l -p 7001 < /data/local/tmp/big' & sleep 1
+    t0=$(date +%s%N)
+    in_ns sh -c "timeout 60 socat -u TCP4:$PHONE_IP:7001,readbytes=2000000 - > '$S/from_phone'"
+    echo "phone -> PC 2 MB in $(( ($(date +%s%N) - t0) / 1000000 )) ms"
+    check "TCP phone -> PC 2 MB" [ "$(md5sum < "$S/big" | cut -d' ' -f1)" = "$(md5sum < "$S/from_phone" | cut -d' ' -f1)" ]
+    if [[ $STOP_MODE == app ]]; then
+        adb -s "$SERIAL" shell am start -n dev.routedroid/.ui.MainActivity >/dev/null; sleep 2
+        tap_button Stop || tap_button STOP || echo "could not find the Stop button"
+        check "app STOP reaches host" bash -c "for _ in \$(seq 1 20); do grep -q 'peer sent STOP' '$S/daemon.log' && exit 0; sleep 0.5; done; exit 1"
+        # A locked screen or a missing button fails the check above; end the
+        # session anyway so the teardown checks still run.
+        grep -q 'peer sent STOP' "$S/daemon.log" || kill -INT $RPID
+    else
+        kill -INT $RPID
+    fi
+fi
+wait $RPID; rc=$?
+check "host exit 0" [ $rc -eq 0 ]
+check "daemon lists no connections" bash -c "\"$H/routedroid\" --socket '$S/control.sock' status | grep -q 'no connections'"
+check "helper acknowledged Stop" grep -q 'helper session stopped' "$S/daemon.log"
+check "reverse mapping removed" [ -z "$(adb -s "$SERIAL" reverse --list)" ]
+check "TUN gone" eval '! in_ns ip link show phone0 >/dev/null 2>&1'
+sleep 2
+[[ $STOP_MODE == early ]] || check "app session ended cleanly" bash -c "adb -s '$SERIAL' logcat -d -s DeviceLink | tail -1 | grep -Eq 'session ended: (UserStopped|HostStopped)$'"
+check "VPN address gone on phone" bash -c "! adb -s '$SERIAL' shell ip -4 addr | grep -q $PHONE_IP"
+kill -TERM $DPID; wait $DPID; drc=$?
+check "daemon exit 0" [ $drc -eq 0 ]
+rig_end
