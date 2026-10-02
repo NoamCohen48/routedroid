@@ -8,7 +8,7 @@
 #                                        #   (/etc/routedroid/helper.toml must allow both)
 #
 # For every crash stage the helper (or client) is SIGKILLed there, cleanup runs,
-# and route / nft / sysctl / link state is compared with the baseline snapshot.
+# and route (every table) / rule / nft / sysctl / link state is compared with the baseline snapshot.
 set -u -o pipefail
 MODE=${1:?userns|systemd}
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -36,7 +36,7 @@ if [[ $MODE == userns ]]; then
     run_cleanup() { "${HELPER[@]}" cleanup >> "$S/cleanup-$1.log" 2>&1; }
     run_check() { "${HELPER[@]}" check >/dev/null 2>&1; }
     kill_helper() { kill -KILL "$HPID" 2>/dev/null || true; }
-    snapshot() { in_ns ip -4 route show > "$1/route"; in_ns nft list ruleset > "$1/nft" 2>/dev/null || true
+    snapshot() { in_ns ip -4 route show table all > "$1/route"; in_ns ip -4 rule > "$1/rule"; in_ns nft list ruleset > "$1/nft" 2>/dev/null || true
                  for k in "net.ipv4.conf.$LAN_IF.forwarding" "net.ipv4.conf.$LAN_IF.proxy_arp"; do printf '%s=%s\n' "$k" "$(in_ns sysctl -n "$k")"; done > "$1/sysctl"
                  in_ns ip -br link | awk '{print $1}' | sort > "$1/links"; }
     cleanup_all() { kill "$NSPID" 2>/dev/null || true; }
@@ -57,7 +57,7 @@ else
     run_check() { "${HELPER[@]}" check >/dev/null 2>&1; }
     kill_helper() { systemctl kill -s KILL "$UNIT.service" 2>/dev/null || true; }
     # Live counters (Docker/firewalld chains) change on their own; compare structure only.
-    snapshot() { ip -4 route show > "$1/route"; nft list ruleset 2>/dev/null | sed -E 's/counter packets [0-9]+ bytes [0-9]+/counter/g' > "$1/nft" || true
+    snapshot() { ip -4 route show table all > "$1/route"; ip -4 rule > "$1/rule"; nft list ruleset 2>/dev/null | sed -E 's/counter packets [0-9]+ bytes [0-9]+/counter/g' > "$1/nft" || true
                  for k in "net.ipv4.conf.$LAN_IF.forwarding" "net.ipv4.conf.$LAN_IF.proxy_arp"; do printf '%s=%s\n' "$k" "$(sysctl -n "$k")"; done > "$1/sysctl"
                  ip -br link | awk '{print $1}' | sort > "$1/links"; }
     cleanup_all() { rm -f "$CRASH"; }
@@ -108,7 +108,7 @@ check "check passes"      run_check
 check "baseline restored" baseline_ok c-nostop
 
 # --------------------------------------------- helper dies at every boundary
-OPS=("tun:$TUN" "nft:inet:routedroid_$TUN" "sysctl:net.ipv4.conf.$TUN.forwarding" "sysctl:net.ipv4.conf.$LAN_IF.forwarding" "sysctl:net.ipv4.conf.$LAN_IF.proxy_arp" "route:$PHONE_IP/32@$TUN")
+OPS=("tun:$TUN" "nft:inet:routedroid_$TUN" "sysctl:net.ipv4.conf.$TUN.forwarding" "sysctl:net.ipv4.conf.$LAN_IF.forwarding" "sysctl:net.ipv4.conf.$LAN_IF.proxy_arp" "egress:$PHONE_IP@$LAN_IF" "route:$PHONE_IP/32@$TUN")
 STAGES=()
 for op in "${OPS[@]}"; do STAGES+=("pending:$op" "applied:$op" "done:$op"); done
 STAGES+=("active")

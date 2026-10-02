@@ -44,6 +44,7 @@ fn kernel() -> Fake {
         prefix: 8,
     });
     s.routes.push(Route {
+        table: crate::kernel::MAIN_TABLE,
         dst: "0.0.0.0".parse().unwrap(),
         prefix: 0,
         gateway: Some("10.0.0.1".parse().unwrap()),

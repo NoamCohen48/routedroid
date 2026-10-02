@@ -8,7 +8,8 @@
 # Checks: both TUNs and both per-session nft tables coexist; the LAN
 # interface's proxy_arp/forwarding are claimed once and restored only when
 # the last session ends (and left alone by the first one to end); a phone
-# cannot reach the other phone through the host; a duplicate TUN name or
+# cannot reach the other phone through the host (its own routing table
+# holds only the LAN); a duplicate TUN name or
 # phone address is refused; one controller's death undoes only its session.
 set -u -o pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -57,10 +58,9 @@ no_table() { ! has_table "$1"; }
 routed_via() { in_ns ip -4 route show "$1/32" | grep -q "$2"; }
 proxy_arp_held_by() { sysctl_is proxy_arp 1 && [[ $(claim_holders) -eq $1 ]]; }
 none_left() { ! compgen -G "$1" >/dev/null; }
-forward_dropped() {
-    in_ns nft list table inet routedroid_phone2 | grep -A8 'chain forward' \
-        | grep 'iifname "phone2" counter packets' | grep -qv 'packets 0 '
-}
+# The probe phone's own table: the LAN, and no route at all to B's TUN.
+egress_via_lan() { in_ns ip -4 route get 10.90.0.50 from 10.90.0.9 iif phone2 | grep -q "dev $LAN_IF table"; }
+no_path_to_b() { ! in_ns ip -4 route get "$B_IP" from 10.90.0.9 iif phone2 >/dev/null 2>&1; }
 baseline() { sysctl_is proxy_arp "$BASE_ARP" && sysctl_is forwarding "$BASE_FWD"; }
 
 echo "== two sessions up"
@@ -74,9 +74,12 @@ check "proxy_arp on, held by two"  proxy_arp_held_by 2
 check "route per phone"            eval "routed_via $A_IP phone0 && routed_via $B_IP phone1"
 
 echo "== phone A cannot reach phone B through the host"
-client probe phone2 10.90.0.9 --bench 20 --bench-target $B_IP
+client_bg probe phone2 10.90.0.9 --bench 20 --bench-target $B_IP --hold 2; PPID_=$!
+check "probe started"              started probe
+check "its egress is the LAN only" egress_via_lan
+check "and B is no route for it"   no_path_to_b
+wait $PPID_
 check "probe got no replies"       grep -q "replies=0" "$S/client-probe.log"
-check "forward chain dropped them" forward_dropped
 check "probe session torn down"    eventually no_link phone2
 
 echo "== refusals"

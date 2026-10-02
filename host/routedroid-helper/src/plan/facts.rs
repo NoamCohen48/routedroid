@@ -8,7 +8,7 @@ use std::net::Ipv4Addr;
 use anyhow::Result;
 use routedroid_helper_ipc::IfName;
 
-use crate::kernel::{Address, Kernel, Link, Route};
+use crate::kernel::{Address, Kernel, Link, Route, Rule};
 
 #[derive(Debug, Clone, Default)]
 pub struct Facts {
@@ -19,6 +19,7 @@ pub struct Facts {
     pub addresses: Vec<Address>,
     /// Every IPv4 route in every table.
     pub routes: Vec<Route>,
+    pub rules: Vec<Rule>,
     /// Neighbours the LAN interface currently knows.
     pub neighbours: Vec<Ipv4Addr>,
 }
@@ -35,6 +36,7 @@ impl Facts {
             tun_exists: kernel.link(tun)?.is_some(),
             addresses: kernel.addresses()?,
             routes: kernel.routes()?,
+            rules: kernel.rules()?,
         })
     }
 }

@@ -29,6 +29,17 @@ pub enum Op {
     NftTable { tun: IfName },
     /// A shared, reference-counted sysctl claim (see `claims`).
     Sysctl { ifname: IfName, leaf: Leaf },
+    /// The phone's own routing table and the rule that selects it (see
+    /// [`Egress`](crate::kernel::Egress)); the table is the phone's address
+    /// as a number, so the address reservation makes it the session's alone.
+    Egress {
+        phone_ip: Ipv4Addr,
+        lan_if: IfName,
+        table: u32,
+        lan_net: Ipv4Addr,
+        prefix: u8,
+        gateway: Option<Ipv4Addr>,
+    },
     /// `dst/32 dev tun src src` with Routedroid's route protocol number.
     Route {
         dst: Ipv4Addr,
@@ -49,7 +60,31 @@ impl Op {
             Op::Sysctl { ifname, leaf } => {
                 format!("sysctl:{}", SysctlKey::new(ifname.clone(), *leaf))
             }
+            Op::Egress {
+                phone_ip, lan_if, ..
+            } => format!("egress:{phone_ip}@{lan_if}"),
             Op::Route { dst, tun, .. } => format!("route:{dst}/32@{tun}"),
+        }
+    }
+
+    /// What an `Egress` op installs.
+    pub fn egress(&self) -> Option<crate::kernel::Egress> {
+        match *self {
+            Op::Egress {
+                phone_ip,
+                table,
+                lan_net,
+                prefix,
+                gateway,
+                ..
+            } => Some(crate::kernel::Egress {
+                phone_ip,
+                table,
+                lan_net,
+                prefix,
+                gateway,
+            }),
+            _ => None,
         }
     }
 }

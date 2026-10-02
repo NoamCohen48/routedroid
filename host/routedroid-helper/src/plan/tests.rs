@@ -18,6 +18,7 @@ fn request(phone_ip: &str) -> Request {
         tun: IfName::new("phone0").unwrap(),
         mtu: 1400,
         lease: None,
+        router: None,
     }
 }
 
@@ -30,6 +31,7 @@ fn facts() -> Facts {
         prefix,
     };
     let route = |dst: &str, prefix, gateway: Option<&str>| Route {
+        table: crate::kernel::MAIN_TABLE,
         dst: ip(dst),
         prefix,
         gateway: gateway.map(ip),
@@ -57,6 +59,7 @@ fn facts() -> Facts {
             route("10.0.0.0", 24, None),
             route("10.0.0.77", 32, None),
         ],
+        rules: vec![],
         neighbours: vec![ip("10.0.0.9")],
     }
 }
@@ -94,6 +97,7 @@ fn a_free_address_in_policy_is_planned() {
             "sysctl:net.ipv4.conf.phone0.forwarding",
             "sysctl:net.ipv4.conf.lan0.forwarding",
             "sysctl:net.ipv4.conf.lan0.proxy_arp",
+            "egress:10.0.0.5@lan0",
             "route:10.0.0.5/32@phone0",
         ]
     );
@@ -234,7 +238,7 @@ fn a_lease_must_match_be_allowed_and_comes_first() {
     let plan = leased("10.0.0.144", "10.0.0.144").unwrap();
     let ops = plan.ops();
     assert_eq!(ops[0].label(), "lease:10.0.0.144@lan0");
-    assert_eq!(ops.len(), 7);
+    assert_eq!(ops.len(), 8);
     let mismatch = leased("10.0.0.144", "10.0.0.145").unwrap_err();
     assert!(
         mismatch.to_string().contains("the lease is for 10.0.0.145"),
