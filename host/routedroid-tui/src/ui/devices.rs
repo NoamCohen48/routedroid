@@ -9,17 +9,25 @@ use crate::app::App;
 use crate::describe;
 
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
-    let header =
-        Row::new(["Serial", "Model", "ADB", "Usable", "Connection"]).style(Style::new().add_modifier(Modifier::BOLD));
+    let header = Row::new(["Serial", "Model", "ADB", "Usable", "Connection"])
+        .style(Style::new().add_modifier(Modifier::BOLD));
     let rows: Vec<Row> = if app.devices.is_empty() {
         vec![Row::new(["(no devices attached)", "", "", "", ""]).dim()]
     } else {
         app.devices
             .iter()
             .map(|device| {
-                let connection = device.connection.as_ref().map(describe::connection_state).unwrap_or_default();
+                let connection = device
+                    .connection
+                    .as_ref()
+                    .map(describe::connection_state)
+                    .unwrap_or_default();
                 let usable = describe::usable(device);
-                let usable_color = if device.unusable_reason.is_none() { Color::Green } else { Color::Yellow };
+                let usable_color = if device.unusable_reason.is_none() {
+                    Color::Green
+                } else {
+                    Color::Yellow
+                };
                 Row::new(vec![
                     device.serial.clone().into(),
                     device.model.clone().unwrap_or_default().into(),
@@ -42,6 +50,10 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         .block(Block::bordered().title(" Devices "))
         .row_highlight_style(Style::new().add_modifier(Modifier::REVERSED))
         .highlight_symbol("> ");
-    let mut state = TableState::default().with_selected(if app.devices.is_empty() { None } else { Some(app.cursor) });
+    let mut state = TableState::default().with_selected(if app.devices.is_empty() {
+        None
+    } else {
+        Some(app.cursor)
+    });
     frame.render_stateful_widget(table, area, &mut state);
 }

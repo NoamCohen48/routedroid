@@ -39,23 +39,40 @@ impl DevicePorts {
     pub async fn reserve(&self, host_port: u16, seed: u16) -> Result<ReservedPort> {
         let mut used = self.used().await?;
         for attempt in 0..ATTEMPTS {
-            let device_port = pick_device_port(&used, seed.wrapping_add(attempt.wrapping_mul(7919)))
-                .ok_or_else(|| Fault::msg(Kind::Adb, "no free device port in the Routedroid range"))?;
+            let device_port =
+                pick_device_port(&used, seed.wrapping_add(attempt.wrapping_mul(7919))).ok_or_else(
+                    || Fault::msg(Kind::Adb, "no free device port in the Routedroid range"),
+                )?;
             let Err(error) = self.adb.reverse_add(device_port, host_port).await else {
                 info!(device_port, host_port, "adb reverse mapping added");
-                return Ok(ReservedPort { device_port, host_port });
+                return Ok(ReservedPort {
+                    device_port,
+                    host_port,
+                });
             };
             used = self.used().await?;
             if !used.contains(&device_port) {
                 return Err(error);
             }
-            warn!(device_port, "device port taken by someone else meanwhile; trying another");
+            warn!(
+                device_port,
+                "device port taken by someone else meanwhile; trying another"
+            );
         }
-        Err(Fault::msg(Kind::Adb, format!("device ports kept being taken; gave up after {ATTEMPTS} attempts")))
+        Err(Fault::msg(
+            Kind::Adb,
+            format!("device ports kept being taken; gave up after {ATTEMPTS} attempts"),
+        ))
     }
 
     async fn used(&self) -> Result<Vec<u16>> {
-        Ok(self.adb.reverse_list().await?.iter().filter_map(ReverseMapping::device_port).collect())
+        Ok(self
+            .adb
+            .reverse_list()
+            .await?
+            .iter()
+            .filter_map(ReverseMapping::device_port)
+            .collect())
     }
 
     /// Remove the mapping if it is still exactly ours. Another controller (or
@@ -79,7 +96,10 @@ impl DevicePorts {
             return;
         }
         match self.adb.reverse_remove(port.device_port).await {
-            Ok(()) => info!(device_port = port.device_port, "adb reverse mapping removed"),
+            Ok(()) => info!(
+                device_port = port.device_port,
+                "adb reverse mapping removed"
+            ),
             Err(e) => warn!(error = %e, "failed to remove adb reverse mapping"),
         }
     }
@@ -89,11 +109,16 @@ impl DevicePorts {
 /// two controllers racing for the same device rarely collide.
 pub(super) fn pick_device_port(used: &[u16], seed: u16) -> Option<u16> {
     let len = DEVICE_PORT_RANGE.end() - DEVICE_PORT_RANGE.start() + 1;
-    (0..len).map(|i| DEVICE_PORT_RANGE.start() + (seed.wrapping_add(i)) % len).find(|p| !used.contains(p))
+    (0..len)
+        .map(|i| DEVICE_PORT_RANGE.start() + (seed.wrapping_add(i)) % len)
+        .find(|p| !used.contains(p))
 }
 
 /// Exactly one mapping for the device port, and it points at our host port.
 pub(super) fn is_exactly_ours(list: &[ReverseMapping], port: ReservedPort) -> bool {
-    let ours: Vec<_> = list.iter().filter(|m| m.device_port() == Some(port.device_port)).collect();
+    let ours: Vec<_> = list
+        .iter()
+        .filter(|m| m.device_port() == Some(port.device_port))
+        .collect();
     ours.len() == 1 && ours[0].local == format!("tcp:{}", port.host_port)
 }

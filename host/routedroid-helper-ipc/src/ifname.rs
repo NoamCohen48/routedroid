@@ -24,8 +24,14 @@ const RESERVED: [&str; 5] = [".", "..", "all", "default", "lo"];
 impl IfName {
     pub fn new(name: impl Into<String>) -> Result<Self, IfNameError> {
         let name = name.into();
-        let charset_ok = name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-'));
-        if name.is_empty() || name.len() > MAX_LEN || !charset_ok || name.starts_with('-') || RESERVED.contains(&&*name)
+        let charset_ok = name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-'));
+        if name.is_empty()
+            || name.len() > MAX_LEN
+            || !charset_ok
+            || name.starts_with('-')
+            || RESERVED.contains(&&*name)
         {
             return Err(IfNameError(name));
         }

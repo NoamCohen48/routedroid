@@ -66,11 +66,17 @@ pub struct Fault {
 
 impl Fault {
     pub fn new(kind: Kind, source: impl Into<anyhow::Error>) -> Self {
-        Self { kind, source: source.into() }
+        Self {
+            kind,
+            source: source.into(),
+        }
     }
 
     pub fn msg(kind: Kind, message: impl fmt::Display) -> Self {
-        Self { kind, source: anyhow::anyhow!("{message}") }
+        Self {
+            kind,
+            source: anyhow::anyhow!("{message}"),
+        }
     }
 
     pub fn kind(&self) -> Kind {

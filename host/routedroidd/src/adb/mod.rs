@@ -37,7 +37,10 @@ pub struct Adb {
 
 impl Adb {
     pub fn new(binary: &str, timeout: Duration) -> Self {
-        Self { binary: binary.to_string(), timeout }
+        Self {
+            binary: binary.to_string(),
+            timeout,
+        }
     }
 
     /// A handle for `adb -s SERIAL ...`. Cheap; nothing runs until a command does.
@@ -48,7 +51,9 @@ impl Adb {
     /// `adb devices -l`: every device the server knows about.
     pub async fn devices(&self) -> Result<Vec<Device>> {
         let mut c = Command::new(&self.binary);
-        c.args(["devices", "-l"]).stdin(Stdio::null()).kill_on_drop(true);
+        c.args(["devices", "-l"])
+            .stdin(Stdio::null())
+            .kill_on_drop(true);
         let out = tokio::time::timeout(self.timeout, c.output())
             .await
             .map_err(|_| Fault::msg(Kind::Adb, "adb devices timed out"))?
@@ -57,7 +62,10 @@ impl Adb {
         if !out.status.success() {
             return Err(Fault::msg(
                 Kind::Adb,
-                format!("adb devices failed: {}", String::from_utf8_lossy(&out.stderr).trim()),
+                format!(
+                    "adb devices failed: {}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                ),
             ));
         }
         Ok(parse_devices(&String::from_utf8_lossy(&out.stdout)))

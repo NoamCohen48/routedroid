@@ -21,18 +21,33 @@ fn name(s: &str) -> IfName {
 #[test]
 fn allows_only_listed_interfaces_and_addresses() {
     let policy: Policy = TEXT.parse().unwrap();
-    policy.check(&name("eno1"), "192.168.1.203".parse().unwrap()).unwrap();
-    policy.check(&name("eno1"), "192.168.1.250".parse().unwrap()).unwrap();
-    assert!(policy.check(&name("eno1"), "192.168.1.1".parse().unwrap()).is_err());
-    assert!(policy.check(&name("eth0.100"), "192.168.1.203".parse().unwrap()).is_err());
-    let err = policy.check(&name("docker0"), "192.168.1.203".parse().unwrap()).unwrap_err();
-    assert_eq!(err.to_string(), "docker0 is not an interface the policy allows");
+    policy
+        .check(&name("eno1"), "192.168.1.203".parse().unwrap())
+        .unwrap();
+    policy
+        .check(&name("eno1"), "192.168.1.250".parse().unwrap())
+        .unwrap();
+    assert!(policy
+        .check(&name("eno1"), "192.168.1.1".parse().unwrap())
+        .is_err());
+    assert!(policy
+        .check(&name("eth0.100"), "192.168.1.203".parse().unwrap())
+        .is_err());
+    let err = policy
+        .check(&name("docker0"), "192.168.1.203".parse().unwrap())
+        .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "docker0 is not an interface the policy allows"
+    );
 }
 
 #[test]
 fn an_empty_policy_allows_nothing() {
     let policy: Policy = "".parse().unwrap();
-    assert!(policy.check(&name("eno1"), "192.168.1.203".parse().unwrap()).is_err());
+    assert!(policy
+        .check(&name("eno1"), "192.168.1.203".parse().unwrap())
+        .is_err());
 }
 
 #[test]

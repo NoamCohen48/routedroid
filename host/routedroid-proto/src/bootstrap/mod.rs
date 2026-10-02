@@ -48,7 +48,11 @@ pub struct Record {
 
 /// Build a record. The returned buffer is zeroized on drop because it
 /// contains the secret. `None` for an invalid session id or port 0.
-pub fn encode(session: &str, device_port: u16, secret: &Secret) -> Option<Zeroizing<[u8; RECORD_LEN]>> {
+pub fn encode(
+    session: &str,
+    device_port: u16,
+    secret: &Secret,
+) -> Option<Zeroizing<[u8; RECORD_LEN]>> {
     if !valid_session(session) || device_port == 0 {
         return None;
     }
@@ -80,14 +84,21 @@ pub fn decode(bytes: &[u8]) -> Result<Record, RecordError> {
         return Err(RecordError::Port);
     }
     let field = &bytes[SESSION_AT..SECRET_AT];
-    let end = field.iter().position(|b| *b == 0).unwrap_or(SESSION_FIELD_LEN);
+    let end = field
+        .iter()
+        .position(|b| *b == 0)
+        .unwrap_or(SESSION_FIELD_LEN);
     let session = std::str::from_utf8(&field[..end]).map_err(|_| RecordError::Session)?;
     if !valid_session(session) || field[end..].iter().any(|b| *b != 0) {
         return Err(RecordError::Session);
     }
     let mut secret = [0u8; SECRET_LEN];
     secret.copy_from_slice(&bytes[SECRET_AT..]);
-    Ok(Record { session: session.to_string(), device_port, secret: Secret::new(secret) })
+    Ok(Record {
+        session: session.to_string(),
+        device_port,
+        secret: Secret::new(secret),
+    })
 }
 
 #[cfg(test)]

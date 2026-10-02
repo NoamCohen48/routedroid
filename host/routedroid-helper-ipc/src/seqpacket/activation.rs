@@ -30,14 +30,21 @@ impl Activation {
     /// the controller's connection nor believe they were activated. Call
     /// it before any other thread exists: it changes the environment.
     pub fn take() -> io::Result<Option<Self>> {
-        let Some(pid) = std::env::var_os("LISTEN_PID") else { return Ok(None) };
-        let pid: u32 = pid.to_str().and_then(|pid| pid.parse().ok()).ok_or_else(|| invalid("LISTEN_PID"))?;
+        let Some(pid) = std::env::var_os("LISTEN_PID") else {
+            return Ok(None);
+        };
+        let pid: u32 = pid
+            .to_str()
+            .and_then(|pid| pid.parse().ok())
+            .ok_or_else(|| invalid("LISTEN_PID"))?;
         if pid != std::process::id() {
             return Ok(None);
         }
         let fds = std::env::var("LISTEN_FDS").map_err(|_| invalid("LISTEN_FDS"))?;
         if fds != "1" {
-            return Err(invalid(&format!("LISTEN_FDS={fds} (exactly one socket expected)")));
+            return Err(invalid(&format!(
+                "LISTEN_FDS={fds} (exactly one socket expected)"
+            )));
         }
         for var in LISTEN_VARS {
             std::env::remove_var(var);
@@ -60,5 +67,8 @@ impl Activation {
 }
 
 fn invalid(what: &str) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, format!("bad socket activation: {what}"))
+    io::Error::new(
+        io::ErrorKind::InvalidInput,
+        format!("bad socket activation: {what}"),
+    )
 }

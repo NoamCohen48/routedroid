@@ -53,24 +53,50 @@ impl Journal {
     pub fn create(dir: &Path, session: SessionId, reservation: Reservation) -> Result<Self> {
         let _lock = storage::lock(dir)?;
         for path in dir::list(dir, dir::SUFFIX)? {
-            let other = dir::read_header(&path).context("cannot rule out a conflicting reservation")?;
+            let other =
+                dir::read_header(&path).context("cannot rule out a conflicting reservation")?;
             if other.reservation.conflicts(&reservation) {
-                bail!("{} or {} is held by session {}", reservation.tun, reservation.phone_ip, other.session);
+                bail!(
+                    "{} or {} is held by session {}",
+                    reservation.tun,
+                    reservation.phone_ip,
+                    other.session
+                );
             }
         }
-        let header = Header { version: VERSION, session, reservation };
+        let header = Header {
+            version: VERSION,
+            session,
+            reservation,
+        };
         let path = dir.join(format!("{session}.{}", dir::SUFFIX));
         let tmp = dir.join(format!("{session}.{}", dir::TMP_SUFFIX));
-        let mut file = storage::private_file(OpenOptions::new().append(true).create_new(true), &tmp)?;
-        rustix::fs::flock(&file, FlockOperation::NonBlockingLockExclusive).context("lock new journal")?;
+        let mut file =
+            storage::private_file(OpenOptions::new().append(true).create_new(true), &tmp)?;
+        rustix::fs::flock(&file, FlockOperation::NonBlockingLockExclusive)
+            .context("lock new journal")?;
         let written = write_line(&mut file, &header)
-            .and_then(|()| Ok(rustix::fs::renameat_with(CWD, &tmp, CWD, &path, RenameFlags::NOREPLACE)?))
+            .and_then(|()| {
+                Ok(rustix::fs::renameat_with(
+                    CWD,
+                    &tmp,
+                    CWD,
+                    &path,
+                    RenameFlags::NOREPLACE,
+                )?)
+            })
             .and_then(|()| storage::fsync_dir(dir));
         if let Err(e) = written {
             let _ = fs::remove_file(&tmp);
             return Err(e).with_context(|| format!("create {}", path.display()));
         }
-        Ok(Self { path, file, header, steps: Steps::default(), poisoned: false })
+        Ok(Self {
+            path,
+            file,
+            header,
+            steps: Steps::default(),
+            poisoned: false,
+        })
     }
 
     /// Lock an existing journal for recovery, then (and only then) read it.
@@ -89,17 +115,31 @@ impl Journal {
             return Ok(Taken::Gone);
         }
         let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes).with_context(|| format!("read {}", path.display()))?;
+        file.read_to_end(&mut bytes)
+            .with_context(|| format!("read {}", path.display()))?;
         let parsed = record::parse(&bytes).with_context(|| format!("parse {}", path.display()))?;
-        let stem = path.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_suffix(".journal"));
-        ensure!(stem == Some(&parsed.header.session.to_string()), "{} names another session", path.display());
+        let stem = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|n| n.strip_suffix(".journal"));
+        ensure!(
+            stem == Some(&parsed.header.session.to_string()),
+            "{} names another session",
+            path.display()
+        );
         if parsed.complete < bytes.len() {
             tracing::warn!(journal = %path.display(), "dropping a torn final line");
             file.set_len(parsed.complete as u64)?;
             file.sync_all()?;
         }
         let (header, steps) = (parsed.header, parsed.steps);
-        Ok(Taken::Orphan(Self { path: path.to_owned(), file, header, steps, poisoned: false }))
+        Ok(Taken::Orphan(Self {
+            path: path.to_owned(),
+            file,
+            header,
+            steps,
+            poisoned: false,
+        }))
     }
 
     pub fn session(&self) -> SessionId {
@@ -113,12 +153,20 @@ impl Journal {
     /// Record the intent to apply `op`; returns its step number.
     pub fn intend(&mut self, op: Op) -> Result<u32> {
         let seq = self.steps.next_seq();
-        self.append(Record { seq, phase: Phase::Pending, op: Some(op) })?;
+        self.append(Record {
+            seq,
+            phase: Phase::Pending,
+            op: Some(op),
+        })?;
         Ok(seq)
     }
 
     pub fn advance(&mut self, seq: u32, phase: Phase) -> Result<()> {
-        self.append(Record { seq, phase, op: None })
+        self.append(Record {
+            seq,
+            phase,
+            op: None,
+        })
     }
 
     pub fn outstanding(&self) -> Vec<(u32, Step)> {
@@ -127,13 +175,21 @@ impl Journal {
 
     /// Delete the journal; only legal once every step is undone.
     pub fn resolve(self) -> Result<()> {
-        ensure!(self.steps.outstanding().is_empty(), "{} still has steps to undo", self.path.display());
+        ensure!(
+            self.steps.outstanding().is_empty(),
+            "{} still has steps to undo",
+            self.path.display()
+        );
         fs::remove_file(&self.path).with_context(|| format!("remove {}", self.path.display()))?;
         storage::fsync_dir(self.path.parent().unwrap_or(Path::new(".")))
     }
 
     fn append(&mut self, record: Record) -> Result<()> {
-        ensure!(!self.poisoned, "{} failed an earlier write", self.path.display());
+        ensure!(
+            !self.poisoned,
+            "{} failed an earlier write",
+            self.path.display()
+        );
         self.steps.check(&record)?;
         if let Err(e) = write_line(&mut self.file, &record) {
             self.poisoned = true;

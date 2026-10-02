@@ -31,13 +31,17 @@ fn handle_normal(app: &mut App, code: KeyCode) -> Vec<Command> {
         KeyCode::Down | KeyCode::Char('j') => app.move_cursor(1),
         KeyCode::Char('r') => return vec![Command::RefreshDevices, Command::RefreshStatus],
         KeyCode::Char('s') => match app.selected_device() {
-            Some(device) if device.connection.is_some() => app.error(format!("{}: already connected", device.serial)),
+            Some(device) if device.connection.is_some() => {
+                app.error(format!("{}: already connected", device.serial))
+            }
             Some(device) => app.mode = Mode::StartForm(StartForm::new(device.serial.clone())),
             None => app.error("no device selected"),
         },
         KeyCode::Char('x') => match app.selected_device() {
             Some(device) if device.connection.is_some() => {
-                app.mode = Mode::ConfirmStop { serial: device.serial.clone() }
+                app.mode = Mode::ConfirmStop {
+                    serial: device.serial.clone(),
+                }
             }
             Some(device) => app.error(format!("{}: not connected", device.serial)),
             None => app.error("no device selected"),
@@ -71,7 +75,10 @@ fn handle_form(app: &mut App, key: KeyEvent, mut form: StartForm) -> Vec<Command
             return match form.to_request() {
                 Ok(request) => {
                     app.mode = Mode::Normal;
-                    app.info(format!("{}: starting on {} for {}", request.serial, request.lan_if, request.phone_ip));
+                    app.info(format!(
+                        "{}: starting on {} for {}",
+                        request.serial, request.lan_if, request.phone_ip
+                    ));
                     vec![Command::Start(request)]
                 }
                 Err(error) => {
@@ -83,7 +90,9 @@ fn handle_form(app: &mut App, key: KeyEvent, mut form: StartForm) -> Vec<Command
         KeyCode::Tab | KeyCode::Down => form.focus_next(),
         KeyCode::BackTab | KeyCode::Up => form.focus_previous(),
         KeyCode::Backspace => form.backspace(),
-        KeyCode::Char(character) if !key.modifiers.contains(KeyModifiers::CONTROL) => form.insert(character),
+        KeyCode::Char(character) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            form.insert(character)
+        }
         _ => {}
     }
     app.mode = Mode::StartForm(form);

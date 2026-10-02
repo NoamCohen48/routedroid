@@ -30,7 +30,11 @@ pub struct Options {
     pub once: bool,
 }
 
-pub async fn serve(env: Env<System>, options: Options, activation: Option<Activation>) -> Result<()> {
+pub async fn serve(
+    env: Env<System>,
+    options: Options,
+    activation: Option<Activation>,
+) -> Result<()> {
     let env = Arc::new(env);
     // Orphans cannot collide with new sessions (their journals reserve their
     // names), so a failed cleanup is reported, not fatal.
@@ -47,7 +51,10 @@ pub async fn serve(env: Env<System>, options: Options, activation: Option<Activa
         }
         Some(Activated::Listener(listener)) => listener,
         None => {
-            let path = options.socket.as_deref().context("--socket required without systemd activation")?;
+            let path = options
+                .socket
+                .as_deref()
+                .context("--socket required without systemd activation")?;
             Listener::bind(path).with_context(|| format!("bind {}", path.display()))?
         }
     };
@@ -67,7 +74,9 @@ pub async fn serve(env: Env<System>, options: Options, activation: Option<Activa
                 continue;
             }
         };
-        let Ok(conn) = admit(&options, conn) else { continue };
+        let Ok(conn) = admit(&options, conn) else {
+            continue;
+        };
         if options.once {
             return connection::serve(env, conn, shutdown).await;
         }
@@ -78,7 +87,10 @@ pub async fn serve(env: Env<System>, options: Options, activation: Option<Activa
             }
         });
     }
-    info!(sessions = sessions.len(), "shutting down; undoing active sessions");
+    info!(
+        sessions = sessions.len(),
+        "shutting down; undoing active sessions"
+    );
     while sessions.join_next().await.is_some() {}
     Ok(())
 }

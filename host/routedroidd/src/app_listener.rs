@@ -47,7 +47,9 @@ pub struct Candidate {
 impl AppListener {
     /// Bind on loopback with a kernel-chosen port.
     pub async fn bind() -> Result<Self> {
-        let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)).await.fault(Kind::Internal)?;
+        let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+            .await
+            .fault(Kind::Internal)?;
         let port = listener.local_addr().fault(Kind::Internal)?.port();
         Ok(Self { listener, port })
     }
@@ -64,7 +66,10 @@ impl AppListener {
         let mut attempts = 0;
         loop {
             if attempts == MAX_ATTEMPTS && screening.is_empty() {
-                return Err(Fault::msg(Kind::Protocol, format!("{MAX_ATTEMPTS} connections, none of them the app")));
+                return Err(Fault::msg(
+                    Kind::Protocol,
+                    format!("{MAX_ATTEMPTS} connections, none of them the app"),
+                ));
             }
             tokio::select! {
                 accepted = self.listener.accept(), if attempts < MAX_ATTEMPTS && screening.len() < MAX_SCREENING => {
@@ -96,22 +101,41 @@ impl AppListener {
 /// The app, or `None` after telling the peer why not.
 async fn screen(mut stream: TcpStream, expected: Expected) -> Option<Candidate> {
     stream.set_nodelay(true).ok();
-    let refusal = match timeout(SCREEN_DEADLINE, frame::read_frame(&mut stream, expected.mtu)).await {
+    let refusal = match timeout(
+        SCREEN_DEADLINE,
+        frame::read_frame(&mut stream, expected.mtu),
+    )
+    .await
+    {
         Err(_) => ErrorBody::new(ErrorCode::ProtocolError, "no HELLO in time"),
         Ok(Err(e)) => ErrorBody::new(ErrorCode::ProtocolError, e.to_string()),
-        Ok(Ok(first)) if first.message_type != MessageType::Hello => {
-            ErrorBody::new(ErrorCode::ProtocolError, format!("{} before HELLO", first.message_type))
-        }
+        Ok(Ok(first)) if first.message_type != MessageType::Hello => ErrorBody::new(
+            ErrorCode::ProtocolError,
+            format!("{} before HELLO", first.message_type),
+        ),
         Ok(Ok(first)) => match messages::parse::<Hello>(&first.body) {
-            Ok(hello) if hello.session == expected.session && hello.device_port == expected.device_port => {
-                return Some(Candidate { stream, hello: first });
+            Ok(hello)
+                if hello.session == expected.session
+                    && hello.device_port == expected.device_port =>
+            {
+                return Some(Candidate {
+                    stream,
+                    hello: first,
+                });
             }
-            Ok(_) => ErrorBody::new(ErrorCode::SessionMismatch, "HELLO session/port is not the one launched"),
+            Ok(_) => ErrorBody::new(
+                ErrorCode::SessionMismatch,
+                "HELLO session/port is not the one launched",
+            ),
             Err(e) => ErrorBody::new(ErrorCode::ProtocolError, format!("HELLO: {e}")),
         },
     };
     warn!(peer = ?stream.peer_addr().ok(), reason = %refusal.message, "a connection that is not the app");
-    let _ = timeout(SCREEN_DEADLINE, stream.write_all(&Frame::json(MessageType::Error, &refusal).encode())).await;
+    let _ = timeout(
+        SCREEN_DEADLINE,
+        stream.write_all(&Frame::json(MessageType::Error, &refusal).encode()),
+    )
+    .await;
     None
 }
 

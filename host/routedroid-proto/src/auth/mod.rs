@@ -83,8 +83,15 @@ pub fn proof_from_hex(s: &str) -> Option<Proof> {
 }
 
 /// The bytes both proofs are computed over.
-pub fn transcript(session: &str, device_port: u16, client_nonce: &Nonce, host_nonce: &Nonce) -> Vec<u8> {
-    let mut t = Vec::with_capacity(DOMAIN.len() + 1 + 1 + session.len() + 1 + 2 + 7 + NONCE_LEN + 4 + NONCE_LEN);
+pub fn transcript(
+    session: &str,
+    device_port: u16,
+    client_nonce: &Nonce,
+    host_nonce: &Nonce,
+) -> Vec<u8> {
+    let mut t = Vec::with_capacity(
+        DOMAIN.len() + 1 + 1 + session.len() + 1 + 2 + 7 + NONCE_LEN + 4 + NONCE_LEN,
+    );
     t.extend_from_slice(DOMAIN);
     t.push(0);
     t.push(PROTOCOL_VERSION);
@@ -99,7 +106,8 @@ pub fn transcript(session: &str, device_port: u16, client_nonce: &Nonce, host_no
 }
 
 pub fn proof(secret: &Secret, role: Role, transcript: &[u8]) -> Proof {
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("hmac accepts any key length");
+    let mut mac =
+        Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("hmac accepts any key length");
     mac.update(label(role));
     mac.update(transcript);
     mac.finalize().into_bytes().into()

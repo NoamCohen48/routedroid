@@ -27,7 +27,10 @@ impl Field {
     }
 
     fn index(self) -> usize {
-        Field::ALL.iter().position(|field| *field == self).unwrap_or(0)
+        Field::ALL
+            .iter()
+            .position(|field| *field == self)
+            .unwrap_or(0)
     }
 }
 
@@ -42,7 +45,13 @@ pub struct StartForm {
 
 impl StartForm {
     pub fn new(serial: String) -> Self {
-        Self { serial, lan_if: String::new(), phone_ip: String::new(), dns: String::new(), focused: Field::LanIf }
+        Self {
+            serial,
+            lan_if: String::new(),
+            phone_ip: String::new(),
+            dns: String::new(),
+            focused: Field::LanIf,
+        }
     }
 
     pub fn value(&self, field: Field) -> &str {
@@ -93,7 +102,11 @@ impl StartForm {
             .split(',')
             .map(str::trim)
             .filter(|entry| !entry.is_empty())
-            .map(|entry| entry.parse::<Ipv4Addr>().with_context(|| format!("DNS {entry:?} is not an IPv4 address")))
+            .map(|entry| {
+                entry
+                    .parse::<Ipv4Addr>()
+                    .with_context(|| format!("DNS {entry:?} is not an IPv4 address"))
+            })
             .collect::<Result<Vec<_>>>()?;
         Ok(StartRequest {
             serial: self.serial.clone(),

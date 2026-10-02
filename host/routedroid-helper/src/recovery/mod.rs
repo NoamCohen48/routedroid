@@ -35,11 +35,17 @@ pub fn cleanup<K: Kernel>(env: &Env<K>) -> Result<()> {
             }
         }
     }
-    if let Err(error) = env.claims.collect_garbage(&env.kernel, || journal::sessions(&env.journal_dir)) {
+    if let Err(error) = env
+        .claims
+        .collect_garbage(&env.kernel, || journal::sessions(&env.journal_dir))
+    {
         warn!(error = %format!("{error:#}"), "claims not collected");
         failed += 1;
     }
-    ensure!(failed == 0, "cleanup incomplete ({failed} problem(s)); see the log");
+    ensure!(
+        failed == 0,
+        "cleanup incomplete ({failed} problem(s)); see the log"
+    );
     Ok(())
 }
 
@@ -53,7 +59,11 @@ pub fn check(journal_dir: &Path) -> Result<()> {
             Ok(Taken::Live | Taken::Gone) => {}
         }
     }
-    ensure!(problems.is_empty(), "unresolved journal(s): {}", problems.join(", "));
+    ensure!(
+        problems.is_empty(),
+        "unresolved journal(s): {}",
+        problems.join(", ")
+    );
     Ok(())
 }
 

@@ -10,7 +10,11 @@ use anyhow::{bail, Context, Result};
 use crate::op::SysctlKey;
 
 fn path(key: &SysctlKey) -> PathBuf {
-    PathBuf::from(format!("/proc/sys/net/ipv4/conf/{}/{}", key.ifname, key.leaf.as_str()))
+    PathBuf::from(format!(
+        "/proc/sys/net/ipv4/conf/{}/{}",
+        key.ifname,
+        key.leaf.as_str()
+    ))
 }
 
 pub fn read(key: &SysctlKey) -> Result<Option<String>> {
@@ -39,7 +43,10 @@ mod tests {
     #[test]
     fn vlan_names_stay_literal() {
         let key = SysctlKey::new(IfName::new("eth0.100").unwrap(), Leaf::ProxyArp);
-        assert_eq!(path(&key), PathBuf::from("/proc/sys/net/ipv4/conf/eth0.100/proxy_arp"));
+        assert_eq!(
+            path(&key),
+            PathBuf::from("/proc/sys/net/ipv4/conf/eth0.100/proxy_arp")
+        );
     }
 
     #[test]

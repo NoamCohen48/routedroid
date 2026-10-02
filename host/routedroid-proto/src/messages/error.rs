@@ -64,7 +64,11 @@ pub struct ErrorBody {
 
 impl ErrorBody {
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
-        Self { code: code.as_str().to_string(), message: message.into(), supported: None }
+        Self {
+            code: code.as_str().to_string(),
+            message: message.into(),
+            supported: None,
+        }
     }
 
     pub fn protocol_unsupported(message: impl Into<String>) -> Self {
@@ -82,7 +86,12 @@ impl ErrorBody {
 
 impl Body for ErrorBody {
     fn validate(&self) -> Result<(), BodyError> {
-        if self.code.is_empty() || !self.code.bytes().all(|b| b.is_ascii_lowercase() || b == b'_') {
+        if self.code.is_empty()
+            || !self
+                .code
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b == b'_')
+        {
             return Err(field("code", "snake_case identifier"));
         }
         if self.message.chars().count() > MAX_ERROR_MESSAGE_LEN {

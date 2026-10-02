@@ -15,8 +15,12 @@ pub struct LogOptions {
 
 /// Fails on a filter that does not parse: a typo must not silently log at `info`.
 pub fn init(opts: &LogOptions) -> Result<(), String> {
-    let filter = EnvFilter::try_new(&opts.log).map_err(|e| format!("invalid --log / RUST_LOG {:?}: {e}", opts.log))?;
-    let builder = tracing_subscriber::fmt().with_env_filter(filter).with_writer(std::io::stderr).with_target(false);
+    let filter = EnvFilter::try_new(&opts.log)
+        .map_err(|e| format!("invalid --log / RUST_LOG {:?}: {e}", opts.log))?;
+    let builder = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .with_target(false);
     if opts.log_json {
         builder.json().init();
     } else {

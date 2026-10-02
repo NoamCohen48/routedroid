@@ -18,7 +18,10 @@ pub const ARP_REPLY: u16 = 2;
 pub type Mac = [u8; 6];
 
 pub fn fmt_mac(m: &Mac) -> String {
-    format!("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", m[0], m[1], m[2], m[3], m[4], m[5])
+    format!(
+        "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        m[0], m[1], m[2], m[3], m[4], m[5]
+    )
 }
 
 pub fn parse_mac(s: &str) -> Option<Mac> {
@@ -145,12 +148,24 @@ impl fmt::Display for PacketError {
             Self::Ihl(i) => write!(f, "IHL {i} < 5"),
             Self::Fragment => write!(f, "fragmented IPv4 packet"),
             Self::NotUdp(p) => write!(f, "IP protocol {p} is not UDP"),
-            Self::IpLength { total_length, available } => {
-                write!(f, "IPv4 total_length {total_length} exceeds frame body {available}")
+            Self::IpLength {
+                total_length,
+                available,
+            } => {
+                write!(
+                    f,
+                    "IPv4 total_length {total_length} exceeds frame body {available}"
+                )
             }
             Self::IpChecksum => write!(f, "bad IPv4 header checksum"),
-            Self::UdpLength { udp_length, available } => {
-                write!(f, "UDP length {udp_length} does not fit in {available} bytes")
+            Self::UdpLength {
+                udp_length,
+                available,
+            } => {
+                write!(
+                    f,
+                    "UDP length {udp_length} does not fit in {available} bytes"
+                )
             }
             Self::UdpChecksum => write!(f, "bad UDP checksum"),
         }
@@ -199,7 +214,10 @@ pub fn parse_udp(frame: &[u8], verify_udp_csum: bool) -> Result<UdpFrame<'_>, Pa
     }
     let total_length = u16::from_be_bytes([ip[2], ip[3]]);
     if usize::from(total_length) > ip.len() || usize::from(total_length) < ihl + UDP_HDR {
-        return Err(PacketError::IpLength { total_length, available: ip.len() });
+        return Err(PacketError::IpLength {
+            total_length,
+            available: ip.len(),
+        });
     }
     let ip = &ip[..usize::from(total_length)];
     if u16::from_be_bytes([ip[6], ip[7]]) & 0x3fff != 0 {
@@ -217,7 +235,10 @@ pub fn parse_udp(frame: &[u8], verify_udp_csum: bool) -> Result<UdpFrame<'_>, Pa
     let udp = &ip[ihl..];
     let udp_length = u16::from_be_bytes([udp[4], udp[5]]);
     if usize::from(udp_length) < UDP_HDR || usize::from(udp_length) > udp.len() {
-        return Err(PacketError::UdpLength { udp_length, available: udp.len() });
+        return Err(PacketError::UdpLength {
+            udp_length,
+            available: udp.len(),
+        });
     }
     let udp = &udp[..usize::from(udp_length)];
     let csum = u16::from_be_bytes([udp[6], udp[7]]);
@@ -292,11 +313,14 @@ mod tests {
     #[test]
     fn checksum_rfc1071_vectors() {
         // RFC 1071 §3 worked example: 00 01 f2 03 f4 f5 f6 f7 -> sum 0xddf2, checksum 0x220d.
-        assert_eq!(checksum(&[0x00, 0x01, 0xf2, 0x03, 0xf4, 0xf5, 0xf6, 0xf7]), 0x220d);
+        assert_eq!(
+            checksum(&[0x00, 0x01, 0xf2, 0x03, 0xf4, 0xf5, 0xf6, 0xf7]),
+            0x220d
+        );
         // Wikipedia IPv4 header example: checksum 0xb861.
         let hdr = [
-            0x45, 0x00, 0x00, 0x73, 0x00, 0x00, 0x40, 0x00, 0x40, 0x11, 0x00, 0x00, 0xc0, 0xa8, 0x00, 0x01, 0xc0, 0xa8,
-            0x00, 0xc7,
+            0x45, 0x00, 0x00, 0x73, 0x00, 0x00, 0x40, 0x00, 0x40, 0x11, 0x00, 0x00, 0xc0, 0xa8,
+            0x00, 0x01, 0xc0, 0xa8, 0x00, 0xc7,
         ];
         assert_eq!(checksum(&hdr), 0xb861);
         let mut with = hdr;
@@ -311,7 +335,15 @@ mod tests {
     fn udp_checksum_roundtrip_and_never_zero() {
         let src = Ipv4Addr::new(0, 0, 0, 0);
         let dst = Ipv4Addr::new(255, 255, 255, 255);
-        let f = ipv4_udp_frame(&[2, 0, 0, 0, 0, 1], &BROADCAST_MAC, src, dst, 68, 67, b"hello");
+        let f = ipv4_udp_frame(
+            &[2, 0, 0, 0, 0, 1],
+            &BROADCAST_MAC,
+            src,
+            dst,
+            68,
+            67,
+            b"hello",
+        );
         let p = parse_udp(&f, true).expect("own frame parses with checksum verification");
         assert_eq!(p.payload, b"hello");
         assert_eq!((p.src_port, p.dst_port), (68, 67));
@@ -338,14 +370,23 @@ mod tests {
     fn parse_udp_rejects_malformed() {
         let src = Ipv4Addr::new(1, 2, 3, 4);
         let f = ipv4_udp_frame(&[1; 6], &[2; 6], src, src, 1, 2, &[0; 10]);
-        assert!(matches!(parse_udp(&f[..30], true), Err(PacketError::TooShort(30))));
+        assert!(matches!(
+            parse_udp(&f[..30], true),
+            Err(PacketError::TooShort(30))
+        ));
         let mut g = f.clone();
         g[12] = 0x86;
         g[13] = 0xdd;
-        assert!(matches!(parse_udp(&g, true), Err(PacketError::NotIpv4(0x86dd))));
+        assert!(matches!(
+            parse_udp(&g, true),
+            Err(PacketError::NotIpv4(0x86dd))
+        ));
         let mut g = f.clone();
         g[16] = 0xff; // huge total length
-        assert!(matches!(parse_udp(&g, true), Err(PacketError::IpLength { .. })));
+        assert!(matches!(
+            parse_udp(&g, true),
+            Err(PacketError::IpLength { .. })
+        ));
         let mut g = f.clone();
         g[20] = 0x20; // MF flag
         assert!(matches!(parse_udp(&g, true), Err(PacketError::Fragment)));
@@ -358,7 +399,10 @@ mod tests {
         let mut g = f.clone();
         g[38] = 0;
         g[39] = 3; // udp length < 8
-        assert!(matches!(parse_udp(&g, false), Err(PacketError::UdpLength { .. })));
+        assert!(matches!(
+            parse_udp(&g, false),
+            Err(PacketError::UdpLength { .. })
+        ));
         // Ethernet trailing padding is tolerated.
         let mut g = f.clone();
         g.extend_from_slice(&[0; 20]);
@@ -367,7 +411,12 @@ mod tests {
 
     #[test]
     fn arp_roundtrip() {
-        let f = arp_reply_frame(&[1; 6], Ipv4Addr::new(10, 0, 0, 5), &[2; 6], Ipv4Addr::new(10, 0, 0, 1));
+        let f = arp_reply_frame(
+            &[1; 6],
+            Ipv4Addr::new(10, 0, 0, 5),
+            &[2; 6],
+            Ipv4Addr::new(10, 0, 0, 1),
+        );
         let a = parse_arp(&f).unwrap();
         assert_eq!(a.op, ARP_REPLY);
         assert_eq!(a.sha, [1; 6]);
@@ -375,7 +424,10 @@ mod tests {
         assert_eq!(a.tha, [2; 6]);
         assert_eq!(a.tpa, Ipv4Addr::new(10, 0, 0, 1));
         assert!(parse_arp(&f[..40]).is_none());
-        assert_eq!(parse_mac(&fmt_mac(&[0xde, 0xad, 0xbe, 0xef, 0, 1])).unwrap(), [0xde, 0xad, 0xbe, 0xef, 0, 1]);
+        assert_eq!(
+            parse_mac(&fmt_mac(&[0xde, 0xad, 0xbe, 0xef, 0, 1])).unwrap(),
+            [0xde, 0xad, 0xbe, 0xef, 0, 1]
+        );
         assert!(parse_mac("de:ad").is_none());
     }
 }

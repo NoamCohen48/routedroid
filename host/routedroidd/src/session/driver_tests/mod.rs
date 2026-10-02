@@ -28,10 +28,18 @@ mod active;
 
 /// Spawns the driver on one end of a loopback pair; returns the peer socket
 /// and the join handle. Time is paused, so deadlines elapse instantly when idle.
-async fn start() -> (TcpStream, tokio::task::JoinHandle<SessionEnd>, watch::Sender<bool>) {
+async fn start() -> (
+    TcpStream,
+    tokio::task::JoinHandle<SessionEnd>,
+    watch::Sender<bool>,
+) {
     let inject: Inject = std::sync::Arc::new(|_: &[u8]| Ok(true));
     let (from_tx, from_helper) = mpsc::channel(4);
-    let (peer, handle, stop) = start_with(PacketEndpoints { inject, from_helper }).await;
+    let (peer, handle, stop) = start_with(PacketEndpoints {
+        inject,
+        from_helper,
+    })
+    .await;
     // A helper that stays connected and quiet for the driver's whole life.
     let handle = tokio::spawn(async move {
         let end = handle.await.unwrap();
@@ -41,7 +49,13 @@ async fn start() -> (TcpStream, tokio::task::JoinHandle<SessionEnd>, watch::Send
     (peer, handle, stop)
 }
 
-async fn start_with(packets: PacketEndpoints) -> (TcpStream, tokio::task::JoinHandle<SessionEnd>, watch::Sender<bool>) {
+async fn start_with(
+    packets: PacketEndpoints,
+) -> (
+    TcpStream,
+    tokio::task::JoinHandle<SessionEnd>,
+    watch::Sender<bool>,
+) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let peer = TcpStream::connect(addr).await.unwrap();
@@ -81,8 +95,16 @@ async fn silent_peer_is_refused_after_handshake_deadline() {
 async fn one_handshake_deadline_from_connect_to_auth() {
     let (mut peer, handle, _stop) = start().await;
     tokio::time::sleep(HANDSHAKE_DEADLINE - Duration::from_secs(1)).await;
-    let hello = Hello { protocol: 1, session: "s1".into(), device_port: 9000, client_nonce: [0xaa; 32], app: None };
-    peer.write_all(&Frame::json(MessageType::Hello, &hello).encode()).await.unwrap();
+    let hello = Hello {
+        protocol: 1,
+        session: "s1".into(),
+        device_port: 9000,
+        client_nonce: [0xaa; 32],
+        app: None,
+    };
+    peer.write_all(&Frame::json(MessageType::Hello, &hello).encode())
+        .await
+        .unwrap();
     let ack = frame::read_frame(&mut peer, 1400).await.unwrap();
     assert_eq!(ack.message_type, MessageType::HelloAck);
     // HELLO does not restart the clock: AUTH is due within the same 15 s.

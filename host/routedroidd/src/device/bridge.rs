@@ -63,14 +63,28 @@ impl AdbBridge {
     /// Returns the secret, the only copy left on the host, for the session
     /// machine (§7.3: it is consumed on AUTH). A second call fails.
     pub async fn bootstrap(&mut self) -> Result<Secret> {
-        let secret = self.secret.take().ok_or_else(|| Fault::msg(Kind::Internal, "bootstrap runs once"))?;
-        let record = bootstrap::encode(&self.session, self.port.device_port, &secret).expect("session id is valid hex");
-        self.adb.content_write(PROVIDER_URI, record.as_slice()).await?;
+        let secret = self
+            .secret
+            .take()
+            .ok_or_else(|| Fault::msg(Kind::Internal, "bootstrap runs once"))?;
+        let record = bootstrap::encode(&self.session, self.port.device_port, &secret)
+            .expect("session id is valid hex");
+        self.adb
+            .content_write(PROVIDER_URI, record.as_slice())
+            .await?;
         drop(record);
-        info!(uri = PROVIDER_URI, "bootstrap record delivered over adb stdin");
+        info!(
+            uri = PROVIDER_URI,
+            "bootstrap record delivered over adb stdin"
+        );
 
-        self.adb.am_start(BOOTSTRAP_COMPONENT, &[("session", &self.session)]).await?;
-        info!(component = BOOTSTRAP_COMPONENT, "launched bootstrap activity");
+        self.adb
+            .am_start(BOOTSTRAP_COMPONENT, &[("session", &self.session)])
+            .await?;
+        info!(
+            component = BOOTSTRAP_COMPONENT,
+            "launched bootstrap activity"
+        );
         Ok(secret)
     }
 

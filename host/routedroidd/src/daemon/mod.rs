@@ -32,8 +32,13 @@ impl Daemon {
     pub async fn start(adb: Adb, helper_socket: PathBuf) -> Self {
         let devices = AttachedDevices::start(adb.clone()).await;
         let events = EventBus::new();
-        let connections = DeviceConnections::new(adb, helper_socket, events.clone(), devices.clone());
-        Self { devices, connections, events }
+        let connections =
+            DeviceConnections::new(adb, helper_socket, events.clone(), devices.clone());
+        Self {
+            devices,
+            connections,
+            events,
+        }
     }
 
     pub fn devices(&self) -> AttachedDevices {

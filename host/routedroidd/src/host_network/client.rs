@@ -34,7 +34,9 @@ async fn request(conn: &SeqPacket, request: &Request) -> anyhow::Result<Reply> {
         let Some(datagram) = conn.recv(&mut buf).await.context("recv from helper")? else {
             bail!("helper closed the connection");
         };
-        if let Datagram::Control(reply) = Datagram::<Reply>::decode(datagram).context("decode helper reply")? {
+        if let Datagram::Control(reply) =
+            Datagram::<Reply>::decode(datagram).context("decode helper reply")?
+        {
             return Ok(reply);
         }
     }
@@ -47,27 +49,65 @@ fn if_name(name: &str) -> Result<IfName> {
 impl HostNetwork {
     /// Connect, agree on the IPC version and issue `Start`; the helper
     /// picks host address and prefix.
-    pub async fn start(socket: &Path, lan_if: &str, phone_ip: Ipv4Addr, tun: &str, mtu: u32) -> Result<Self> {
-        let start = Request::Start { lan_if: if_name(lan_if)?, phone_ip, tun: if_name(tun)?, mtu };
+    pub async fn start(
+        socket: &Path,
+        lan_if: &str,
+        phone_ip: Ipv4Addr,
+        tun: &str,
+        mtu: u32,
+    ) -> Result<Self> {
+        let start = Request::Start {
+            lan_if: if_name(lan_if)?,
+            phone_ip,
+            tun: if_name(tun)?,
+            mtu,
+        };
         let conn = SeqPacket::connect(socket)
             .with_context(|| format!("connect to helper socket {}", socket.display()))
             .fault(Kind::Helper)?;
-        match request(&conn, &Request::Hello { version: VERSION }).await.fault(Kind::Helper)? {
+        match request(&conn, &Request::Hello { version: VERSION })
+            .await
+            .fault(Kind::Helper)?
+        {
             Reply::Hello { .. } => {}
             Reply::Error { code, message } => {
-                return Err(Fault::msg(Kind::Helper, format!("helper refused the handshake: {code:?}: {message}")))
+                return Err(Fault::msg(
+                    Kind::Helper,
+                    format!("helper refused the handshake: {code:?}: {message}"),
+                ))
             }
-            other => return Err(Fault::msg(Kind::Helper, format!("unexpected helper reply {other:?}"))),
+            other => {
+                return Err(Fault::msg(
+                    Kind::Helper,
+                    format!("unexpected helper reply {other:?}"),
+                ))
+            }
         }
         match request(&conn, &start).await.fault(Kind::Helper)? {
-            Reply::Started { session, tun, host_ip, lan_prefix } => {
+            Reply::Started {
+                session,
+                tun,
+                host_ip,
+                lan_prefix,
+            } => {
                 info!(%session, %tun, %host_ip, lan_prefix, "helper session started");
-                Ok(Self { conn: Arc::new(conn), control_rx: None, tun, host_ip, lan_prefix, session })
+                Ok(Self {
+                    conn: Arc::new(conn),
+                    control_rx: None,
+                    tun,
+                    host_ip,
+                    lan_prefix,
+                    session,
+                })
             }
-            Reply::Error { code, message } => {
-                Err(Fault::msg(Kind::Helper, format!("helper refused start: {code:?}: {message}")))
-            }
-            other => Err(Fault::msg(Kind::Helper, format!("unexpected helper reply {other:?}"))),
+            Reply::Error { code, message } => Err(Fault::msg(
+                Kind::Helper,
+                format!("helper refused start: {code:?}: {message}"),
+            )),
+            other => Err(Fault::msg(
+                Kind::Helper,
+                format!("unexpected helper reply {other:?}"),
+            )),
         }
     }
 
@@ -104,7 +144,10 @@ impl HostNetwork {
                 }
             }
         });
-        PacketEndpoints { inject, from_helper }
+        PacketEndpoints {
+            inject,
+            from_helper,
+        }
     }
 
     /// Ask the helper to undo everything. Errors are logged, not fatal: the
@@ -113,7 +156,10 @@ impl HostNetwork {
         let reply = async {
             match self.control_rx.take() {
                 Some(mut rx) => {
-                    self.conn.send_control(&Request::Stop).await.context("send Stop")?;
+                    self.conn
+                        .send_control(&Request::Stop)
+                        .await
+                        .context("send Stop")?;
                     rx.recv().await.context("helper closed the connection")
                 }
                 None => request(&self.conn, &Request::Stop).await,

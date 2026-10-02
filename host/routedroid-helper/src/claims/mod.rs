@@ -50,8 +50,14 @@ impl Claims {
         let mut claim = match read(&path)? {
             Some(claim) => claim,
             None => {
-                let baseline = kernel.sysctl_read(key)?.with_context(|| format!("{} does not exist", key.ifname))?;
-                Claim { key: key.clone(), baseline, holders: BTreeSet::new() }
+                let baseline = kernel
+                    .sysctl_read(key)?
+                    .with_context(|| format!("{} does not exist", key.ifname))?;
+                Claim {
+                    key: key.clone(),
+                    baseline,
+                    holders: BTreeSet::new(),
+                }
             }
         };
         claim.holders.insert(session);
@@ -66,7 +72,9 @@ impl Claims {
     pub fn release(&self, kernel: &impl Kernel, session: SessionId, key: &SysctlKey) -> Result<()> {
         let _lock = storage::lock(&self.dir)?;
         let path = self.path(key);
-        let Some(mut claim) = read(&path)? else { return Ok(()) };
+        let Some(mut claim) = read(&path)? else {
+            return Ok(());
+        };
         claim.holders.remove(&session);
         settle(kernel, &path, &claim)
     }
@@ -144,7 +152,9 @@ fn settle(kernel: &impl Kernel, path: &Path, claim: &Claim) -> Result<()> {
 
 fn read(path: &Path) -> Result<Option<Claim>> {
     match fs::read(path) {
-        Ok(bytes) => Ok(Some(serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.display()))?)),
+        Ok(bytes) => Ok(Some(
+            serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.display()))?,
+        )),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e).with_context(|| format!("read {}", path.display())),
     }

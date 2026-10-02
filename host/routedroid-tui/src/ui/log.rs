@@ -20,5 +20,8 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             Level::Error => Line::from(entry.text.as_str()).fg(Color::Red),
         })
         .collect();
-    frame.render_widget(Paragraph::new(lines).block(Block::bordered().title(" Events ")), area);
+    frame.render_widget(
+        Paragraph::new(lines).block(Block::bordered().title(" Events ")),
+        area,
+    );
 }

@@ -7,7 +7,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
-use routedroid_helper_ipc::{Datagram, ErrorCode, Reply, Request, SeqPacket, MAX_DATAGRAM, VERSION};
+use routedroid_helper_ipc::{
+    Datagram, ErrorCode, Reply, Request, SeqPacket, MAX_DATAGRAM, VERSION,
+};
 use tokio::sync::watch;
 use tokio::task::spawn_blocking;
 use tokio::time::{timeout_at, Instant};
@@ -27,13 +29,22 @@ use relay::{Ended, Relay};
 pub const SETUP_DEADLINE: Duration = Duration::from_secs(10);
 
 fn error(code: ErrorCode, message: impl Into<String>) -> Reply {
-    Reply::Error { code, message: message.into() }
+    Reply::Error {
+        code,
+        message: message.into(),
+    }
 }
 
-pub async fn serve(env: Arc<Env<System>>, conn: SeqPacket, shutdown: watch::Receiver<bool>) -> Result<()> {
+pub async fn serve(
+    env: Arc<Env<System>>,
+    conn: SeqPacket,
+    shutdown: watch::Receiver<bool>,
+) -> Result<()> {
     let deadline = Instant::now() + SETUP_DEADLINE;
     let mut buf = vec![0u8; MAX_DATAGRAM];
-    let Some(request) = setup(&conn, &mut buf, deadline).await? else { return Ok(()) };
+    let Some(request) = setup(&conn, &mut buf, deadline).await? else {
+        return Ok(());
+    };
 
     let prepared = {
         let env = Arc::clone(&env);
@@ -43,7 +54,9 @@ pub async fn serve(env: Arc<Env<System>>, conn: SeqPacket, shutdown: watch::Rece
         Ok(plan) => plan,
         Err(e) => {
             info!(reason = %format!("{e:#}"), "start refused");
-            let _ = conn.send_control(&error(ErrorCode::Refused, format!("{e:#}"))).await;
+            let _ = conn
+                .send_control(&error(ErrorCode::Refused, format!("{e:#}")))
+                .await;
             return Ok(());
         }
     };
@@ -54,7 +67,9 @@ pub async fn serve(env: Arc<Env<System>>, conn: SeqPacket, shutdown: watch::Rece
     let session = match started {
         Ok(session) => session,
         Err(e) => {
-            let _ = conn.send_control(&error(ErrorCode::StartFailed, format!("{e:#}"))).await;
+            let _ = conn
+                .send_control(&error(ErrorCode::StartFailed, format!("{e:#}")))
+                .await;
             bail!("start failed: {e:#}");
         }
     };
@@ -63,7 +78,9 @@ pub async fn serve(env: Arc<Env<System>>, conn: SeqPacket, shutdown: watch::Rece
     env.hook.at("active");
 
     let ended = relay_session(&conn, &session, shutdown).await;
-    let stopped = spawn_blocking(move || session.stop()).await.context("undo panicked")?;
+    let stopped = spawn_blocking(move || session.stop())
+        .await
+        .context("undo panicked")?;
     if ended == Ended::Stop {
         let reply = match &stopped {
             Ok(()) => Reply::Stopped,
@@ -75,7 +92,11 @@ pub async fn serve(env: Arc<Env<System>>, conn: SeqPacket, shutdown: watch::Rece
 }
 
 /// Announce the session, then relay. Nothing in here can skip the undo.
-async fn relay_session(conn: &SeqPacket, session: &Session<System>, shutdown: watch::Receiver<bool>) -> Ended {
+async fn relay_session(
+    conn: &SeqPacket,
+    session: &Session<System>,
+    shutdown: watch::Receiver<bool>,
+) -> Ended {
     let plan = session.plan();
     let started = Reply::Started {
         session: plan.session().to_string(),
@@ -92,7 +113,14 @@ async fn relay_session(conn: &SeqPacket, session: &Session<System>, shutdown: wa
         None => return Ended::Failed("session has no TUN".into()),
     };
     let request = plan.request();
-    Relay { conn, tun: &tun, phone_ip: request.phone_ip, mtu: request.mtu as usize }.run(shutdown).await
+    Relay {
+        conn,
+        tun: &tun,
+        phone_ip: request.phone_ip,
+        mtu: request.mtu as usize,
+    }
+    .run(shutdown)
+    .await
 }
 
 /// Read the operator's policy and the kernel, and decide.
@@ -103,22 +131,34 @@ fn prepare(env: &Env<System>, request: StartRequest) -> Result<Plan> {
 }
 
 /// `Hello` then `Start`. `None`: the controller left, stopped, or was refused.
-async fn setup(conn: &SeqPacket, buf: &mut [u8], deadline: Instant) -> Result<Option<StartRequest>> {
+async fn setup(
+    conn: &SeqPacket,
+    buf: &mut [u8],
+    deadline: Instant,
+) -> Result<Option<StartRequest>> {
     let mut greeted = false;
     loop {
         let received = match timeout_at(deadline, conn.recv(buf)).await {
             Ok(received) => received?,
             Err(_) => {
                 warn!("controller did not start a session in time");
-                let _ = conn.send_control(&error(ErrorCode::BadRequest, "no Start within the deadline")).await;
+                let _ = conn
+                    .send_control(&error(
+                        ErrorCode::BadRequest,
+                        "no Start within the deadline",
+                    ))
+                    .await;
                 return Ok(None);
             }
         };
-        let Some(datagram) = received else { return Ok(None) };
+        let Some(datagram) = received else {
+            return Ok(None);
+        };
         let reply = match (greeted, Datagram::<Request>::decode(datagram)) {
             (false, Ok(Datagram::Control(Request::Hello { version }))) if version == VERSION => {
                 greeted = true;
-                conn.send_control(&Reply::Hello { version: VERSION }).await?;
+                conn.send_control(&Reply::Hello { version: VERSION })
+                    .await?;
                 continue;
             }
             (false, Ok(Datagram::Control(Request::Hello { version }))) => error(
@@ -126,8 +166,21 @@ async fn setup(conn: &SeqPacket, buf: &mut [u8], deadline: Instant) -> Result<Op
                 format!("controller speaks helper IPC {version}, helper speaks {VERSION}"),
             ),
             (false, _) => error(ErrorCode::BadRequest, "expected Hello"),
-            (true, Ok(Datagram::Control(Request::Start { lan_if, phone_ip, tun, mtu }))) => {
-                return Ok(Some(StartRequest { lan_if, phone_ip, tun, mtu }));
+            (
+                true,
+                Ok(Datagram::Control(Request::Start {
+                    lan_if,
+                    phone_ip,
+                    tun,
+                    mtu,
+                })),
+            ) => {
+                return Ok(Some(StartRequest {
+                    lan_if,
+                    phone_ip,
+                    tun,
+                    mtu,
+                }));
             }
             (true, Ok(Datagram::Control(Request::Ping))) => {
                 conn.send_control(&Reply::Pong).await?;

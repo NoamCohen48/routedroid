@@ -90,12 +90,27 @@ fn main() -> Result<()> {
         .init();
     let cli = Cli::parse();
     let hook = cli.hook();
-    let env = || -> Result<Env<System>> { Ok(Env::new(System::new()?, &cli.state_dir, cli.policy.clone(), hook)) };
+    let env = || -> Result<Env<System>> {
+        Ok(Env::new(
+            System::new()?,
+            &cli.state_dir,
+            cli.policy.clone(),
+            hook,
+        ))
+    };
     match &cli.cmd {
-        Cmd::Serve { socket, once, allow_uid } => {
+        Cmd::Serve {
+            socket,
+            once,
+            allow_uid,
+        } => {
             // Before the runtime starts its threads: this edits the environment.
             let activation = Activation::take().context("socket activation")?;
-            let options = serve::Options { socket: socket.clone(), allow_uid: *allow_uid, once: *once };
+            let options = serve::Options {
+                socket: socket.clone(),
+                allow_uid: *allow_uid,
+                once: *once,
+            };
             tokio::runtime::Runtime::new()?.block_on(serve::serve(env()?, options, activation))
         }
         Cmd::Check => recovery::check(&cli.state_dir.join("journal")),

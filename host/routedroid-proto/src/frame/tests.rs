@@ -45,7 +45,12 @@ fn valid_fixtures_encode_and_decode_exactly() {
         let t = MessageType::from_u8(v.type_).unwrap_or_else(|| panic!("{}: type", v.name));
         let body = unhex(&v.body_hex);
         let wire = unhex(&v.wire_hex);
-        assert_eq!(Frame::new(t, body.clone()).encode(), wire, "{}: encode", v.name);
+        assert_eq!(
+            Frame::new(t, body.clone()).encode(),
+            wire,
+            "{}: encode",
+            v.name
+        );
         let (d, used) = decode(&wire, f.mtu).unwrap_or_else(|e| panic!("{}: {e}", v.name));
         assert_eq!(used, wire.len(), "{}: consumed", v.name);
         assert_eq!(d.message_type, t, "{}: type", v.name);
@@ -75,19 +80,34 @@ fn type_names_round_trip() {
 
 #[test]
 fn mtu_is_capped_at_absolute_ipv4_limit() {
-    let h = RawHeader { body_length: 65_535, version: 1, message_type: 0x10, flags: 0 };
+    let h = RawHeader {
+        body_length: 65_535,
+        version: 1,
+        message_type: 0x10,
+        flags: 0,
+    };
     assert_eq!(validate_header(&h, u32::MAX), Ok(MessageType::IpPacket));
-    let h = RawHeader { body_length: 65_536, ..h };
+    let h = RawHeader {
+        body_length: 65_536,
+        ..h
+    };
     assert_eq!(
         validate_header(&h, u32::MAX),
-        Err(FrameError::PacketBodyOutOfRange { body_length: 65_536, mtu: 65_535 })
+        Err(FrameError::PacketBodyOutOfRange {
+            body_length: 65_536,
+            mtu: 65_535
+        })
     );
 }
 
 #[tokio::test]
 async fn async_reader_never_allocates_for_hostile_length() {
     let f = fixture();
-    let hostile = f.invalid.iter().find(|i| i.name == "control_hostile_length").unwrap();
+    let hostile = f
+        .invalid
+        .iter()
+        .find(|i| i.name == "control_hostile_length")
+        .unwrap();
     let mut cursor = std::io::Cursor::new(unhex(&hostile.wire_hex));
     let err = read_frame(&mut cursor, f.mtu).await.unwrap_err();
     assert!(matches!(err, FrameError::ControlBodyTooLarge { .. }));
@@ -106,8 +126,14 @@ async fn async_reader_streams_all_valid_fixtures_then_reports_clean_eof() {
         let fr = read_frame(&mut cursor, f.mtu).await.unwrap();
         assert_eq!(fr.body, unhex(&v.body_hex), "{}", v.name);
     }
-    assert_eq!(read_frame(&mut cursor, f.mtu).await.unwrap_err(), FrameError::Truncated { clean: true });
+    assert_eq!(
+        read_frame(&mut cursor, f.mtu).await.unwrap_err(),
+        FrameError::Truncated { clean: true }
+    );
     let cut = unhex(&f.valid[0].wire_hex);
     let mut cut = std::io::Cursor::new(cut[..cut.len() - 1].to_vec());
-    assert_eq!(read_frame(&mut cut, f.mtu).await.unwrap_err(), FrameError::Truncated { clean: false });
+    assert_eq!(
+        read_frame(&mut cut, f.mtu).await.unwrap_err(),
+        FrameError::Truncated { clean: false }
+    );
 }

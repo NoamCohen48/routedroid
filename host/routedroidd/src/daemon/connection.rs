@@ -45,7 +45,10 @@ impl StateSink {
     pub fn set(&self, state: ConnectionState) {
         tracing::info!(serial = %self.serial, ?state, "connection state");
         let _ = self.tx.send(state.clone());
-        self.events.publish(Event::Connection { serial: self.serial.clone(), state });
+        self.events.publish(Event::Connection {
+            serial: self.serial.clone(),
+            state,
+        });
     }
 }
 
@@ -59,7 +62,11 @@ impl DeviceConnection {
         let (stop, stop_rx) = watch::channel(false);
         let stop = Arc::new(stop);
         let counters = Arc::new(Counters::default());
-        let sink = StateSink { serial: req.serial.clone(), events: owner.events.clone(), tx: state_tx };
+        let sink = StateSink {
+            serial: req.serial.clone(),
+            events: owner.events.clone(),
+            tx: state_tx,
+        };
         let connections = owner.clone();
         let serial = req.serial.clone();
         let handle_serial = serial.clone();
@@ -83,8 +90,21 @@ impl DeviceConnection {
             connections.remove(&serial, id).await;
             sink.set(ConnectionState::Ended(outcome));
         });
-        let started_at = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        Self { id, serial: handle_serial, lan_if, phone_ip, tun, started_at, counters, state, stop }
+        let started_at = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        Self {
+            id,
+            serial: handle_serial,
+            lan_if,
+            phone_ip,
+            tun,
+            started_at,
+            counters,
+            state,
+            stop,
+        }
     }
 
     /// Distinguishes this handle from a later connection on the same serial.
@@ -126,7 +146,11 @@ impl DeviceConnection {
                 return outcome.clone();
             }
             if state.changed().await.is_err() {
-                return Outcome { ok: false, kind: None, message: "connection task vanished".into() };
+                return Outcome {
+                    ok: false,
+                    kind: None,
+                    message: "connection task vanished".into(),
+                };
             }
         }
     }
@@ -138,7 +162,9 @@ impl DeviceConnection {
         state: watch::Receiver<ConnectionState>,
     ) -> Option<Outcome> {
         let _ = stop.send(true);
-        tokio::time::timeout(STOP_WAIT, Self::wait_ended(state)).await.ok()
+        tokio::time::timeout(STOP_WAIT, Self::wait_ended(state))
+            .await
+            .ok()
     }
 
     pub async fn stop_and_wait(&self) -> Option<Outcome> {

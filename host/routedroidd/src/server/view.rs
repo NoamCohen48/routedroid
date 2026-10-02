@@ -10,7 +10,10 @@ use routedroid_ipc::{ConnectionState, DeviceInfo};
 use crate::daemon::Snapshot;
 use crate::device::{state_name, unusable};
 
-pub fn devices(attached: &Snapshot, connections: &HashMap<String, ConnectionState>) -> Vec<DeviceInfo> {
+pub fn devices(
+    attached: &Snapshot,
+    connections: &HashMap<String, ConnectionState>,
+) -> Vec<DeviceInfo> {
     attached
         .iter()
         .map(|device| DeviceInfo {
@@ -32,7 +35,11 @@ mod tests {
     use super::*;
 
     fn device(serial: &str, state: DeviceState) -> Device {
-        Device { serial: serial.into(), state, model: Some("SM_J810G".into()) }
+        Device {
+            serial: serial.into(),
+            state,
+            model: Some("SM_J810G".into()),
+        }
     }
 
     #[test]

@@ -21,15 +21,24 @@ pub fn take_all(dir: &Path) -> Result<Vec<(PathBuf, Result<Taken>)>> {
         info!(path = %tmp.display(), "removing a journal that was never created");
         fs::remove_file(&tmp).with_context(|| format!("remove {}", tmp.display()))?;
     }
-    Ok(dir::list(dir, dir::SUFFIX)?.into_iter().map(|path| (path.clone(), Journal::take(&path))).collect())
+    Ok(dir::list(dir, dir::SUFFIX)?
+        .into_iter()
+        .map(|path| (path.clone(), Journal::take(&path)))
+        .collect())
 }
 
 /// Every session that still has a journal, live or orphaned.
 pub fn sessions(dir: &Path) -> Result<BTreeSet<SessionId>> {
     let mut out = BTreeSet::new();
     for path in dir::list(dir, dir::SUFFIX)? {
-        let stem = path.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_suffix(".journal"));
-        let session = stem.unwrap_or_default().parse().with_context(|| format!("name of {}", path.display()))?;
+        let stem = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|n| n.strip_suffix(".journal"));
+        let session = stem
+            .unwrap_or_default()
+            .parse()
+            .with_context(|| format!("name of {}", path.display()))?;
         out.insert(session);
     }
     Ok(out)

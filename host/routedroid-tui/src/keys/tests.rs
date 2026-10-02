@@ -19,8 +19,13 @@ fn type_text(app: &mut App, text: &str) {
 
 fn app_with(connection: Option<ConnectionState>) -> App {
     let mut app = App::new();
-    let device =
-        DeviceInfo { serial: "abc".into(), state: "device".into(), model: None, unusable_reason: None, connection };
+    let device = DeviceInfo {
+        serial: "abc".into(),
+        state: "device".into(),
+        model: None,
+        unusable_reason: None,
+        connection,
+    };
     app.apply(Incoming::Devices(vec![device]));
     app
 }
@@ -75,7 +80,12 @@ fn stop_needs_a_connection_and_a_confirmation() {
 
     let mut app = app_with(Some(ConnectionState::Active));
     press(&mut app, KeyCode::Char('x'));
-    assert_eq!(app.mode, Mode::ConfirmStop { serial: "abc".into() });
+    assert_eq!(
+        app.mode,
+        Mode::ConfirmStop {
+            serial: "abc".into()
+        }
+    );
     assert!(press(&mut app, KeyCode::Char('n')).is_empty());
     assert_eq!(app.mode, Mode::Normal);
     press(&mut app, KeyCode::Char('x'));

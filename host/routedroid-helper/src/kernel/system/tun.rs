@@ -26,7 +26,8 @@ pub struct Device(OwnedFd);
 impl Device {
     pub fn create(name: &IfName) -> Result<Self> {
         let flags = OFlags::RDWR | OFlags::NONBLOCK | OFlags::CLOEXEC;
-        let fd = rustix::fs::open("/dev/net/tun", flags, Mode::empty()).context("open /dev/net/tun")?;
+        let fd =
+            rustix::fs::open("/dev/net/tun", flags, Mode::empty()).context("open /dev/net/tun")?;
         // SAFETY: ifreq is a plain C struct; all-zero is a valid value.
         let mut request: libc::ifreq = unsafe { std::mem::zeroed() };
         // IfName guarantees 1..=15 ASCII bytes, so the name stays NUL-terminated.
@@ -35,7 +36,13 @@ impl Device {
         }
         request.ifr_ifru.ifru_flags = IFF_TUN | IFF_NO_PI | IFF_TUN_EXCL;
         // SAFETY: TUNSETIFF reads and writes the ifreq we own for the whole call.
-        let rc = unsafe { libc::ioctl(fd.as_raw_fd(), TUNSETIFF as _, &mut request as *mut libc::ifreq) };
+        let rc = unsafe {
+            libc::ioctl(
+                fd.as_raw_fd(),
+                TUNSETIFF as _,
+                &mut request as *mut libc::ifreq,
+            )
+        };
         if rc < 0 {
             return Err(io::Error::last_os_error()).with_context(|| format!("create TUN {name}"));
         }
@@ -49,7 +56,9 @@ impl Device {
 
     /// A tokio handle on a duplicate of the fd, for the relay.
     pub fn open_async(&self) -> io::Result<AsyncTun> {
-        Ok(AsyncTun(AsyncFd::new(self.0.as_fd().try_clone_to_owned()?)?))
+        Ok(AsyncTun(AsyncFd::new(
+            self.0.as_fd().try_clone_to_owned()?,
+        )?))
     }
 }
 
@@ -74,7 +83,12 @@ impl AsyncTun {
             let mut guard = self.0.writable().await?;
             match guard.try_io(|fd| Ok(rustix::io::write(fd.get_ref(), packet)?)) {
                 Ok(Ok(n)) if n == packet.len() => return Ok(()),
-                Ok(Ok(n)) => return Err(io::Error::other(format!("short TUN write: {n} of {} bytes", packet.len()))),
+                Ok(Ok(n)) => {
+                    return Err(io::Error::other(format!(
+                        "short TUN write: {n} of {} bytes",
+                        packet.len()
+                    )))
+                }
                 Ok(Err(e)) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Ok(Err(e)) => return Err(e),
                 Err(_would_block) => continue,

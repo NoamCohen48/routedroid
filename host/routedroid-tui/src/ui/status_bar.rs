@@ -9,7 +9,8 @@ use ratatui::Frame;
 use crate::app::{App, DaemonLink, Mode};
 
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
-    let [daemon_area, hints_area] = Layout::horizontal([Constraint::Min(20), Constraint::Percentage(70)]).areas(area);
+    let [daemon_area, hints_area] =
+        Layout::horizontal([Constraint::Min(20), Constraint::Percentage(70)]).areas(area);
     let daemon = match &app.daemon {
         DaemonLink::Connected => Line::from(" connected ").fg(Color::Green),
         DaemonLink::Disconnected { reason } => {
@@ -22,5 +23,8 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         Mode::ConfirmStop { .. } => "y confirm stop   any other key cancels",
     };
     frame.render_widget(Paragraph::new(daemon), daemon_area);
-    frame.render_widget(Paragraph::new(Line::from(hints).dim()).right_aligned(), hints_area);
+    frame.render_widget(
+        Paragraph::new(Line::from(hints).dim()).right_aligned(),
+        hints_area,
+    );
 }

@@ -28,9 +28,17 @@ impl FromStr for Cidr {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> anyhow::Result<Self> {
-        let (addr, len) = s.split_once('/').with_context(|| format!("{s:?} is not a.b.c.d/len"))?;
-        let network: Ipv4Addr = addr.parse().with_context(|| format!("{s:?}: bad address"))?;
-        let len: u8 = len.parse().ok().filter(|l| *l <= 32).with_context(|| format!("{s:?}: bad prefix length"))?;
+        let (addr, len) = s
+            .split_once('/')
+            .with_context(|| format!("{s:?} is not a.b.c.d/len"))?;
+        let network: Ipv4Addr = addr
+            .parse()
+            .with_context(|| format!("{s:?}: bad address"))?;
+        let len: u8 = len
+            .parse()
+            .ok()
+            .filter(|l| *l <= 32)
+            .with_context(|| format!("{s:?}: bad prefix length"))?;
         if u32::from(network) & !mask(len) != 0 {
             bail!("{s:?} has host bits set");
         }
@@ -63,13 +71,26 @@ mod tests {
         assert!(block.contains("192.168.1.207".parse().unwrap()));
         assert!(!block.contains("192.168.1.208".parse().unwrap()));
         let host: Cidr = "10.0.0.5/32".parse().unwrap();
-        assert!(host.contains("10.0.0.5".parse().unwrap()) && !host.contains("10.0.0.4".parse().unwrap()));
-        assert!("0.0.0.0/0".parse::<Cidr>().unwrap().contains("8.8.8.8".parse().unwrap()));
+        assert!(
+            host.contains("10.0.0.5".parse().unwrap())
+                && !host.contains("10.0.0.4".parse().unwrap())
+        );
+        assert!("0.0.0.0/0"
+            .parse::<Cidr>()
+            .unwrap()
+            .contains("8.8.8.8".parse().unwrap()));
     }
 
     #[test]
     fn typos_are_refused() {
-        for bad in ["192.168.1.201/29", "192.168.1.0", "192.168.1.0/33", "192.168.1/24", "x/8", "10.0.0.0/-1"] {
+        for bad in [
+            "192.168.1.201/29",
+            "192.168.1.0",
+            "192.168.1.0/33",
+            "192.168.1/24",
+            "x/8",
+            "10.0.0.0/-1",
+        ] {
             assert!(bad.parse::<Cidr>().is_err(), "{bad}");
         }
     }

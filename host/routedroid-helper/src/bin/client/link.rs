@@ -17,7 +17,10 @@ pub enum Incoming<'a> {
 
 impl Link {
     pub fn new(conn: SeqPacket) -> Self {
-        Self { conn, buf: vec![0; MAX_DATAGRAM] }
+        Self {
+            conn,
+            buf: vec![0; MAX_DATAGRAM],
+        }
     }
 
     /// Send `request` and wait for its reply; packets in between are dropped.

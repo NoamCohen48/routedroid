@@ -32,14 +32,23 @@ impl Drop for FakeTun {
 
 impl Fake {
     pub fn lock(&self) -> MutexGuard<'_, State> {
-        self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Everything observable, for before/after comparisons.
     pub fn snapshot(&self) -> String {
         let s = self.lock();
-        let sysctls: Vec<_> = s.sysctls.iter().filter(|(_, value)| *value != "0").collect();
-        format!("links={:?}\nroutes={:?}\ntables={:?}\nsysctls={sysctls:?}", s.links, s.routes, s.tables)
+        let sysctls: Vec<_> = s
+            .sysctls
+            .iter()
+            .filter(|(_, value)| *value != "0")
+            .collect();
+        format!(
+            "links={:?}\nroutes={:?}\ntables={:?}\nsysctls={sysctls:?}",
+            s.links, s.routes, s.tables
+        )
     }
 
     fn call(&self, name: &'static str) -> Result<MutexGuard<'_, State>> {
@@ -64,7 +73,12 @@ impl Kernel for Fake {
 
     fn neighbours(&self, index: u32) -> Result<Vec<Ipv4Addr>> {
         let state = self.call("neighbours")?;
-        Ok(state.neighbours.iter().filter(|(i, _)| *i == index).map(|(_, a)| *a).collect())
+        Ok(state
+            .neighbours
+            .iter()
+            .filter(|(i, _)| *i == index)
+            .map(|(_, a)| *a)
+            .collect())
     }
 
     fn routes(&self) -> Result<Vec<Route>> {
@@ -77,7 +91,10 @@ impl Kernel for Fake {
             bail!("create TUN {name}: EBUSY");
         }
         let index = state.add_link(name.as_str(), Some(alias));
-        Ok(FakeTun { state: self.clone(), index })
+        Ok(FakeTun {
+            state: self.clone(),
+            index,
+        })
     }
 
     fn delete_link(&self, index: u32) -> Result<()> {
@@ -87,10 +104,20 @@ impl Kernel for Fake {
 
     fn add_route(&self, route: &HostRoute) -> Result<()> {
         let mut state = self.call("add_route")?;
-        if state.routes.iter().any(|r| r.dst == route.dst && r.prefix == 32) {
+        if state
+            .routes
+            .iter()
+            .any(|r| r.dst == route.dst && r.prefix == 32)
+        {
             bail!("add route {}/32: EEXIST", route.dst);
         }
-        let entry = Route { dst: route.dst, prefix: 32, gateway: None, oif: Some(route.oif), protocol: ROUTE_PROTOCOL };
+        let entry = Route {
+            dst: route.dst,
+            prefix: 32,
+            gateway: None,
+            oif: Some(route.oif),
+            protocol: ROUTE_PROTOCOL,
+        };
         state.routes.push(entry);
         Ok(())
     }
@@ -112,18 +139,30 @@ impl Kernel for Fake {
             bail!("create table inet {name}: EEXIST");
         }
         state.next_handle += 1;
-        let table = NftTable { handle: state.next_handle, comment: Some(firewall.tag.clone()) };
+        let table = NftTable {
+            handle: state.next_handle,
+            comment: Some(firewall.tag.clone()),
+        };
         state.tables.insert(name, (table, firewall.clone()));
         Ok(())
     }
 
     fn nft_table(&self, name: &str) -> Result<Option<NftTable>> {
-        Ok(self.call("nft_table")?.tables.get(name).map(|(table, _)| table.clone()))
+        Ok(self
+            .call("nft_table")?
+            .tables
+            .get(name)
+            .map(|(table, _)| table.clone()))
     }
 
     fn delete_nft_table(&self, handle: u64) -> Result<()> {
         let mut state = self.call("delete_nft_table")?;
-        let Some(name) = state.tables.iter().find(|(_, (t, _))| t.handle == handle).map(|(n, _)| n.clone()) else {
+        let Some(name) = state
+            .tables
+            .iter()
+            .find(|(_, (t, _))| t.handle == handle)
+            .map(|(n, _)| n.clone())
+        else {
             bail!("delete table handle {handle}: ENOENT");
         };
         state.tables.remove(&name);
@@ -135,7 +174,13 @@ impl Kernel for Fake {
         if !state.links.contains_key(key.ifname.as_str()) {
             return Ok(None);
         }
-        Ok(Some(state.sysctls.get(key).cloned().unwrap_or_else(|| "0".into())))
+        Ok(Some(
+            state
+                .sysctls
+                .get(key)
+                .cloned()
+                .unwrap_or_else(|| "0".into()),
+        ))
     }
 
     fn sysctl_write(&self, key: &SysctlKey, value: &str) -> Result<()> {

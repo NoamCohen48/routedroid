@@ -17,7 +17,9 @@ pub struct Listener {
 impl Listener {
     pub(super) fn from_socket(socket: Socket) -> io::Result<Self> {
         socket.set_nonblocking(true)?;
-        Ok(Self { socket: AsyncFd::new(socket)? })
+        Ok(Self {
+            socket: AsyncFd::new(socket)?,
+        })
     }
 
     /// Bind `path`, replacing a stale socket file left by an earlier run.

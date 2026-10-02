@@ -32,8 +32,16 @@ impl SessionDriver {
         let state = self.machine.state();
         let budget = PhaseTimer::budget(state).unwrap_or_default();
         // Configuring waits on a person answering the consent dialog, not on a protocol step.
-        let code = if state == State::Configuring { ErrorCode::ConsentTimeout } else { ErrorCode::ProtocolError };
-        self.refuse(ErrorBody::new(code, format!("no progress from {} within {budget:?}", state.name()))).await
+        let code = if state == State::Configuring {
+            ErrorCode::ConsentTimeout
+        } else {
+            ErrorCode::ProtocolError
+        };
+        self.refuse(ErrorBody::new(
+            code,
+            format!("no progress from {} within {budget:?}", state.name()),
+        ))
+        .await
     }
 
     /// What the reader task delivered; `None` means the task is gone.
@@ -46,8 +54,13 @@ impl SessionDriver {
             }
             Inbound::Broken(FrameError::Truncated { clean: true }) => Some(SessionEnd::PeerClosed),
             Inbound::Broken(FrameError::Io(e)) => Some(SessionEnd::Transport(e)),
-            Inbound::Broken(e @ FrameError::Truncated { clean: false }) => Some(SessionEnd::Transport(e.to_string())),
-            Inbound::Broken(e) => Some(self.refuse(ErrorBody::new(ErrorCode::ProtocolError, e.to_string())).await),
+            Inbound::Broken(e @ FrameError::Truncated { clean: false }) => {
+                Some(SessionEnd::Transport(e.to_string()))
+            }
+            Inbound::Broken(e) => Some(
+                self.refuse(ErrorBody::new(ErrorCode::ProtocolError, e.to_string()))
+                    .await,
+            ),
         }
     }
 
@@ -94,7 +107,10 @@ impl SessionDriver {
 
     /// Send ERROR and end the session with it.
     async fn refuse(&mut self, body: ErrorBody) -> SessionEnd {
-        let _ = self.out_tx.send(Frame::json(MessageType::Error, &body)).await;
+        let _ = self
+            .out_tx
+            .send(Frame::json(MessageType::Error, &body))
+            .await;
         SessionEnd::Refused(body)
     }
 }

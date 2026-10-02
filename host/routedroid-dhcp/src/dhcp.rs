@@ -307,9 +307,17 @@ pub fn parse_classless_routes(b: &[u8]) -> (Vec<StaticRoute>, bool) {
         let mut dest = [0u8; 4];
         dest[..n].copy_from_slice(&entry[..n]);
         // Mask host bits so the destination is canonical.
-        let mask: u32 = if prefix == 0 { 0 } else { u32::MAX << (32 - u32::from(prefix)) };
+        let mask: u32 = if prefix == 0 {
+            0
+        } else {
+            u32::MAX << (32 - u32::from(prefix))
+        };
         let dest = Ipv4Addr::from(u32::from_be_bytes(dest) & mask);
-        out.push(StaticRoute { dest, prefix, router: ip4(&entry[n..n + 4]) });
+        out.push(StaticRoute {
+            dest,
+            prefix,
+            router: ip4(&entry[n..n + 4]),
+        });
         i += 1 + n + 4;
     }
     (out, true)
@@ -334,7 +342,8 @@ pub struct Options {
 }
 
 fn ip_list(b: &[u8]) -> Option<Vec<Ipv4Addr>> {
-    (!b.is_empty() && b.len().is_multiple_of(4)).then(|| b.as_chunks::<4>().0.iter().map(|c| ip4(c)).collect())
+    (!b.is_empty() && b.len().is_multiple_of(4))
+        .then(|| b.as_chunks::<4>().0.iter().map(|c| ip4(c)).collect())
 }
 
 fn u32_opt(b: &[u8]) -> Option<u32> {
@@ -367,8 +376,9 @@ impl Options {
                 }
             };
         }
-        o.message_type =
-            take!(opt::MESSAGE_TYPE, |b: &[u8]| (b.len() == 1).then(|| MessageType::from_u8(b[0])).flatten());
+        o.message_type = take!(opt::MESSAGE_TYPE, |b: &[u8]| (b.len() == 1)
+            .then(|| MessageType::from_u8(b[0]))
+            .flatten());
         o.subnet_mask = take!(opt::SUBNET_MASK, |b: &[u8]| (b.len() == 4).then(|| ip4(b)));
         o.routers = take!(opt::ROUTER, ip_list).unwrap_or_default();
         o.dns = take!(opt::DNS, ip_list).unwrap_or_default();
@@ -377,7 +387,9 @@ impl Options {
         o.lease_secs = take!(opt::LEASE_TIME, u32_opt);
         o.t1 = take!(opt::T1, u32_opt);
         o.t2 = take!(opt::T2, u32_opt);
-        o.message = take!(opt::MESSAGE, |b: &[u8]| Some(String::from_utf8_lossy(b).into_owned()));
+        o.message = take!(opt::MESSAGE, |b: &[u8]| Some(
+            String::from_utf8_lossy(b).into_owned()
+        ));
         if let Some(v) = get(opt::CLASSLESS_ROUTES, &mut o) {
             let (routes, ok) = parse_classless_routes(&v);
             if !ok {
@@ -412,7 +424,11 @@ fn base(id: &Identity, xid: u32, secs: u16, mtype: MessageType, ciaddr: Ipv4Addr
     chaddr[..6].copy_from_slice(&id.mac);
     // The broadcast flag only means something while we have no address the
     // server could unicast to (RFC 2131 §4.1).
-    let flags = if ciaddr.is_unspecified() { FLAG_BROADCAST } else { 0 };
+    let flags = if ciaddr.is_unspecified() {
+        FLAG_BROADCAST
+    } else {
+        0
+    };
     Message {
         op: BOOTREQUEST,
         htype: HTYPE_ETHERNET,
@@ -426,13 +442,20 @@ fn base(id: &Identity, xid: u32, secs: u16, mtype: MessageType, ciaddr: Ipv4Addr
         siaddr: Ipv4Addr::UNSPECIFIED,
         giaddr: Ipv4Addr::UNSPECIFIED,
         chaddr,
-        options: vec![(opt::MESSAGE_TYPE, vec![mtype.as_u8()]), (opt::CLIENT_ID, id.client_id.clone())],
+        options: vec![
+            (opt::MESSAGE_TYPE, vec![mtype.as_u8()]),
+            (opt::CLIENT_ID, id.client_id.clone()),
+        ],
     }
 }
 
 fn push_common_tail(m: &mut Message) {
-    m.options.push((opt::PARAM_REQUEST, PARAM_REQUEST_LIST.to_vec()));
-    m.options.push((opt::MAX_MESSAGE_SIZE, MAX_MESSAGE_SIZE.to_be_bytes().to_vec()));
+    m.options
+        .push((opt::PARAM_REQUEST, PARAM_REQUEST_LIST.to_vec()));
+    m.options.push((
+        opt::MAX_MESSAGE_SIZE,
+        MAX_MESSAGE_SIZE.to_be_bytes().to_vec(),
+    ));
 }
 
 /// DISCOVER: broadcast, ciaddr 0, option 61, broadcast flag.
@@ -443,9 +466,16 @@ pub fn discover(id: &Identity, xid: u32, secs: u16) -> Message {
 }
 
 /// SELECTING REQUEST: broadcast, requested address (50) + server id (54).
-pub fn request_selecting(id: &Identity, xid: u32, secs: u16, requested: Ipv4Addr, server: Ipv4Addr) -> Message {
+pub fn request_selecting(
+    id: &Identity,
+    xid: u32,
+    secs: u16,
+    requested: Ipv4Addr,
+    server: Ipv4Addr,
+) -> Message {
     let mut m = base(id, xid, secs, MessageType::Request, Ipv4Addr::UNSPECIFIED);
-    m.options.push((opt::REQUESTED_IP, requested.octets().to_vec()));
+    m.options
+        .push((opt::REQUESTED_IP, requested.octets().to_vec()));
     m.options.push((opt::SERVER_ID, server.octets().to_vec()));
     push_common_tail(&mut m);
     m
@@ -454,7 +484,8 @@ pub fn request_selecting(id: &Identity, xid: u32, secs: u16, requested: Ipv4Addr
 /// INIT-REBOOT REQUEST: broadcast, requested address (50), no server id.
 pub fn request_init_reboot(id: &Identity, xid: u32, secs: u16, requested: Ipv4Addr) -> Message {
     let mut m = base(id, xid, secs, MessageType::Request, Ipv4Addr::UNSPECIFIED);
-    m.options.push((opt::REQUESTED_IP, requested.octets().to_vec()));
+    m.options
+        .push((opt::REQUESTED_IP, requested.octets().to_vec()));
     push_common_tail(&mut m);
     m
 }
@@ -530,19 +561,37 @@ mod tests {
     #[test]
     fn option_walker_errors_are_precise() {
         let mut out = Vec::new();
-        assert_eq!(parse_options(&[53], &mut out), Err(ParseError::DanglingCode { code: 53, at: 0 }));
-        assert_eq!(parse_options(&[0, 0, 53, 5, 1], &mut out), Err(ParseError::TruncatedOption { code: 53, at: 2 }));
+        assert_eq!(
+            parse_options(&[53], &mut out),
+            Err(ParseError::DanglingCode { code: 53, at: 0 })
+        );
+        assert_eq!(
+            parse_options(&[0, 0, 53, 5, 1], &mut out),
+            Err(ParseError::TruncatedOption { code: 53, at: 2 })
+        );
         out.clear();
         assert_eq!(parse_options(&[0, 53, 1, 2, 255, 99, 99], &mut out), Ok(()));
         assert_eq!(out, vec![(53, vec![2])]);
-        assert_eq!(Message::parse(&[0; 100]).unwrap_err(), ParseError::TooShort(100));
-        assert_eq!(Message::parse(&[0; 240]).unwrap_err(), ParseError::BadMagic([0; 4]));
+        assert_eq!(
+            Message::parse(&[0; 100]).unwrap_err(),
+            ParseError::TooShort(100)
+        );
+        assert_eq!(
+            Message::parse(&[0; 240]).unwrap_err(),
+            ParseError::BadMagic([0; 4])
+        );
     }
 
     #[test]
     fn encode_parse_roundtrip_and_overload() {
         let id = Identity::new([0xde, 0xad, 0xbe, 0xef, 0, 1], "routedroid:x:y");
-        let m = request_selecting(&id, 0xdead_beef, 7, Ipv4Addr::new(10, 1, 2, 3), Ipv4Addr::new(10, 1, 2, 1));
+        let m = request_selecting(
+            &id,
+            0xdead_beef,
+            7,
+            Ipv4Addr::new(10, 1, 2, 3),
+            Ipv4Addr::new(10, 1, 2, 1),
+        );
         let enc = m.encode();
         assert_eq!(enc.len(), 300);
         let back = Message::parse(&enc).unwrap();
@@ -568,9 +617,14 @@ mod tests {
         // RFC 3396: split option bodies concatenate; malformed sizes are flagged.
         let mut raw = vec![0u8; 240];
         raw[236..240].copy_from_slice(&MAGIC_COOKIE);
-        raw.extend_from_slice(&[6, 4, 8, 8, 8, 8, 6, 4, 1, 1, 1, 1, 1, 3, 1, 2, 3, 58, 2, 0, 1, 255]);
+        raw.extend_from_slice(&[
+            6, 4, 8, 8, 8, 8, 6, 4, 1, 1, 1, 1, 1, 3, 1, 2, 3, 58, 2, 0, 1, 255,
+        ]);
         let o = Options::from_message(&Message::parse(&raw).unwrap());
-        assert_eq!(o.dns, vec![Ipv4Addr::new(8, 8, 8, 8), Ipv4Addr::new(1, 1, 1, 1)]);
+        assert_eq!(
+            o.dns,
+            vec![Ipv4Addr::new(8, 8, 8, 8), Ipv4Addr::new(1, 1, 1, 1)]
+        );
         assert_eq!(o.subnet_mask, None);
         assert_eq!(o.t1, None);
         assert_eq!(o.malformed, vec![1, 58]);
@@ -580,15 +634,30 @@ mod tests {
     fn classless_routes_rfc3442_examples() {
         // RFC 3442 §9 style: 10.0.0.0/8 via 10.17.0.1, 10.229.0.0/16 via 10.229.0.1,
         // 0.0.0.0/0 via 10.27.129.1, 10.27.129.0/24 via 10.27.129.1.
-        let b = [8, 10, 10, 17, 0, 1, 16, 10, 229, 10, 229, 0, 1, 0, 10, 27, 129, 1, 24, 10, 27, 129, 10, 27, 129, 1];
+        let b = [
+            8, 10, 10, 17, 0, 1, 16, 10, 229, 10, 229, 0, 1, 0, 10, 27, 129, 1, 24, 10, 27, 129,
+            10, 27, 129, 1,
+        ];
         let (r, ok) = parse_classless_routes(&b);
         assert!(ok);
         assert_eq!(
             r,
             vec![
-                StaticRoute { dest: "10.0.0.0".parse().unwrap(), prefix: 8, router: "10.17.0.1".parse().unwrap() },
-                StaticRoute { dest: "10.229.0.0".parse().unwrap(), prefix: 16, router: "10.229.0.1".parse().unwrap() },
-                StaticRoute { dest: "0.0.0.0".parse().unwrap(), prefix: 0, router: "10.27.129.1".parse().unwrap() },
+                StaticRoute {
+                    dest: "10.0.0.0".parse().unwrap(),
+                    prefix: 8,
+                    router: "10.17.0.1".parse().unwrap()
+                },
+                StaticRoute {
+                    dest: "10.229.0.0".parse().unwrap(),
+                    prefix: 16,
+                    router: "10.229.0.1".parse().unwrap()
+                },
+                StaticRoute {
+                    dest: "0.0.0.0".parse().unwrap(),
+                    prefix: 0,
+                    router: "10.27.129.1".parse().unwrap()
+                },
                 StaticRoute {
                     dest: "10.27.129.0".parse().unwrap(),
                     prefix: 24,

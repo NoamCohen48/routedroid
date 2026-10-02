@@ -19,26 +19,50 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     };
     let lines = match app.selected_connection() {
         Some(connection) => {
-            let state_color = if describe::is_failure(&connection.state) { Color::Red } else { Color::Green };
+            let state_color = if describe::is_failure(&connection.state) {
+                Color::Red
+            } else {
+                Color::Green
+            };
             vec![
                 pair("phone_ip", connection.phone_ip.to_string(), None),
-                pair("lan_if", format!("{}    tun: {}", connection.lan_if, connection.tun), None),
-                pair("state", describe::connection_state(&connection.state), Some(state_color)),
+                pair(
+                    "lan_if",
+                    format!("{}    tun: {}", connection.lan_if, connection.tun),
+                    None,
+                ),
+                pair(
+                    "state",
+                    describe::connection_state(&connection.state),
+                    Some(state_color),
+                ),
                 pair(
                     "packets",
-                    format!("to phone {}    from phone {}", connection.packets_to_phone, connection.packets_from_phone),
+                    format!(
+                        "to phone {}    from phone {}",
+                        connection.packets_to_phone, connection.packets_from_phone
+                    ),
                     None,
                 ),
             ]
         }
-        None => match app.selected_device().and_then(|device| device.connection.as_ref()) {
+        None => match app
+            .selected_device()
+            .and_then(|device| device.connection.as_ref())
+        {
             Some(state) => {
-                vec![pair("state", describe::connection_state(state), None), Line::from("(fetching details)")]
+                vec![
+                    pair("state", describe::connection_state(state), None),
+                    Line::from("(fetching details)"),
+                ]
             }
             None => vec![Line::from("not connected; press s to connect").dim()],
         },
     };
-    frame.render_widget(Paragraph::new(lines).block(Block::bordered().title(title)), area);
+    frame.render_widget(
+        Paragraph::new(lines).block(Block::bordered().title(title)),
+        area,
+    );
 }
 
 fn pair(label: &'static str, value: String, color: Option<Color>) -> Line<'static> {

@@ -52,7 +52,10 @@ pub fn listen(path: &Path) -> Result<Bound> {
     let old = rustix::process::umask(Mode::from_raw_mode(0o177));
     let listener = UnixListener::bind(path).with_context(|| format!("bind {}", path.display()));
     rustix::process::umask(old);
-    Ok(Bound { listener: listener?, _lock: lock })
+    Ok(Bound {
+        listener: listener?,
+        _lock: lock,
+    })
 }
 
 /// The socket directory must belong to us and be closed to everyone else;
@@ -63,7 +66,10 @@ fn check_private_dir(dir: &Path) -> Result<()> {
         bail!("{} is not a directory", dir.display());
     }
     if meta.uid() != current_uid() {
-        bail!("{} is not owned by this user; use --socket with a private directory", dir.display());
+        bail!(
+            "{} is not owned by this user; use --socket with a private directory",
+            dir.display()
+        );
     }
     if meta.mode() & 0o077 != 0 {
         bail!(

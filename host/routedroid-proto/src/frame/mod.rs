@@ -45,7 +45,10 @@ impl Frame {
     }
 
     pub fn json<T: serde::Serialize>(message_type: MessageType, value: &T) -> Self {
-        Self::new(message_type, serde_json::to_vec(value).expect("control bodies are plain structs"))
+        Self::new(
+            message_type,
+            serde_json::to_vec(value).expect("control bodies are plain structs"),
+        )
     }
 
     pub fn ip_packet(packet: Vec<u8>) -> Self {
@@ -97,18 +100,25 @@ pub fn validate_header(h: &RawHeader, mtu: u32) -> Result<MessageType, FrameErro
     if h.flags != 0 {
         return Err(FrameError::NonZeroFlags(h.flags));
     }
-    let message_type = MessageType::from_u8(h.message_type).ok_or(FrameError::UnknownMessageType(h.message_type))?;
+    let message_type = MessageType::from_u8(h.message_type)
+        .ok_or(FrameError::UnknownMessageType(h.message_type))?;
     let len = h.body_length;
     match message_type {
         MessageType::IpPacket => {
             let max = mtu.min(MAX_PACKET_BODY);
             if len < MIN_PACKET_BODY || len > max {
-                return Err(FrameError::PacketBodyOutOfRange { body_length: len, mtu: max });
+                return Err(FrameError::PacketBodyOutOfRange {
+                    body_length: len,
+                    mtu: max,
+                });
             }
         }
         t if t.is_empty_body() => {
             if len != 0 {
-                return Err(FrameError::UnexpectedBody { message_type: t, body_length: len });
+                return Err(FrameError::UnexpectedBody {
+                    message_type: t,
+                    body_length: len,
+                });
             }
         }
         t => {
@@ -116,7 +126,10 @@ pub fn validate_header(h: &RawHeader, mtu: u32) -> Result<MessageType, FrameErro
                 return Err(FrameError::EmptyBody(t));
             }
             if len > MAX_CONTROL_BODY {
-                return Err(FrameError::ControlBodyTooLarge { message_type: t, body_length: len });
+                return Err(FrameError::ControlBodyTooLarge {
+                    message_type: t,
+                    body_length: len,
+                });
             }
         }
     }
@@ -127,7 +140,9 @@ pub fn validate_header(h: &RawHeader, mtu: u32) -> Result<MessageType, FrameErro
 /// bytes consumed. Header validation happens before the body is touched.
 pub fn decode(bytes: &[u8], mtu: u32) -> Result<(Frame, usize), FrameError> {
     if bytes.len() < HEADER_LEN {
-        return Err(FrameError::Truncated { clean: bytes.is_empty() });
+        return Err(FrameError::Truncated {
+            clean: bytes.is_empty(),
+        });
     }
     let mut hdr = [0u8; HEADER_LEN];
     hdr.copy_from_slice(&bytes[..HEADER_LEN]);
@@ -138,7 +153,10 @@ pub fn decode(bytes: &[u8], mtu: u32) -> Result<(Frame, usize), FrameError> {
     if bytes.len() < end {
         return Err(FrameError::Truncated { clean: false });
     }
-    Ok((Frame::new(message_type, bytes[HEADER_LEN..end].to_vec()), end))
+    Ok((
+        Frame::new(message_type, bytes[HEADER_LEN..end].to_vec()),
+        end,
+    ))
 }
 
 #[cfg(feature = "tokio")]

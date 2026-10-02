@@ -25,7 +25,10 @@ const EXIT_NAK: u8 = 3;
 const EXIT_TIMEOUT: u8 = 4;
 
 #[derive(Parser, Debug)]
-#[command(name = "routedroid-dhcp", about = "Routedroid DHCP alias client (extra lease, never configured locally)")]
+#[command(
+    name = "routedroid-dhcp",
+    about = "Routedroid DHCP alias client (extra lease, never configured locally)"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -135,7 +138,10 @@ fn publish(lease: &Lease, state: Option<&PathBuf>) -> Result<()> {
 async fn acquire(a: AcquireArgs) -> Result<u8> {
     let mut client = Client::new(&a.iface, &a.client_id, !a.no_arp)?;
     let offer_window = Duration::from_secs_f64(a.offer_window.max(0.0));
-    let lease = match client.acquire(Duration::from_secs(a.timeout), offer_window).await? {
+    let lease = match client
+        .acquire(Duration::from_secs(a.timeout), offer_window)
+        .await?
+    {
         Outcome::Bound(l) => l,
         Outcome::Nak(m) => {
             error!(message = %m, "NAK");
@@ -166,7 +172,14 @@ async fn acquire(a: AcquireArgs) -> Result<u8> {
     let mut current = lease;
     let mut code = 0;
     if let Some(hold) = a.hold {
-        match client.hold(current.clone(), Duration::from_secs(hold), a.renew_after.map(Duration::from_secs)).await? {
+        match client
+            .hold(
+                current.clone(),
+                Duration::from_secs(hold),
+                a.renew_after.map(Duration::from_secs),
+            )
+            .await?
+        {
             HoldEnd::Done(l) | HoldEnd::Signal(l) => {
                 if let Some(p) = &a.state {
                     l.save(p)?;
@@ -191,7 +204,8 @@ fn load(a: &StateArgs) -> Result<(Client, Lease)> {
     if lease.iface != a.iface {
         warn!(state_iface = %lease.iface, iface = %a.iface, "state was acquired on a different interface");
     }
-    let client = Client::new(&a.iface, &lease.client_id, !a.no_arp).context("open packet socket")?;
+    let client =
+        Client::new(&a.iface, &lease.client_id, !a.no_arp).context("open packet socket")?;
     Ok((client, lease))
 }
 
@@ -221,7 +235,9 @@ async fn renew(a: StateArgs) -> Result<u8> {
 
 async fn init_reboot(a: StateArgs) -> Result<u8> {
     let (mut client, lease) = load(&a)?;
-    let o = client.init_reboot(&lease, Duration::from_secs(a.timeout)).await?;
+    let o = client
+        .init_reboot(&lease, Duration::from_secs(a.timeout))
+        .await?;
     outcome_code(o, &a.state, "INIT-REBOOT")
 }
 
@@ -274,7 +290,10 @@ mod golden {
     fn discover_frame_golden_bytes() {
         let expected: Vec<u8> = {
             let hex: String = DISCOVER_GOLDEN.concat();
-            (0..hex.len()).step_by(2).map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap()).collect()
+            (0..hex.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+                .collect()
         };
         let got = discover_frame();
         assert_eq!(got.len(), 342);

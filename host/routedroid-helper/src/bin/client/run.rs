@@ -36,7 +36,8 @@ impl ClientArgs {
 }
 
 pub async fn run(socket: &Path, args: ClientArgs) -> Result<()> {
-    let conn = SeqPacket::connect(socket).with_context(|| format!("connect {}", socket.display()))?;
+    let conn =
+        SeqPacket::connect(socket).with_context(|| format!("connect {}", socket.display()))?;
     let mut link = Link::new(conn);
     match link.request(&Request::Hello { version: VERSION }).await? {
         Reply::Hello { .. } => {}
@@ -46,10 +47,19 @@ pub async fn run(socket: &Path, args: ClientArgs) -> Result<()> {
         bail!("no Pong");
     }
     args.crash("before_start");
-    let start =
-        Request::Start { lan_if: args.lan_if.clone(), phone_ip: args.phone_ip, tun: args.tun.clone(), mtu: args.mtu };
+    let start = Request::Start {
+        lan_if: args.lan_if.clone(),
+        phone_ip: args.phone_ip,
+        tun: args.tun.clone(),
+        mtu: args.mtu,
+    };
     let host_ip = match link.request(&start).await? {
-        Reply::Started { session, tun, host_ip, lan_prefix } => {
+        Reply::Started {
+            session,
+            tun,
+            host_ip,
+            lan_prefix,
+        } => {
             info!(session, %tun, %host_ip, lan_prefix, "started");
             println!("STARTED session={session} tun={tun} host_ip={host_ip}/{lan_prefix}");
             host_ip
@@ -67,7 +77,10 @@ pub async fn run(socket: &Path, args: ClientArgs) -> Result<()> {
         }
     }
     if !args.hold.is_zero() {
-        info!(secs = args.hold.as_secs(), "holding session (Ctrl-C stops early)");
+        info!(
+            secs = args.hold.as_secs(),
+            "holding session (Ctrl-C stops early)"
+        );
         tokio::select! {
             _ = tokio::time::sleep(args.hold) => {}
             _ = tokio::signal::ctrl_c() => info!("interrupted; stopping"),

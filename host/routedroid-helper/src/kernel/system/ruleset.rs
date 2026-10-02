@@ -7,7 +7,13 @@ use crate::kernel::Firewall;
 use crate::op::nft_table_name;
 
 pub fn render(fw: &Firewall) -> String {
-    let Firewall { tun, lan_if, phone_ip, host_ip, tag } = fw;
+    let Firewall {
+        tun,
+        lan_if,
+        phone_ip,
+        host_ip,
+        tag,
+    } = fw;
     let table = nft_table_name(tun);
     format!(
         r#"create table inet {table} {{ comment "{tag}"; }}
@@ -58,7 +64,9 @@ mod tests {
             tag: "routedroid:00000000000000ab".into(),
         };
         let rules = render(&fw);
-        assert!(rules.starts_with("create table inet routedroid_phone0 { comment \"routedroid:00000000000000ab\"; }\n"));
+        assert!(rules.starts_with(
+            "create table inet routedroid_phone0 { comment \"routedroid:00000000000000ab\"; }\n"
+        ));
         assert_eq!(rules.matches("10.0.0.5").count(), 6);
         assert!(rules.contains("iifname \"phone0\" ip saddr != 10.0.0.5 counter drop"));
     }

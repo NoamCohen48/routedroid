@@ -24,13 +24,19 @@ struct ForkGate {
     changed: Condvar,
 }
 
-static GATE: ForkGate = ForkGate { readers: Mutex::new(Some(0)), changed: Condvar::new() };
+static GATE: ForkGate = ForkGate {
+    readers: Mutex::new(Some(0)),
+    changed: Condvar::new(),
+};
 
 pub struct Spawning(());
 
 /// Held by a test for as long as it spawns processes.
 pub fn spawning() -> Spawning {
-    let mut readers = GATE.changed.wait_while(GATE.readers.lock().unwrap(), |r| *r != Some(0)).unwrap();
+    let mut readers = GATE
+        .changed
+        .wait_while(GATE.readers.lock().unwrap(), |r| *r != Some(0))
+        .unwrap();
     *readers = None;
     Spawning(())
 }
@@ -43,7 +49,10 @@ impl Drop for Spawning {
 }
 
 fn enter() {
-    let mut readers = GATE.changed.wait_while(GATE.readers.lock().unwrap(), |r| r.is_none()).unwrap();
+    let mut readers = GATE
+        .changed
+        .wait_while(GATE.readers.lock().unwrap(), |r| r.is_none())
+        .unwrap();
     *readers = readers.map(|n| n + 1);
 }
 
@@ -95,12 +104,29 @@ impl Lab {
         {
             let mut state = kernel.lock();
             let lan = state.add_link("lan0", None);
-            state.addresses.push(Address { index: lan, addr: "10.0.0.2".parse().unwrap(), prefix: 24 });
+            state.addresses.push(Address {
+                index: lan,
+                addr: "10.0.0.2".parse().unwrap(),
+                prefix: 24,
+            });
         }
         let policy = scratch.path().join("helper.toml");
-        std::fs::write(&policy, "[[interface]]\nname = \"lan0\"\nphone_addresses = [\"10.0.0.0/24\"]\n").unwrap();
-        let env = Env::new(kernel.clone(), &scratch.path().join("state"), policy, CrashHook::disabled());
-        Self { kernel, env: Arc::new(env), _scratch: scratch }
+        std::fs::write(
+            &policy,
+            "[[interface]]\nname = \"lan0\"\nphone_addresses = [\"10.0.0.0/24\"]\n",
+        )
+        .unwrap();
+        let env = Env::new(
+            kernel.clone(),
+            &scratch.path().join("state"),
+            policy,
+            CrashHook::disabled(),
+        );
+        Self {
+            kernel,
+            env: Arc::new(env),
+            _scratch: scratch,
+        }
     }
 
     pub fn plan(&self, session: u64, tun: &str, phone_ip: &str) -> anyhow::Result<Plan> {
@@ -117,8 +143,9 @@ impl Lab {
 
     pub fn journals(&self) -> Vec<PathBuf> {
         let dir = &self.env.journal_dir;
-        let mut out: Vec<_> =
-            std::fs::read_dir(dir).map(|d| d.map(|e| e.unwrap().path()).collect()).unwrap_or_default();
+        let mut out: Vec<_> = std::fs::read_dir(dir)
+            .map(|d| d.map(|e| e.unwrap().path()).collect())
+            .unwrap_or_default();
         out.retain(|p| p.extension().is_some_and(|e| e == "journal"));
         out
     }

@@ -5,7 +5,9 @@ use super::*;
 
 /// A UDP datagram with an empty payload: a 20-byte header and 8 bytes of UDP.
 fn packet() -> Vec<u8> {
-    let mut p = vec![0x45, 0, 0, 28, 0, 0, 0, 0, 64, 17, 0, 0, 10, 0, 0, 2, 10, 0, 0, 1];
+    let mut p = vec![
+        0x45, 0, 0, 28, 0, 0, 0, 0, 64, 17, 0, 0, 10, 0, 0, 2, 10, 0, 0, 1,
+    ];
     p.extend([0, 53, 0, 53, 0, 8, 0, 0]);
     p
 }
@@ -17,7 +19,13 @@ fn uplink(result: fn() -> io::Result<bool>) -> (Uplink, Arc<Mutex<Vec<Vec<u8>>>>
         log.lock().unwrap().push(p.to_vec());
         result()
     });
-    (Uplink { inject, counters: Arc::default() }, seen)
+    (
+        Uplink {
+            inject,
+            counters: Arc::default(),
+        },
+        seen,
+    )
 }
 
 #[test]
@@ -42,8 +50,15 @@ fn malformed_packets_are_dropped_before_the_helper() {
 fn a_full_helper_drops_and_a_gone_helper_fails() {
     let (up, _) = uplink(|| Ok(false));
     up.forward(&packet()).unwrap();
-    assert_eq!((up.counters.congested(), up.counters.packets_from_phone()), (1, 0));
+    assert_eq!(
+        (up.counters.congested(), up.counters.packets_from_phone()),
+        (1, 0)
+    );
     let (up, _) = uplink(|| Err(io::ErrorKind::BrokenPipe.into()));
     assert!(up.forward(&packet()).is_err());
-    assert_eq!(up.counters.from_phone.load(Ordering::Relaxed), 0, "counted only when delivered");
+    assert_eq!(
+        up.counters.from_phone.load(Ordering::Relaxed),
+        0,
+        "counted only when delivered"
+    );
 }

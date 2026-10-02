@@ -109,9 +109,16 @@ pub struct Outcome {
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Event {
     /// A device connection changed state (including its final `ended`).
-    Connection { serial: String, state: ConnectionState },
+    Connection {
+        serial: String,
+        state: ConnectionState,
+    },
     /// Periodic counters for an active connection.
-    Traffic { serial: String, packets_to_phone: u64, packets_from_phone: u64 },
+    Traffic {
+        serial: String,
+        packets_to_phone: u64,
+        packets_from_phone: u64,
+    },
     /// A device appeared or went away, or changed adb state.
     Devices { devices: Vec<DeviceInfo> },
     /// The daemon is shutting down; every connection is being stopped.

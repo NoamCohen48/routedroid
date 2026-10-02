@@ -41,12 +41,26 @@ struct Interface {
 impl Policy {
     pub fn load(path: &Path) -> Result<Self> {
         let meta = std::fs::metadata(path).with_context(|| format!("policy {}", path.display()))?;
-        ensure!(meta.is_file(), "policy {} is not a regular file", path.display());
+        ensure!(
+            meta.is_file(),
+            "policy {} is not a regular file",
+            path.display()
+        );
         let euid = rustix::process::geteuid().as_raw();
-        ensure!(meta.uid() == euid || meta.uid() == 0, "policy {} is not owned by root", path.display());
-        ensure!(meta.mode() & 0o022 == 0, "policy {} is writable by others", path.display());
-        let text = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-        text.parse().with_context(|| format!("policy {}", path.display()))
+        ensure!(
+            meta.uid() == euid || meta.uid() == 0,
+            "policy {} is not owned by root",
+            path.display()
+        );
+        ensure!(
+            meta.mode() & 0o022 == 0,
+            "policy {} is writable by others",
+            path.display()
+        );
+        let text =
+            std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+        text.parse()
+            .with_context(|| format!("policy {}", path.display()))
     }
 
     /// Why the operator does not allow `phone_ip` on `lan_if`, if they don't.
@@ -54,7 +68,11 @@ impl Policy {
         let Some(interface) = self.interfaces.iter().find(|i| &i.name == lan_if) else {
             bail!("{lan_if} is not an interface the policy allows");
         };
-        if !interface.phone_addresses.iter().any(|block| block.contains(phone_ip)) {
+        if !interface
+            .phone_addresses
+            .iter()
+            .any(|block| block.contains(phone_ip))
+        {
             bail!("{phone_ip} is not a phone address the policy allows on {lan_if}");
         }
         Ok(())
@@ -67,7 +85,10 @@ impl std::str::FromStr for Policy {
     fn from_str(text: &str) -> Result<Self> {
         let policy: Policy = toml::from_str(text)?;
         for (n, interface) in policy.interfaces.iter().enumerate() {
-            if policy.interfaces[..n].iter().any(|other| other.name == interface.name) {
+            if policy.interfaces[..n]
+                .iter()
+                .any(|other| other.name == interface.name)
+            {
                 bail!("interface {} is listed twice", interface.name);
             }
         }

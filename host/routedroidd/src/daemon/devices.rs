@@ -48,7 +48,11 @@ impl AttachedDevices {
                 publish(&polled_adb, &polling).await;
             }
         });
-        Self { adb, current, _poll: Arc::new(PollTask(poll)) }
+        Self {
+            adb,
+            current,
+            _poll: Arc::new(PollTask(poll)),
+        }
     }
 
     /// The latest reading; costs nothing, so a client cannot make the daemon
@@ -72,7 +76,11 @@ impl AttachedDevices {
     }
 
     pub fn get(&self, serial: &str) -> Option<Device> {
-        self.current.borrow().iter().find(|device| device.serial == serial).cloned()
+        self.current
+            .borrow()
+            .iter()
+            .find(|device| device.serial == serial)
+            .cloned()
     }
 }
 
@@ -83,7 +91,10 @@ async fn publish(adb: &Adb, current: &watch::Sender<Snapshot>) {
         Ok(devices) => {
             store(current, devices);
         }
-        Err(fault) => tracing::debug!(kind = fault.kind().as_str(), "listing devices failed: {fault}"),
+        Err(fault) => tracing::debug!(
+            kind = fault.kind().as_str(),
+            "listing devices failed: {fault}"
+        ),
     }
 }
 

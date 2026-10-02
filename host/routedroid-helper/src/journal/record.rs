@@ -81,17 +81,39 @@ impl Steps {
     pub fn check(&self, record: &Record) -> Result<()> {
         match (&record.op, self.0.get(&record.seq)) {
             (Some(_), _) => {
-                ensure!(record.phase == Phase::Pending, "step {} introduced as {:?}", record.seq, record.phase);
-                ensure!(record.seq == self.next_seq(), "step {} out of order", record.seq);
+                ensure!(
+                    record.phase == Phase::Pending,
+                    "step {} introduced as {:?}",
+                    record.seq,
+                    record.phase
+                );
+                ensure!(
+                    record.seq == self.next_seq(),
+                    "step {} out of order",
+                    record.seq
+                );
             }
-            (None, None) => bail!("step {} moves to {:?} before it exists", record.seq, record.phase),
+            (None, None) => bail!(
+                "step {} moves to {:?} before it exists",
+                record.seq,
+                record.phase
+            ),
             (None, Some(step)) => {
                 use Phase::*;
                 let legal = matches!(
                     (step.phase, record.phase),
-                    (Pending, Done) | (Pending, UndoPending) | (Done, UndoPending) | (UndoPending, Undone)
+                    (Pending, Done)
+                        | (Pending, UndoPending)
+                        | (Done, UndoPending)
+                        | (UndoPending, Undone)
                 );
-                ensure!(legal, "step {} cannot move from {:?} to {:?}", record.seq, step.phase, record.phase);
+                ensure!(
+                    legal,
+                    "step {} cannot move from {:?} to {:?}",
+                    record.seq,
+                    step.phase,
+                    record.phase
+                );
             }
         }
         Ok(())
@@ -101,7 +123,13 @@ impl Steps {
         self.check(&record)?;
         match record.op {
             Some(op) => {
-                self.0.insert(record.seq, Step { op, phase: record.phase });
+                self.0.insert(
+                    record.seq,
+                    Step {
+                        op,
+                        phase: record.phase,
+                    },
+                );
             }
             None => {
                 if let Some(step) = self.0.get_mut(&record.seq) {
@@ -114,7 +142,11 @@ impl Steps {
 
     /// Steps not yet undone, newest first: the order to undo them in.
     pub fn outstanding(&self) -> Vec<(u32, Step)> {
-        let open = self.0.iter().rev().filter(|(_, step)| step.phase != Phase::Undone);
+        let open = self
+            .0
+            .iter()
+            .rev()
+            .filter(|(_, step)| step.phase != Phase::Undone);
         open.map(|(seq, step)| (*seq, step.clone())).collect()
     }
 }
@@ -129,14 +161,27 @@ pub struct Parsed {
 
 pub fn parse(bytes: &[u8]) -> Result<Parsed> {
     let complete = bytes.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
-    let mut lines = bytes[..complete].split(|b| *b == b'\n').filter(|line| !line.is_empty());
+    let mut lines = bytes[..complete]
+        .split(|b| *b == b'\n')
+        .filter(|line| !line.is_empty());
     let first = lines.next().context("no header line")?;
     let header: Header = serde_json::from_slice(first).context("header")?;
-    ensure!(header.version == VERSION, "journal format {} (this helper reads {VERSION})", header.version);
+    ensure!(
+        header.version == VERSION,
+        "journal format {} (this helper reads {VERSION})",
+        header.version
+    );
     let mut steps = Steps::default();
     for (n, line) in lines.enumerate() {
-        let record: Record = serde_json::from_slice(line).with_context(|| format!("line {}", n + 2))?;
-        steps.apply(record).with_context(|| format!("line {}", n + 2))?;
+        let record: Record =
+            serde_json::from_slice(line).with_context(|| format!("line {}", n + 2))?;
+        steps
+            .apply(record)
+            .with_context(|| format!("line {}", n + 2))?;
     }
-    Ok(Parsed { header, steps, complete })
+    Ok(Parsed {
+        header,
+        steps,
+        complete,
+    })
 }

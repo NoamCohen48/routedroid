@@ -26,7 +26,8 @@ pub async fn run(link: &mut Link, args: &ClientArgs, target: Ipv4Addr) -> Result
     // the relay. A lost reply keeps its slot; the deadline ends the run.
     while replies < args.bench {
         if sent < args.bench && sent - replies < WINDOW {
-            link.send_packet(&icmp::echo_request(args.phone_ip, target, id, sent as u16)).await?;
+            link.send_packet(&icmp::echo_request(args.phone_ip, target, id, sent as u16))
+                .await?;
             sent += 1;
             if sent == args.bench / 2 {
                 args.crash("during_traffic");
@@ -46,7 +47,10 @@ pub async fn run(link: &mut Link, args: &ClientArgs, target: Ipv4Addr) -> Result
     println!(
         "BENCH sent={sent} replies={replies} elapsed_ms={} rtt_avg_us={}",
         elapsed.as_millis(),
-        elapsed.as_micros().checked_div(u128::from(replies)).unwrap_or(0)
+        elapsed
+            .as_micros()
+            .checked_div(u128::from(replies))
+            .unwrap_or(0)
     );
     Ok(replies)
 }

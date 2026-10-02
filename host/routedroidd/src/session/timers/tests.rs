@@ -29,10 +29,19 @@ async fn any_receive_after_the_ping_revives() {
 #[tokio::test(start_paused = true)]
 async fn phase_deadline_follows_state_and_reset() {
     let mut p = PhaseTimer::new();
-    assert_eq!(p.deadline(State::Connected), Some(Instant::now() + HANDSHAKE_DEADLINE));
-    assert_eq!(p.deadline(State::Configuring), Some(Instant::now() + CONSENT_DEADLINE));
+    assert_eq!(
+        p.deadline(State::Connected),
+        Some(Instant::now() + HANDSHAKE_DEADLINE)
+    );
+    assert_eq!(
+        p.deadline(State::Configuring),
+        Some(Instant::now() + CONSENT_DEADLINE)
+    );
     assert_eq!(p.deadline(State::Active), None);
     tokio::time::advance(Duration::from_secs(5)).await;
     p.reset();
-    assert_eq!(p.deadline(State::Negotiated), Some(Instant::now() + HANDSHAKE_DEADLINE));
+    assert_eq!(
+        p.deadline(State::Negotiated),
+        Some(Instant::now() + HANDSHAKE_DEADLINE)
+    );
 }

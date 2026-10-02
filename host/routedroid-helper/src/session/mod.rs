@@ -29,7 +29,12 @@ impl<K: Kernel> Session<K> {
     /// returning; if that fails too, the journal is left for `cleanup`.
     pub fn start(env: Arc<Env<K>>, plan: Plan) -> Result<Self> {
         let journal = Journal::create(&env.journal_dir, plan.session(), plan.reservation())?;
-        let mut session = Self { env, plan, journal: Some(journal), tun: None };
+        let mut session = Self {
+            env,
+            plan,
+            journal: Some(journal),
+            tun: None,
+        };
         for op in session.plan.ops() {
             if let Err(error) = session.apply(op) {
                 return Err(match session.teardown() {
@@ -59,7 +64,8 @@ impl<K: Kernel> Session<K> {
         let journal = self.journal.as_mut().context("session already torn down")?;
         let seq = journal.intend(op.clone())?;
         hook.at(&format!("pending:{label}"));
-        step::apply(&self.env, &self.plan, &op, &mut self.tun).with_context(|| format!("apply {label}"))?;
+        step::apply(&self.env, &self.plan, &op, &mut self.tun)
+            .with_context(|| format!("apply {label}"))?;
         hook.at(&format!("applied:{label}"));
         journal.advance(seq, Phase::Done)?;
         hook.at(&format!("done:{label}"));

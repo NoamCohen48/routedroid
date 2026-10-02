@@ -30,7 +30,11 @@ pub fn parse_devices(text: &str) -> Vec<Device> {
                 other => DeviceState::Other(other.to_string()),
             };
             let model = it.find_map(|kv| kv.strip_prefix("model:").map(str::to_string));
-            Some(Device { serial, state, model })
+            Some(Device {
+                serial,
+                state,
+                model,
+            })
         })
         .collect()
 }

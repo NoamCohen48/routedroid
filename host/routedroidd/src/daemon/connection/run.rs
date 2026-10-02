@@ -41,16 +41,31 @@ impl<'a> ConnectionRun<'a> {
         counters: Arc<Counters>,
         sink: &'a StateSink,
     ) -> Self {
-        Self { adb, helper_socket, request, tun, counters, sink }
+        Self {
+            adb,
+            helper_socket,
+            request,
+            tun,
+            counters,
+            sink,
+        }
     }
 
     /// Run the connection to its end; every failure becomes a failed outcome.
     pub async fn run(self, stop_rx: watch::Receiver<bool>) -> Outcome {
         match self.connect(stop_rx).await {
-            Ok(message) => Outcome { ok: true, kind: None, message: message.into() },
+            Ok(message) => Outcome {
+                ok: true,
+                kind: None,
+                message: message.into(),
+            },
             Err(fault) => {
                 tracing::warn!(kind = fault.kind().as_str(), "connection failed: {fault}");
-                Outcome { ok: false, kind: Some(fault.kind()), message: fault.to_string() }
+                Outcome {
+                    ok: false,
+                    kind: Some(fault.kind()),
+                    message: fault.to_string(),
+                }
             }
         }
     }
@@ -58,7 +73,10 @@ impl<'a> ConnectionRun<'a> {
     fn mtu(&self) -> Result<u32> {
         let mtu = self.request.mtu.unwrap_or(DEFAULT_MTU);
         if !(576..=65535).contains(&mtu) {
-            return Err(Fault::msg(Kind::Usage, format!("mtu {mtu} outside 576..=65535")));
+            return Err(Fault::msg(
+                Kind::Usage,
+                format!("mtu {mtu} outside 576..=65535"),
+            ));
         }
         Ok(mtu)
     }
@@ -73,11 +91,20 @@ impl<'a> ConnectionRun<'a> {
 
         let mut network = tokio::time::timeout(
             HELPER_START_TIMEOUT,
-            HostNetwork::start(&self.helper_socket, &self.request.lan_if, self.request.phone_ip, &self.tun, mtu),
+            HostNetwork::start(
+                &self.helper_socket,
+                &self.request.lan_if,
+                self.request.phone_ip,
+                &self.tun,
+                mtu,
+            ),
         )
         .await
         .map_err(|_| {
-            Fault::msg(Kind::Helper, format!("helper did not answer Start within {HELPER_START_TIMEOUT:?}"))
+            Fault::msg(
+                Kind::Helper,
+                format!("helper did not answer Start within {HELPER_START_TIMEOUT:?}"),
+            )
         })??;
         info!(serial = adb.serial(), tun = %network.tun, host_ip = %network.host_ip, lan_prefix = network.lan_prefix,
               phone_ip = %self.request.phone_ip, helper_session = %network.session, "host network ready");
@@ -89,7 +116,9 @@ impl<'a> ConnectionRun<'a> {
                 return Err(fault);
             }
         };
-        let outcome = self.drive(mtu, listener, &mut bridge, &mut network, stop_rx).await;
+        let outcome = self
+            .drive(mtu, listener, &mut bridge, &mut network, stop_rx)
+            .await;
         // Concurrent: a hung adb must not delay releasing the host network.
         tokio::join!(bridge.close(), network.stop());
         outcome

@@ -20,7 +20,11 @@ pub enum Op {
     /// A shared, reference-counted sysctl claim (see `claims`).
     Sysctl { ifname: IfName, leaf: Leaf },
     /// `dst/32 dev tun src src` with Routedroid's route protocol number.
-    Route { dst: Ipv4Addr, tun: IfName, src: Ipv4Addr },
+    Route {
+        dst: Ipv4Addr,
+        tun: IfName,
+        src: Ipv4Addr,
+    },
 }
 
 impl Op {
@@ -29,7 +33,9 @@ impl Op {
         match self {
             Op::Tun { name } => format!("tun:{name}"),
             Op::NftTable { tun } => format!("nft:inet:{}", nft_table_name(tun)),
-            Op::Sysctl { ifname, leaf } => format!("sysctl:{}", SysctlKey::new(ifname.clone(), *leaf)),
+            Op::Sysctl { ifname, leaf } => {
+                format!("sysctl:{}", SysctlKey::new(ifname.clone(), *leaf))
+            }
             Op::Route { dst, tun, .. } => format!("route:{dst}/32@{tun}"),
         }
     }
@@ -89,22 +95,46 @@ mod tests {
 
     #[test]
     fn labels_name_the_kernel_object() {
-        let route =
-            Op::Route { dst: "10.0.0.5".parse().unwrap(), tun: name("phone0"), src: "10.0.0.2".parse().unwrap() };
+        let route = Op::Route {
+            dst: "10.0.0.5".parse().unwrap(),
+            tun: name("phone0"),
+            src: "10.0.0.2".parse().unwrap(),
+        };
         assert_eq!(route.label(), "route:10.0.0.5/32@phone0");
-        assert_eq!(Op::NftTable { tun: name("phone0") }.label(), "nft:inet:routedroid_phone0");
-        let vlan = Op::Sysctl { ifname: name("eth0.100"), leaf: Leaf::ProxyArp };
+        assert_eq!(
+            Op::NftTable {
+                tun: name("phone0")
+            }
+            .label(),
+            "nft:inet:routedroid_phone0"
+        );
+        let vlan = Op::Sysctl {
+            ifname: name("eth0.100"),
+            leaf: Leaf::ProxyArp,
+        };
         assert_eq!(vlan.label(), "sysctl:net.ipv4.conf.eth0.100.proxy_arp");
     }
 
     #[test]
     fn journal_form_is_strict() {
-        let op = Op::Sysctl { ifname: name("lan0"), leaf: Leaf::Forwarding };
+        let op = Op::Sysctl {
+            ifname: name("lan0"),
+            leaf: Leaf::Forwarding,
+        };
         let json = serde_json::to_string(&op).unwrap();
-        assert_eq!(json, r#"{"kind":"sysctl","ifname":"lan0","leaf":"forwarding"}"#);
+        assert_eq!(
+            json,
+            r#"{"kind":"sysctl","ifname":"lan0","leaf":"forwarding"}"#
+        );
         assert_eq!(serde_json::from_str::<Op>(&json).unwrap(), op);
-        assert!(serde_json::from_str::<Op>(r#"{"kind":"sysctl","ifname":"all","leaf":"forwarding"}"#).is_err());
-        assert!(serde_json::from_str::<Op>(r#"{"kind":"sysctl","ifname":"lan0","leaf":"rp_filter"}"#).is_err());
+        assert!(serde_json::from_str::<Op>(
+            r#"{"kind":"sysctl","ifname":"all","leaf":"forwarding"}"#
+        )
+        .is_err());
+        assert!(serde_json::from_str::<Op>(
+            r#"{"kind":"sysctl","ifname":"lan0","leaf":"rp_filter"}"#
+        )
+        .is_err());
         assert!(serde_json::from_str::<Op>(r#"{"kind":"tun","name":"phone0","extra":1}"#).is_err());
     }
 }

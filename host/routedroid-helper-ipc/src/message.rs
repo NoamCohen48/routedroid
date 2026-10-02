@@ -32,11 +32,21 @@ pub enum Request {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Reply {
-    Hello { version: u32 },
-    Started { session: String, tun: IfName, host_ip: Ipv4Addr, lan_prefix: u8 },
+    Hello {
+        version: u32,
+    },
+    Started {
+        session: String,
+        tun: IfName,
+        host_ip: Ipv4Addr,
+        lan_prefix: u8,
+    },
     Stopped,
     Pong,
-    Error { code: ErrorCode, message: String },
+    Error {
+        code: ErrorCode,
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

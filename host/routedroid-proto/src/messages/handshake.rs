@@ -28,7 +28,11 @@ impl Body for Hello {
         if self.device_port == 0 {
             return Err(field("device_port", "must be 1-65535"));
         }
-        if self.app.as_ref().is_some_and(|a| a.chars().count() > MAX_APP_LEN) {
+        if self
+            .app
+            .as_ref()
+            .is_some_and(|a| a.chars().count() > MAX_APP_LEN)
+        {
             return Err(field("app", "at most 64 characters"));
         }
         Ok(())

@@ -11,7 +11,10 @@ pub const QUEUE_DEPTH: usize = 256;
 /// Stop adding queued frames to a write once it is this large.
 const BATCH_BYTES: usize = 64 * 1024;
 
-pub async fn writer_task<W: AsyncWrite + Unpin>(mut wr: W, mut rx: mpsc::Receiver<Frame>) -> std::io::Result<()> {
+pub async fn writer_task<W: AsyncWrite + Unpin>(
+    mut wr: W,
+    mut rx: mpsc::Receiver<Frame>,
+) -> std::io::Result<()> {
     let mut buf = Vec::with_capacity(BATCH_BYTES + frame::HEADER_LEN + 65_536);
     while let Some(first) = rx.recv().await {
         buf.clear();

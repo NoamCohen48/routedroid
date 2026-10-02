@@ -13,17 +13,31 @@ fn fixture_vectors() {
         let cn = nonce_from_hex(v["client_nonce_hex"].as_str().unwrap()).unwrap();
         let hn = nonce_from_hex(v["host_nonce_hex"].as_str().unwrap()).unwrap();
         let session = v["session"].as_str().unwrap();
-        assert!(crate::messages::valid_session(session), "{name}: session the wire could carry");
+        assert!(
+            crate::messages::valid_session(session),
+            "{name}: session the wire could carry"
+        );
         let t = transcript(session, v["device_port"].as_u64().unwrap() as u16, &cn, &hn);
-        assert_eq!(t, unhex(v["transcript_hex"].as_str().unwrap()), "{name}: transcript");
+        assert_eq!(
+            t,
+            unhex(v["transcript_hex"].as_str().unwrap()),
+            "{name}: transcript"
+        );
         let hp = proof_from_hex(v["host_proof_hex"].as_str().unwrap()).unwrap();
         let ap = proof_from_hex(v["android_proof_hex"].as_str().unwrap()).unwrap();
         assert_eq!(proof(&secret, Role::Host, &t), hp, "{name}: host proof");
-        assert_eq!(proof(&secret, Role::Android, &t), ap, "{name}: android proof");
+        assert_eq!(
+            proof(&secret, Role::Android, &t),
+            ap,
+            "{name}: android proof"
+        );
         assert!(verify(&secret, Role::Host, &t, &hp));
         assert!(verify(&secret, Role::Android, &t, &ap));
         // Reflection: a host proof is never a valid android proof.
-        assert!(!verify(&secret, Role::Android, &t, &hp), "{name}: reflection");
+        assert!(
+            !verify(&secret, Role::Android, &t, &hp),
+            "{name}: reflection"
+        );
         assert!(!verify(&secret, Role::Host, &t, &ap), "{name}: reflection");
     }
 }

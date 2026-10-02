@@ -7,7 +7,8 @@ use std::io;
 use std::time::Duration;
 
 use netlink_packet_core::{
-    NetlinkHeader, NetlinkMessage, NetlinkPayload, NLM_F_ACK, NLM_F_DUMP, NLM_F_DUMP_INTR, NLM_F_REQUEST,
+    NetlinkHeader, NetlinkMessage, NetlinkPayload, NLM_F_ACK, NLM_F_DUMP, NLM_F_DUMP_INTR,
+    NLM_F_REQUEST,
 };
 use netlink_packet_route::RouteNetlinkMessage;
 use netlink_sys::{protocols::NETLINK_ROUTE, Socket, SocketAddr};
@@ -64,7 +65,10 @@ fn exchange(
     loop {
         let (_, len) = rustix::net::recv(&socket, &mut buf, RecvFlags::TRUNC)?;
         if len > buf.len() {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("{len}-byte netlink reply truncated")));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("{len}-byte netlink reply truncated"),
+            ));
         }
         let mut offset = 0;
         while offset < len {
@@ -72,7 +76,10 @@ fn exchange(
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
             let size = reply.header.length as usize;
             if size == 0 {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, "zero-length netlink message"));
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "zero-length netlink message",
+                ));
             }
             offset += size.next_multiple_of(4);
             if reply.header.sequence_number != SEQUENCE {
@@ -104,11 +111,18 @@ fn open() -> io::Result<Socket> {
     let mut socket = Socket::new(NETLINK_ROUTE)?;
     socket.bind_auto()?;
     socket.connect(&SocketAddr::new(0, 0))?;
-    rustix::net::sockopt::set_socket_timeout(&socket, rustix::net::sockopt::Timeout::Recv, Some(REPLY_TIMEOUT))?;
+    rustix::net::sockopt::set_socket_timeout(
+        &socket,
+        rustix::net::sockopt::Timeout::Recv,
+        Some(REPLY_TIMEOUT),
+    )?;
     Ok(socket)
 }
 
 /// Whether `error` is the kernel saying the object does not exist.
 pub fn is_absent(error: &io::Error) -> bool {
-    matches!(error.raw_os_error(), Some(libc::ENODEV | libc::ENOENT | libc::ESRCH))
+    matches!(
+        error.raw_os_error(),
+        Some(libc::ENODEV | libc::ENOENT | libc::ESRCH)
+    )
 }

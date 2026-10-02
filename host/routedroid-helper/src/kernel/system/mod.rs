@@ -28,7 +28,9 @@ pub struct System {
 
 impl System {
     pub fn new() -> Result<Self> {
-        Ok(Self { nft: command::locate(nft::CANDIDATES).context("find nft")? })
+        Ok(Self {
+            nft: command::locate(nft::CANDIDATES).context("find nft")?,
+        })
     }
 }
 
@@ -54,7 +56,9 @@ impl Kernel for System {
     fn create_tun(&self, name: &IfName, alias: &str, mtu: u32) -> Result<Device> {
         let device = Device::create(name)?;
         // The fd keeps the name ours, so this lookup cannot find someone else's link.
-        let index = link::find(name)?.with_context(|| format!("TUN {name} vanished after creation"))?.index;
+        let index = link::find(name)?
+            .with_context(|| format!("TUN {name} vanished after creation"))?
+            .index;
         link::configure(index, alias, mtu)?;
         Ok(device)
     }

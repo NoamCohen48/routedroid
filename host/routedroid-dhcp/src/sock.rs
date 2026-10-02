@@ -47,7 +47,12 @@ const BPF_JSET: u16 = 0x40;
 const BPF_K: u16 = 0x00;
 
 const fn stmt(code: u16, k: u32) -> libc::sock_filter {
-    libc::sock_filter { code, jt: 0, jf: 0, k }
+    libc::sock_filter {
+        code,
+        jt: 0,
+        jf: 0,
+        k,
+    }
 }
 const fn jump(code: u16, k: u32, jt: u8, jf: u8) -> libc::sock_filter {
     libc::sock_filter { code, jt, jf, k }
@@ -106,15 +111,30 @@ pub fn lookup_iface(name: &str) -> Result<Iface> {
 
     let mut req = ifreq_for(name)?;
     // SAFETY: SIOCGIFINDEX takes a pointer to an ifreq we own.
-    if unsafe { libc::ioctl(fd.as_raw_fd(), libc::SIOCGIFINDEX as _, &mut req as *mut libc::ifreq) } < 0 {
-        return Err(io::Error::last_os_error()).context(format!("ioctl(SIOCGIFINDEX, {name}): no such interface?"));
+    if unsafe {
+        libc::ioctl(
+            fd.as_raw_fd(),
+            libc::SIOCGIFINDEX as _,
+            &mut req as *mut libc::ifreq,
+        )
+    } < 0
+    {
+        return Err(io::Error::last_os_error())
+            .context(format!("ioctl(SIOCGIFINDEX, {name}): no such interface?"));
     }
     // SAFETY: the kernel filled ifru_ivalue for SIOCGIFINDEX.
     let index = unsafe { req.ifr_ifru.ifru_ifindex };
 
     let mut req = ifreq_for(name)?;
     // SAFETY: SIOCGIFHWADDR takes a pointer to an ifreq we own.
-    if unsafe { libc::ioctl(fd.as_raw_fd(), libc::SIOCGIFHWADDR as _, &mut req as *mut libc::ifreq) } < 0 {
+    if unsafe {
+        libc::ioctl(
+            fd.as_raw_fd(),
+            libc::SIOCGIFHWADDR as _,
+            &mut req as *mut libc::ifreq,
+        )
+    } < 0
+    {
         return Err(io::Error::last_os_error()).context(format!("ioctl(SIOCGIFHWADDR, {name})"));
     }
     // SAFETY: the kernel filled ifru_hwaddr for SIOCGIFHWADDR.
@@ -129,7 +149,11 @@ pub fn lookup_iface(name: &str) -> Result<Iface> {
     for (dst, src) in mac.iter_mut().zip(hw.sa_data.iter()) {
         *dst = *src as u8;
     }
-    Ok(Iface { name: name.to_string(), index, mac })
+    Ok(Iface {
+        name: name.to_string(),
+        index,
+        mac,
+    })
 }
 
 /// Per-frame metadata from `PACKET_AUXDATA` and `sockaddr_ll`.
@@ -155,8 +179,13 @@ impl PacketSocket {
         // Protocol 0: the socket receives nothing until bind() sets one, so
         // the filter is in place before the first frame can be queued.
         // SAFETY: plain socket() call; result checked below.
-        let raw =
-            unsafe { libc::socket(libc::AF_PACKET, libc::SOCK_RAW | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC, 0) };
+        let raw = unsafe {
+            libc::socket(
+                libc::AF_PACKET,
+                libc::SOCK_RAW | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC,
+                0,
+            )
+        };
         if raw < 0 {
             let e = io::Error::last_os_error();
             if e.raw_os_error() == Some(libc::EPERM) || e.raw_os_error() == Some(libc::EACCES) {
@@ -168,7 +197,10 @@ impl PacketSocket {
         let fd = unsafe { OwnedFd::from_raw_fd(raw) };
 
         let mut prog = FILTER;
-        let fprog = libc::sock_fprog { len: prog.len() as u16, filter: prog.as_mut_ptr() };
+        let fprog = libc::sock_fprog {
+            len: prog.len() as u16,
+            filter: prog.as_mut_ptr(),
+        };
         // SAFETY: fprog points at a live array for the duration of the call.
         let rc = unsafe {
             libc::setsockopt(
@@ -212,9 +244,13 @@ impl PacketSocket {
             )
         };
         if rc < 0 {
-            return Err(io::Error::last_os_error()).context(format!("bind(AF_PACKET, ifindex {})", iface.index));
+            return Err(io::Error::last_os_error())
+                .context(format!("bind(AF_PACKET, ifindex {})", iface.index));
         }
-        Ok(Self { fd: AsyncFd::new(fd)?, ifindex: iface.index })
+        Ok(Self {
+            fd: AsyncFd::new(fd)?,
+            ifindex: iface.index,
+        })
     }
 
     /// Receive one frame. Returns the byte count and its metadata.
@@ -270,7 +306,10 @@ impl PacketSocket {
 }
 
 fn recvmsg_once(fd: libc::c_int, buf: &mut [u8]) -> io::Result<(usize, RecvMeta)> {
-    let mut iov = libc::iovec { iov_base: buf.as_mut_ptr() as *mut libc::c_void, iov_len: buf.len() };
+    let mut iov = libc::iovec {
+        iov_base: buf.as_mut_ptr() as *mut libc::c_void,
+        iov_len: buf.len(),
+    };
     // SAFETY: plain C structs; zeroed is a valid initial value.
     let mut from: libc::sockaddr_ll = unsafe { mem::zeroed() };
     let mut cmsg_buf = [0u8; 64];
@@ -287,17 +326,22 @@ fn recvmsg_once(fd: libc::c_int, buf: &mut [u8]) -> io::Result<(usize, RecvMeta)
     if n < 0 {
         return Err(io::Error::last_os_error());
     }
-    let mut meta = RecvMeta { pkttype: from.sll_pkttype, ..Default::default() };
+    let mut meta = RecvMeta {
+        pkttype: from.sll_pkttype,
+        ..Default::default()
+    };
     // SAFETY: the CMSG_* helpers only read within msg_control as filled by the kernel.
     unsafe {
         let mut c = libc::CMSG_FIRSTHDR(&msg);
         while !c.is_null() {
             if (*c).cmsg_level == libc::SOL_PACKET && (*c).cmsg_type == PACKET_AUXDATA {
-                let aux: TpacketAuxdata = std::ptr::read_unaligned(libc::CMSG_DATA(c) as *const TpacketAuxdata);
+                let aux: TpacketAuxdata =
+                    std::ptr::read_unaligned(libc::CMSG_DATA(c) as *const TpacketAuxdata);
                 meta.aux_present = true;
                 meta.csum_not_ready = aux.tp_status & TP_STATUS_CSUMNOTREADY != 0;
                 if aux.tp_status & TP_STATUS_VLAN_VALID != 0 {
-                    let tpid = (aux.tp_status & TP_STATUS_VLAN_TPID_VALID != 0).then_some(aux.tp_vlan_tpid);
+                    let tpid = (aux.tp_status & TP_STATUS_VLAN_TPID_VALID != 0)
+                        .then_some(aux.tp_vlan_tpid);
                     meta.vlan = Some((aux.tp_vlan_tci, tpid));
                 }
             }
@@ -318,7 +362,10 @@ pub fn random_u32() -> u32 {
     let n = unsafe { libc::getrandom(b.as_mut_ptr() as *mut libc::c_void, b.len(), 0) };
     if n != 4 {
         // Fallback; only reachable on exotic kernels.
-        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        let t = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
         return (t as u32) ^ std::process::id().rotate_left(16);
     }
     u32::from_le_bytes(b)

@@ -28,9 +28,17 @@ pub struct Server {
 impl Server {
     pub async fn bind(args: Args) -> Result<Self> {
         let bound = bind::listen(&args.socket)?;
-        let daemon = Daemon::start(Adb::new(&args.adb, DEFAULT_TIMEOUT), args.helper_socket.clone()).await;
+        let daemon = Daemon::start(
+            Adb::new(&args.adb, DEFAULT_TIMEOUT),
+            args.helper_socket.clone(),
+        )
+        .await;
         info!(socket = %args.socket.display(), "routedroidd ready");
-        Ok(Self { bound, path: args.socket, daemon })
+        Ok(Self {
+            bound,
+            path: args.socket,
+            daemon,
+        })
     }
 
     /// Accept until a signal, then stop every device connection.
@@ -67,7 +75,10 @@ impl Server {
                 return;
             }
         }
-        let handles = Handles { devices: self.daemon.devices(), connections: self.daemon.connections() };
+        let handles = Handles {
+            devices: self.daemon.devices(),
+            connections: self.daemon.connections(),
+        };
         let client = ClientConnection::new(handles, self.daemon.events(), stream);
         tokio::spawn(client.run());
     }

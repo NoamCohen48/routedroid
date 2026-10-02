@@ -58,7 +58,10 @@ pub struct HostRoute {
 
 impl HostRoute {
     pub fn matches(&self, route: &Route) -> bool {
-        route.dst == self.dst && route.prefix == 32 && route.oif == Some(self.oif) && route.protocol == ROUTE_PROTOCOL
+        route.dst == self.dst
+            && route.prefix == 32
+            && route.oif == Some(self.oif)
+            && route.protocol == ROUTE_PROTOCOL
     }
 }
 

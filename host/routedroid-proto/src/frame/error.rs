@@ -11,9 +11,15 @@ pub enum FrameError {
     #[error("unknown message type 0x{0:02x}")]
     UnknownMessageType(u8),
     #[error("{message_type} body of {body_length} bytes exceeds control limit {MAX_CONTROL_BODY}")]
-    ControlBodyTooLarge { message_type: MessageType, body_length: u32 },
+    ControlBodyTooLarge {
+        message_type: MessageType,
+        body_length: u32,
+    },
     #[error("{message_type} must be empty, got {body_length} bytes")]
-    UnexpectedBody { message_type: MessageType, body_length: u32 },
+    UnexpectedBody {
+        message_type: MessageType,
+        body_length: u32,
+    },
     #[error("{0} must carry a body")]
     EmptyBody(MessageType),
     #[error("IP_PACKET body of {body_length} bytes outside [{MIN_PACKET_BODY}, {mtu}]")]

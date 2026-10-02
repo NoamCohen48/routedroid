@@ -24,7 +24,13 @@ pub fn find(nft: &Path, name: &str) -> Result<Option<NftTable>> {
 }
 
 pub fn delete(nft: &Path, handle: u64) -> Result<()> {
-    command::run(nft, &["delete", "table", "inet", "handle", &handle.to_string()], None, TIMEOUT).map(drop)
+    command::run(
+        nft,
+        &["delete", "table", "inet", "handle", &handle.to_string()],
+        None,
+        TIMEOUT,
+    )
+    .map(drop)
 }
 
 #[derive(Deserialize)]
@@ -56,7 +62,10 @@ fn parse_tables(json: &str, name: &str) -> Result<Option<NftTable>> {
     if found.next().is_some() {
         bail!("nft lists table inet {name} twice");
     }
-    Ok(table.map(|t| NftTable { handle: t.handle, comment: t.comment }))
+    Ok(table.map(|t| NftTable {
+        handle: t.handle,
+        comment: t.comment,
+    }))
 }
 
 #[cfg(test)]
@@ -70,8 +79,17 @@ mod tests {
     #[test]
     fn finds_by_name_with_handle_and_comment() {
         let table = parse_tables(LISTING, "routedroid_phone0").unwrap().unwrap();
-        assert_eq!(table, NftTable { handle: 7, comment: Some("routedroid:00000000000000ab".into()) });
-        assert_eq!(parse_tables(LISTING, "filter").unwrap().unwrap().comment, None);
+        assert_eq!(
+            table,
+            NftTable {
+                handle: 7,
+                comment: Some("routedroid:00000000000000ab".into())
+            }
+        );
+        assert_eq!(
+            parse_tables(LISTING, "filter").unwrap().unwrap().comment,
+            None
+        );
         assert_eq!(parse_tables(LISTING, "routedroid_phone1").unwrap(), None);
     }
 

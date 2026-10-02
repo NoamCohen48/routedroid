@@ -5,7 +5,9 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use anyhow::{Context, Result};
 use netlink_packet_route::address::{AddressAttribute, AddressMessage};
-use netlink_packet_route::neighbour::{NeighbourAddress, NeighbourAttribute, NeighbourMessage, NeighbourState};
+use netlink_packet_route::neighbour::{
+    NeighbourAddress, NeighbourAttribute, NeighbourMessage, NeighbourState,
+};
 use netlink_packet_route::{AddressFamily, RouteNetlinkMessage};
 
 use super::netlink;
@@ -14,10 +16,13 @@ use crate::kernel::Address;
 pub fn addresses() -> Result<Vec<Address>> {
     let mut request = AddressMessage::default();
     request.header.family = AddressFamily::Inet;
-    let replies = netlink::dump(RouteNetlinkMessage::GetAddress(request)).context("dump addresses")?;
+    let replies =
+        netlink::dump(RouteNetlinkMessage::GetAddress(request)).context("dump addresses")?;
     let mut out = Vec::new();
     for reply in replies {
-        let RouteNetlinkMessage::NewAddress(message) = reply else { continue };
+        let RouteNetlinkMessage::NewAddress(message) = reply else {
+            continue;
+        };
         // IFA_LOCAL is the host's own address; IFA_ADDRESS is the peer on point-to-point links.
         let local = message.attributes.iter().find_map(|a| match a {
             AddressAttribute::Local(IpAddr::V4(addr)) => Some(*addr),
@@ -28,7 +33,11 @@ pub fn addresses() -> Result<Vec<Address>> {
             _ => None,
         });
         if let Some(addr) = local.or(address) {
-            out.push(Address { index: message.header.index, addr, prefix: message.header.prefix_len });
+            out.push(Address {
+                index: message.header.index,
+                addr,
+                prefix: message.header.prefix_len,
+            });
         }
     }
     Ok(out)
@@ -39,10 +48,13 @@ pub fn addresses() -> Result<Vec<Address>> {
 pub fn neighbours(index: u32) -> Result<Vec<Ipv4Addr>> {
     let mut request = NeighbourMessage::default();
     request.header.family = AddressFamily::Inet;
-    let replies = netlink::dump(RouteNetlinkMessage::GetNeighbour(request)).context("dump neighbours")?;
+    let replies =
+        netlink::dump(RouteNetlinkMessage::GetNeighbour(request)).context("dump neighbours")?;
     let mut out = Vec::new();
     for reply in replies {
-        let RouteNetlinkMessage::NewNeighbour(message) = reply else { continue };
+        let RouteNetlinkMessage::NewNeighbour(message) = reply else {
+            continue;
+        };
         if message.header.ifindex != index || !occupied(message.header.state) {
             continue;
         }
@@ -55,5 +67,8 @@ pub fn neighbours(index: u32) -> Result<Vec<Ipv4Addr>> {
 }
 
 fn occupied(state: NeighbourState) -> bool {
-    !matches!(state, NeighbourState::Failed | NeighbourState::Incomplete | NeighbourState::None)
+    !matches!(
+        state,
+        NeighbourState::Failed | NeighbourState::Incomplete | NeighbourState::None
+    )
 }

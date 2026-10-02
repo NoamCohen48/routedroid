@@ -57,7 +57,16 @@ impl<A: Answer> ClientConnection<A> {
             }
         });
         let requests = JoinSet::new();
-        Self { handles, bus, lines, out, writer, requests, events: None, device_changes: None }
+        Self {
+            handles,
+            bus,
+            lines,
+            out,
+            writer,
+            requests,
+            events: None,
+            device_changes: None,
+        }
     }
 
     pub async fn run(mut self) {
@@ -105,7 +114,14 @@ impl<A: Answer> ClientConnection<A> {
                 self.events = Some(self.bus.subscribe());
                 self.device_changes = Some(self.handles.device_changes());
             }
-            return send(&self.out, ServerMessage::Response { id, response: Response::Ok }).await;
+            return send(
+                &self.out,
+                ServerMessage::Response {
+                    id,
+                    response: Response::Ok,
+                },
+            )
+            .await;
         }
         let (handles, out) = (self.handles.clone(), self.out.clone());
         self.requests.spawn(async move {
@@ -115,7 +131,9 @@ impl<A: Answer> ClientConnection<A> {
         Ok(())
     }
 
-    async fn next_event(events: &mut Option<broadcast::Receiver<Event>>) -> Result<Event, broadcast::error::RecvError> {
+    async fn next_event(
+        events: &mut Option<broadcast::Receiver<Event>>,
+    ) -> Result<Event, broadcast::error::RecvError> {
         match events {
             Some(events) => events.recv().await,
             // Not subscribed: this branch of the select never completes.

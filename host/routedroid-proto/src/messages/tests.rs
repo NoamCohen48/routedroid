@@ -4,8 +4,16 @@ use crate::frame::MessageType;
 
 fn body(name: &str) -> (MessageType, Vec<u8>) {
     let f: serde_json::Value = serde_json::from_str(FRAMES).unwrap();
-    let v = f["valid"].as_array().unwrap().iter().find(|v| v["name"] == name).unwrap();
-    (MessageType::from_u8(v["type"].as_u64().unwrap() as u8).unwrap(), unhex(v["body_hex"].as_str().unwrap()))
+    let v = f["valid"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["name"] == name)
+        .unwrap();
+    (
+        MessageType::from_u8(v["type"].as_u64().unwrap() as u8).unwrap(),
+        unhex(v["body_hex"].as_str().unwrap()),
+    )
 }
 
 /// Every JSON fixture parses, validates, and re-serializes to the exact
@@ -46,8 +54,14 @@ fn unknown_fields_are_ignored_and_missing_ones_rejected() {
     )
     .unwrap();
     assert_eq!(ok.session, "s");
-    assert!(matches!(parse::<Hello>(br#"{"protocol":1,"session":"s"}"#), Err(BodyError::Json(_))));
-    assert!(matches!(parse::<Hello>(b"not json"), Err(BodyError::Json(_))));
+    assert!(matches!(
+        parse::<Hello>(br#"{"protocol":1,"session":"s"}"#),
+        Err(BodyError::Json(_))
+    ));
+    assert!(matches!(
+        parse::<Hello>(b"not json"),
+        Err(BodyError::Json(_))
+    ));
 }
 
 #[test]
@@ -64,15 +78,21 @@ fn field_rules() {
     assert!(mk(&"s".repeat(41), 9000).validate().is_err());
     assert!(mk("bad space", 9000).validate().is_err());
     assert!(mk("s", 0).validate().is_err());
-    let hello = |nonce: &str| format!(r#"{{"protocol":1,"session":"s","device_port":1,"client_nonce":"{nonce}"}}"#);
+    let hello = |nonce: &str| {
+        format!(r#"{{"protocol":1,"session":"s","device_port":1,"client_nonce":"{nonce}"}}"#)
+    };
     assert!(parse::<Hello>(hello(&"a".repeat(64)).as_bytes()).is_ok());
-    assert!(parse::<Hello>(hello(&"A".repeat(64)).as_bytes()).is_err(), "uppercase hex");
+    assert!(
+        parse::<Hello>(hello(&"A".repeat(64)).as_bytes()).is_err(),
+        "uppercase hex"
+    );
     assert!(parse::<Hello>(hello(&"a".repeat(63)).as_bytes()).is_err());
     assert!(parse::<Hello>(hello(&"a".repeat(66)).as_bytes()).is_err());
 
     let (_, b) = body("configure_vpn");
     let mut cfg: ConfigureVpn = parse(&b).unwrap();
-    cfg.addresses.push(Prefix::new(Ipv4Addr::new(10, 0, 0, 9), 32));
+    cfg.addresses
+        .push(Prefix::new(Ipv4Addr::new(10, 0, 0, 9), 32));
     assert!(cfg.validate().is_err(), "two addresses");
     cfg.addresses.pop();
     cfg.routes.clear();
@@ -85,13 +105,26 @@ fn field_rules() {
     cfg.mtu = 65_535;
     assert!(cfg.validate().is_ok());
 
-    let ack = HelloAck { protocol: 2, mtu: 1400, host_nonce: [1; 32], host_proof: [2; 32] };
+    let ack = HelloAck {
+        protocol: 2,
+        mtu: 1400,
+        host_nonce: [1; 32],
+        host_proof: [2; 32],
+    };
     assert!(ack.validate().is_err(), "wrong protocol in ack");
 
-    let ready = |prefix| VpnReady { addresses: vec![Prefix::new(Ipv4Addr::new(10, 0, 0, 1), prefix)], mtu: 1400 };
+    let ready = |prefix| VpnReady {
+        addresses: vec![Prefix::new(Ipv4Addr::new(10, 0, 0, 1), prefix)],
+        mtu: 1400,
+    };
     assert!(ready(32).validate().is_ok());
     assert!(ready(33).validate().is_err());
-    assert!(VpnReady { addresses: vec![], mtu: 1400 }.validate().is_err());
+    assert!(VpnReady {
+        addresses: vec![],
+        mtu: 1400
+    }
+    .validate()
+    .is_err());
 }
 
 /// The cases where JSON libraries disagree (bodies.json); the app must agree
@@ -129,7 +162,10 @@ fn body_fixtures() {
     for v in f["invalid"].as_array().unwrap() {
         let name = v["name"].as_str().unwrap();
         let b = unhex(v["body_hex"].as_str().unwrap());
-        assert!(accept(v["kind"].as_str().unwrap(), &b).is_err(), "{name}: accepted");
+        assert!(
+            accept(v["kind"].as_str().unwrap(), &b).is_err(),
+            "{name}: accepted"
+        );
     }
 }
 
@@ -140,7 +176,14 @@ fn prefix_canonical_and_unicast() {
     assert!(!Prefix::new(Ipv4Addr::new(10, 0, 0, 1), 8).is_canonical());
     assert!(Prefix::new(Ipv4Addr::new(10, 0, 0, 1), 32).is_canonical());
     assert!(!Prefix::new(Ipv4Addr::new(10, 0, 0, 1), 33).is_canonical());
-    for bad in ["0.0.0.0", "0.1.2.3", "127.0.0.1", "224.0.0.1", "240.0.0.1", "255.255.255.255"] {
+    for bad in [
+        "0.0.0.0",
+        "0.1.2.3",
+        "127.0.0.1",
+        "224.0.0.1",
+        "240.0.0.1",
+        "255.255.255.255",
+    ] {
         assert!(!vpn::is_unicast_host(bad.parse().unwrap()), "{bad}");
     }
     assert!(vpn::is_unicast_host(Ipv4Addr::new(10, 0, 0, 1)));

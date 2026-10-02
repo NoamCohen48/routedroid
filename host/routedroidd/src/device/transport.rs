@@ -19,10 +19,16 @@ pub enum Transport {
 
 impl Transport {
     pub fn classify(serial: &str) -> Self {
-        if serial.is_empty() || serial.len() > 128 || serial.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        if serial.is_empty()
+            || serial.len() > 128
+            || serial.chars().any(|c| c.is_whitespace() || c.is_control())
+        {
             return Self::Invalid;
         }
-        if serial.strip_prefix("emulator-").is_some_and(|n| n.parse::<u16>().is_ok()) {
+        if serial
+            .strip_prefix("emulator-")
+            .is_some_and(|n| n.parse::<u16>().is_ok())
+        {
             return Self::Emulator;
         }
         // `host:port`, `[v6]:port`, and mDNS names like `adb-XXXX._adb-tls-connect._tcp`.
@@ -37,7 +43,9 @@ impl Transport {
         match self {
             Self::Usb | Self::Emulator => None,
             Self::Network if allow_network => None,
-            Self::Network => Some("network ADB is not verified in version 1 (use USB, or --allow-network-adb)"),
+            Self::Network => {
+                Some("network ADB is not verified in version 1 (use USB, or --allow-network-adb)")
+            }
             Self::Invalid => Some("not a valid ADB serial"),
         }
     }
@@ -48,12 +56,20 @@ impl Transport {
         match t.refusal(allow_network) {
             None => {
                 if t == Self::Network {
-                    tracing::warn!(serial, "network ADB allowed by flag; the VPN route may cut this connection");
+                    tracing::warn!(
+                        serial,
+                        "network ADB allowed by flag; the VPN route may cut this connection"
+                    );
                 }
                 Ok(())
             }
-            Some(why) if t == Self::Invalid => Err(Fault::msg(Kind::Usage, format!("serial {serial:?}: {why}"))),
-            Some(why) => Err(Fault::msg(Kind::Transport, format!("serial {serial:?}: {why}"))),
+            Some(why) if t == Self::Invalid => {
+                Err(Fault::msg(Kind::Usage, format!("serial {serial:?}: {why}")))
+            }
+            Some(why) => Err(Fault::msg(
+                Kind::Transport,
+                format!("serial {serial:?}: {why}"),
+            )),
         }
     }
 }

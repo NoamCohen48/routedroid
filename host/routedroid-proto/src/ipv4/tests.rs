@@ -8,7 +8,12 @@ fn packets() -> Vec<(String, Vec<u8>)> {
         .unwrap()
         .iter()
         .filter(|v| v["type"] == 0x10)
-        .map(|v| (v["name"].as_str().unwrap().to_string(), unhex(v["body_hex"].as_str().unwrap())))
+        .map(|v| {
+            (
+                v["name"].as_str().unwrap().to_string(),
+                unhex(v["body_hex"].as_str().unwrap()),
+            )
+        })
         .collect()
 }
 
@@ -33,9 +38,18 @@ fn each_rule_is_enforced() {
     assert_eq!(check(&ihl), Err(PacketError::Ihl(4)));
     let mut longer = good.clone();
     longer.push(0);
-    assert!(matches!(check(&longer), Err(PacketError::TotalLength { .. })));
+    assert!(matches!(
+        check(&longer),
+        Err(PacketError::TotalLength { .. })
+    ));
     // IHL 15 (60-byte header) but total length 28.
     let mut overrun = good.clone();
     overrun[0] = 0x4f;
-    assert_eq!(check(&overrun), Err(PacketError::HeaderOverrun { total: 28, header: 60 }));
+    assert_eq!(
+        check(&overrun),
+        Err(PacketError::HeaderOverrun {
+            total: 28,
+            header: 60
+        })
+    );
 }

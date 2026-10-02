@@ -37,12 +37,23 @@ fn a_crash_leaves_other_sessions_alone() {
     {
         let state = lab.kernel.lock();
         assert!(!state.tables.contains_key("routedroid_phone0"));
-        assert!(state.tables.contains_key("routedroid_phone1") && state.links.contains_key("phone1"));
-        assert_eq!(state.sysctls[&key("lan0", Leaf::ProxyArp)], ENABLED, "still claimed by the live session");
+        assert!(
+            state.tables.contains_key("routedroid_phone1") && state.links.contains_key("phone1")
+        );
+        assert_eq!(
+            state.sysctls[&key("lan0", Leaf::ProxyArp)],
+            ENABLED,
+            "still claimed by the live session"
+        );
     }
     check(&lab.env.journal_dir).unwrap();
     live.stop().unwrap();
-    assert!(lab.kernel.lock().sysctls.get(&key("lan0", Leaf::ProxyArp)).is_none_or(|v| v == "0"));
+    assert!(lab
+        .kernel
+        .lock()
+        .sysctls
+        .get(&key("lan0", Leaf::ProxyArp))
+        .is_none_or(|v| v == "0"));
 }
 
 #[test]
@@ -63,9 +74,17 @@ fn one_corrupt_journal_does_not_block_the_others() {
     let lab = Lab::new();
     let baseline = lab.kernel.snapshot();
     start(&lab, 1, "phone0", "10.0.0.5").crash();
-    fs::write(lab.env.journal_dir.join("00000000000000ff.journal"), "not json\n").unwrap();
+    fs::write(
+        lab.env.journal_dir.join("00000000000000ff.journal"),
+        "not json\n",
+    )
+    .unwrap();
     assert!(cleanup(&lab.env).is_err(), "the corrupt one is reported");
-    assert_eq!(lab.kernel.snapshot(), baseline, "the readable one is replayed");
+    assert_eq!(
+        lab.kernel.snapshot(),
+        baseline,
+        "the readable one is replayed"
+    );
     assert_eq!(lab.journals().len(), 1);
 }
 

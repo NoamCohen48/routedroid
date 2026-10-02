@@ -84,7 +84,9 @@ impl Calls {
     /// Like `call`, but an `Error` response becomes an `Err`.
     pub async fn call_ok(&self, request: Request) -> Result<Response> {
         match self.call(request).await? {
-            Response::Error { kind, message } => Err(crate::fault::Fault::msg(kind, message).into()),
+            Response::Error { kind, message } => {
+                Err(crate::fault::Fault::msg(kind, message).into())
+            }
             other => Ok(other),
         }
     }

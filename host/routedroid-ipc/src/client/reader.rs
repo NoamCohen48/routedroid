@@ -107,7 +107,12 @@ async fn read_all(read: OwnedReadHalf, shared: Arc<Shared>, events: mpsc::Unboun
             Ok(ServerMessage::Event { event }) => {
                 let _ = events.send(event);
             }
-            Err(error) => break (false, format!("bad line from routedroidd ({error}): {}", line.trim())),
+            Err(error) => {
+                break (
+                    false,
+                    format!("bad line from routedroidd ({error}): {}", line.trim()),
+                )
+            }
         }
     };
     shared.close(eof, why);

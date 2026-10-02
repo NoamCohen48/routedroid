@@ -23,7 +23,17 @@ pub async fn run(client: &mut Client, json: bool) -> Result<i32> {
 }
 
 fn header() -> Vec<String> {
-    ["SERIAL", "PHONE_IP", "LAN_IF", "TUN", "STATE", "TO_PHONE", "FROM_PHONE"].map(String::from).to_vec()
+    [
+        "SERIAL",
+        "PHONE_IP",
+        "LAN_IF",
+        "TUN",
+        "STATE",
+        "TO_PHONE",
+        "FROM_PHONE",
+    ]
+    .map(String::from)
+    .to_vec()
 }
 
 fn row(connection: &ConnectionInfo) -> Vec<String> {

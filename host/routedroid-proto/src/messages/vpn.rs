@@ -80,8 +80,15 @@ impl Body for VpnReady {
         if self.addresses.is_empty() {
             return Err(field("addresses", "at least one address"));
         }
-        if !self.addresses.iter().all(|a| a.prefix <= 32 && is_unicast_host(a.address)) {
-            return Err(field("addresses", "unicast host addresses with prefix 0-32"));
+        if !self
+            .addresses
+            .iter()
+            .all(|a| a.prefix <= 32 && is_unicast_host(a.address))
+        {
+            return Err(field(
+                "addresses",
+                "unicast host addresses with prefix 0-32",
+            ));
         }
         if self.mtu < MIN_MTU || self.mtu > MAX_PACKET_BODY {
             return Err(field("mtu", format!("must be {MIN_MTU}-{MAX_PACKET_BODY}")));

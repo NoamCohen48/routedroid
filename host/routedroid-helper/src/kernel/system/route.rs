@@ -20,7 +20,9 @@ pub fn all() -> Result<Vec<Route>> {
     let replies = netlink::dump(RouteNetlinkMessage::GetRoute(request)).context("dump routes")?;
     let mut out = Vec::new();
     for reply in replies {
-        let RouteNetlinkMessage::NewRoute(message) = reply else { continue };
+        let RouteNetlinkMessage::NewRoute(message) = reply else {
+            continue;
+        };
         out.extend(entries(&message));
     }
     Ok(out)
@@ -40,27 +42,37 @@ fn entries(message: &RouteMessage) -> Vec<Route> {
             RouteAttribute::Destination(RouteAddress::Inet(dst)) => route.dst = *dst,
             RouteAttribute::Gateway(RouteAddress::Inet(gateway)) => route.gateway = Some(*gateway),
             RouteAttribute::Oif(oif) => route.oif = Some(*oif),
-            RouteAttribute::MultiPath(next_hops) => hops.extend(next_hops.iter().map(|hop| Route {
-                gateway: hop.attributes.iter().find_map(|a| match a {
-                    RouteAttribute::Gateway(RouteAddress::Inet(gateway)) => Some(*gateway),
-                    _ => None,
-                }),
-                oif: Some(hop.interface_index),
-                ..route
-            })),
+            RouteAttribute::MultiPath(next_hops) => {
+                hops.extend(next_hops.iter().map(|hop| Route {
+                    gateway: hop.attributes.iter().find_map(|a| match a {
+                        RouteAttribute::Gateway(RouteAddress::Inet(gateway)) => Some(*gateway),
+                        _ => None,
+                    }),
+                    oif: Some(hop.interface_index),
+                    ..route
+                }))
+            }
             _ => {}
         }
     }
     if hops.is_empty() {
         vec![route]
     } else {
-        hops.into_iter().map(|hop| Route { dst: route.dst, ..hop }).collect()
+        hops.into_iter()
+            .map(|hop| Route {
+                dst: route.dst,
+                ..hop
+            })
+            .collect()
     }
 }
 
 pub fn add(route: &HostRoute) -> Result<()> {
-    netlink::change(RouteNetlinkMessage::NewRoute(message(route)), NLM_F_CREATE | NLM_F_EXCL)
-        .with_context(|| format!("add route {}/32 via #{}", route.dst, route.oif))
+    netlink::change(
+        RouteNetlinkMessage::NewRoute(message(route)),
+        NLM_F_CREATE | NLM_F_EXCL,
+    )
+    .with_context(|| format!("add route {}/32 via #{}", route.dst, route.oif))
 }
 
 pub fn delete(route: &HostRoute) -> Result<()> {

@@ -59,12 +59,22 @@ impl Relay<'_> {
                 break ended;
             }
         };
-        let Counters { to_phone, to_lan, dropped, congested } = counters;
+        let Counters {
+            to_phone,
+            to_lan,
+            dropped,
+            congested,
+        } = counters;
         info!(to_phone, to_lan, dropped, congested, ?ended, "relay ended");
         ended
     }
 
-    fn to_phone(&self, read: std::io::Result<usize>, buf: &[u8], counters: &mut Counters) -> Option<Ended> {
+    fn to_phone(
+        &self,
+        read: std::io::Result<usize>,
+        buf: &[u8],
+        counters: &mut Counters,
+    ) -> Option<Ended> {
         let packet = match read {
             Ok(0) => return Some(Ended::Failed("TUN closed".into())),
             Ok(n) => &buf[..n],
@@ -82,7 +92,11 @@ impl Relay<'_> {
         None
     }
 
-    async fn to_lan(&self, recv: std::io::Result<Option<&[u8]>>, counters: &mut Counters) -> Option<Ended> {
+    async fn to_lan(
+        &self,
+        recv: std::io::Result<Option<&[u8]>>,
+        counters: &mut Counters,
+    ) -> Option<Ended> {
         let datagram = match recv {
             Ok(Some(datagram)) => datagram,
             Ok(None) => return Some(Ended::Disconnected),

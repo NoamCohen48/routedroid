@@ -66,13 +66,28 @@ impl SessionDriver {
         let (in_tx, mut in_rx) = mpsc::channel(QUEUE_DEPTH);
         let last_rx = Arc::new(LastRx::new());
         if let Some(first) = first {
-            in_tx.try_send(Inbound::Frame(first)).expect("an empty queue has room");
+            in_tx
+                .try_send(Inbound::Frame(first))
+                .expect("an empty queue has room");
         }
-        let uplink = Uplink { inject: packets.inject, counters: progress.counters.clone() };
-        let reader = tokio::spawn(reader_task(rd, machine.mtu(), uplink.clone(), last_rx.clone(), in_tx));
+        let uplink = Uplink {
+            inject: packets.inject,
+            counters: progress.counters.clone(),
+        };
+        let reader = tokio::spawn(reader_task(
+            rd,
+            machine.mtu(),
+            uplink.clone(),
+            last_rx.clone(),
+            in_tx,
+        ));
         let active_rx = progress.active.subscribe();
-        let mut downlink =
-            tokio::spawn(downlink::pump(packets.from_helper, out_tx.clone(), active_rx, progress.counters.clone()));
+        let mut downlink = tokio::spawn(downlink::pump(
+            packets.from_helper,
+            out_tx.clone(),
+            active_rx,
+            progress.counters.clone(),
+        ));
         let mut driver = Self {
             machine,
             out_tx,
@@ -120,7 +135,12 @@ impl SessionDriver {
 
     /// Close the writer (flushing queued frames) and report.
     async fn finish(self, end: SessionEnd) -> SessionSummary {
-        let Self { out_tx, mut writer, progress, .. } = self;
+        let Self {
+            out_tx,
+            mut writer,
+            progress,
+            ..
+        } = self;
         drop(out_tx);
         match tokio::time::timeout(WRITER_FLUSH, &mut writer).await {
             Ok(Ok(Ok(()))) => {}

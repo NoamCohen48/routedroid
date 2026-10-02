@@ -26,7 +26,9 @@ impl SeqPacket {
     /// Wrap a connected socket (from `accept`, `connect` or systemd).
     fn from_socket(socket: Socket) -> io::Result<Self> {
         socket.set_nonblocking(true)?;
-        Ok(Self { socket: AsyncFd::new(socket)? })
+        Ok(Self {
+            socket: AsyncFd::new(socket)?,
+        })
     }
 
     /// Connect in blocking mode, so a full backlog waits instead of failing
@@ -46,9 +48,13 @@ impl SeqPacket {
     /// datagram without copying the packet.
     pub async fn send_packet(&self, packet: &[u8]) -> io::Result<()> {
         if packet.len() > MAX_PACKET {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("{}-byte packet", packet.len())));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{}-byte packet", packet.len()),
+            ));
         }
-        self.send(&[IoSlice::new(&[KIND_PACKET]), IoSlice::new(packet)]).await
+        self.send(&[IoSlice::new(&[KIND_PACKET]), IoSlice::new(packet)])
+            .await
     }
 
     /// Send one IPv4 packet only if the peer has room now; `false` means its
@@ -56,14 +62,21 @@ impl SeqPacket {
     /// waits, so one slow direction never stalls the other.
     pub fn try_send_packet(&self, packet: &[u8]) -> io::Result<bool> {
         if packet.len() > MAX_PACKET {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("{}-byte packet", packet.len())));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{}-byte packet", packet.len()),
+            ));
         }
         let parts = [IoSlice::new(&[KIND_PACKET]), IoSlice::new(packet)];
         let total = 1 + packet.len();
         loop {
             match self.socket.get_ref().send_vectored(&parts) {
                 Ok(sent) if sent == total => return Ok(true),
-                Ok(sent) => return Err(io::Error::other(format!("short seqpacket send {sent}/{total}"))),
+                Ok(sent) => {
+                    return Err(io::Error::other(format!(
+                        "short seqpacket send {sent}/{total}"
+                    )))
+                }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(false),
                 Err(e) => return Err(e),
@@ -77,7 +90,11 @@ impl SeqPacket {
             let mut guard = self.socket.writable().await?;
             match guard.try_io(|inner| inner.get_ref().send_vectored(parts)) {
                 Ok(Ok(sent)) if sent == total => return Ok(()),
-                Ok(Ok(sent)) => return Err(io::Error::other(format!("short seqpacket send {sent}/{total}"))),
+                Ok(Ok(sent)) => {
+                    return Err(io::Error::other(format!(
+                        "short seqpacket send {sent}/{total}"
+                    )))
+                }
                 Ok(Err(e)) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Ok(Err(e)) => return Err(e),
                 Err(_would_block) => continue,
@@ -91,7 +108,13 @@ impl SeqPacket {
     pub async fn recv<'b>(&self, buf: &'b mut [u8]) -> io::Result<Option<&'b [u8]>> {
         let len = loop {
             let mut guard = self.socket.readable().await?;
-            match guard.try_io(|inner| Ok(rustix::net::recv(inner.get_ref(), &mut *buf, RecvFlags::TRUNC)?)) {
+            match guard.try_io(|inner| {
+                Ok(rustix::net::recv(
+                    inner.get_ref(),
+                    &mut *buf,
+                    RecvFlags::TRUNC,
+                )?)
+            }) {
                 Ok(Ok((_, len))) => break len,
                 Ok(Err(e)) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Ok(Err(e)) => return Err(e),
@@ -99,14 +122,21 @@ impl SeqPacket {
             }
         };
         if len > buf.len() {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("{len}-byte datagram truncated")));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("{len}-byte datagram truncated"),
+            ));
         }
         Ok((len > 0).then(|| &buf[..len]))
     }
 
     /// Peer credentials (SO_PEERCRED) of the connected socket.
     pub fn peer_uid(&self) -> io::Result<u32> {
-        Ok(rustix::net::sockopt::socket_peercred(self.socket.get_ref())?.uid.as_raw())
+        Ok(
+            rustix::net::sockopt::socket_peercred(self.socket.get_ref())?
+                .uid
+                .as_raw(),
+        )
     }
 }
 

@@ -10,7 +10,9 @@ use crate::kernel::Link;
 
 pub fn find(name: &IfName) -> Result<Option<Link>> {
     let mut request = LinkMessage::default();
-    request.attributes.push(LinkAttribute::IfName(name.as_str().to_owned()));
+    request
+        .attributes
+        .push(LinkAttribute::IfName(name.as_str().to_owned()));
     match netlink::get(RouteNetlinkMessage::GetLink(request)) {
         Ok(RouteNetlinkMessage::NewLink(reply)) => Ok(Some(Link {
             index: reply.header.index,
@@ -31,13 +33,17 @@ pub fn configure(index: u32, alias: &str, mtu: u32) -> Result<()> {
     request.header.index = index;
     request.header.flags = LinkFlags::Up;
     request.header.change_mask = LinkFlags::Up;
-    request.attributes.push(LinkAttribute::IfAlias(alias.to_owned()));
+    request
+        .attributes
+        .push(LinkAttribute::IfAlias(alias.to_owned()));
     request.attributes.push(LinkAttribute::Mtu(mtu));
-    netlink::change(RouteNetlinkMessage::SetLink(request), 0).with_context(|| format!("configure link #{index}"))
+    netlink::change(RouteNetlinkMessage::SetLink(request), 0)
+        .with_context(|| format!("configure link #{index}"))
 }
 
 pub fn delete(index: u32) -> Result<()> {
     let mut request = LinkMessage::default();
     request.header.index = index;
-    netlink::change(RouteNetlinkMessage::DelLink(request), 0).with_context(|| format!("delete link #{index}"))
+    netlink::change(RouteNetlinkMessage::DelLink(request), 0)
+        .with_context(|| format!("delete link #{index}"))
 }

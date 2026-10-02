@@ -15,8 +15,14 @@ pub enum State {
 }
 
 impl State {
-    pub const ALL: [State; 6] =
-        [Self::Connected, Self::Authenticating, Self::Negotiated, Self::Configuring, Self::Active, Self::Closed];
+    pub const ALL: [State; 6] = [
+        Self::Connected,
+        Self::Authenticating,
+        Self::Negotiated,
+        Self::Configuring,
+        Self::Active,
+        Self::Closed,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {

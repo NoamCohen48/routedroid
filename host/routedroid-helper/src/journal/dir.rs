@@ -20,9 +20,14 @@ pub fn list(dir: &Path, suffix: &str) -> Result<Vec<PathBuf>> {
     };
     let mut out = Vec::new();
     for entry in entries {
-        let path = entry.with_context(|| format!("read {}", dir.display()))?.path();
+        let path = entry
+            .with_context(|| format!("read {}", dir.display()))?
+            .path();
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if name.strip_suffix(suffix).is_some_and(|stem| stem.ends_with('.') && stem.len() > 1) {
+        if name
+            .strip_suffix(suffix)
+            .is_some_and(|stem| stem.ends_with('.') && stem.len() > 1)
+        {
             out.push(path);
         }
     }
@@ -34,6 +39,8 @@ pub fn list(dir: &Path, suffix: &str) -> Result<Vec<PathBuf>> {
 pub fn read_header(path: &Path) -> Result<Header> {
     let file = File::open(path).with_context(|| format!("open {}", path.display()))?;
     let mut line = String::new();
-    BufReader::new(file).read_line(&mut line).with_context(|| format!("read {}", path.display()))?;
+    BufReader::new(file)
+        .read_line(&mut line)
+        .with_context(|| format!("read {}", path.display()))?;
     serde_json::from_str(&line).with_context(|| format!("header of {}", path.display()))
 }

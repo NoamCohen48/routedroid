@@ -43,7 +43,13 @@ pub async fn run(
         match serve(connected, &mut commands, &incoming).await {
             Ok(()) => return,
             Err(error) => {
-                if incoming.send(Incoming::Disconnected { reason: format!("{error:#}") }).await.is_err() {
+                if incoming
+                    .send(Incoming::Disconnected {
+                        reason: format!("{error:#}"),
+                    })
+                    .await
+                    .is_err()
+                {
                     return;
                 }
             }
@@ -52,7 +58,10 @@ pub async fn run(
 }
 
 /// Answers commands with a failure while waiting one reconnect interval; `false` when the UI quit.
-async fn wait_disconnected(commands: &mut mpsc::Receiver<Command>, incoming: &mpsc::Sender<Incoming>) -> bool {
+async fn wait_disconnected(
+    commands: &mut mpsc::Receiver<Command>,
+    incoming: &mpsc::Sender<Incoming>,
+) -> bool {
     let deadline = tokio::time::sleep(RECONNECT_EVERY);
     tokio::pin!(deadline);
     loop {
@@ -128,14 +137,20 @@ async fn execute(calls: &Calls, command: Command) -> Result<Incoming> {
         _ => None,
     };
     Ok(match calls.call(request).await? {
-        Response::Error { kind, message } => {
-            Incoming::Failed { what: what.into(), message: format!("{message} ({})", kind.as_str()) }
-        }
+        Response::Error { kind, message } => Incoming::Failed {
+            what: what.into(),
+            message: format!("{message} ({})", kind.as_str()),
+        },
         Response::Devices { devices } => Incoming::Devices(devices),
         Response::Status { connections } => Incoming::Connections(connections),
         Response::Started { serial } => Incoming::Started { serial },
-        Response::Ok => Incoming::Stopped { serial: serial_of_stop.unwrap_or_default() },
-        Response::Version { .. } => Incoming::Failed { what: what.into(), message: "unexpected version reply".into() },
+        Response::Ok => Incoming::Stopped {
+            serial: serial_of_stop.unwrap_or_default(),
+        },
+        Response::Version { .. } => Incoming::Failed {
+            what: what.into(),
+            message: "unexpected version reply".into(),
+        },
     })
 }
 

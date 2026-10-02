@@ -48,10 +48,18 @@ fn valid_form_becomes_a_start_request() {
 #[test]
 fn invalid_fields_are_named_in_the_error() {
     let mut form = StartForm::new("abc".into());
-    assert!(form.to_request().unwrap_err().to_string().contains("LAN interface"));
+    assert!(form
+        .to_request()
+        .unwrap_err()
+        .to_string()
+        .contains("LAN interface"));
     form.lan_if = "eth0".into();
     form.phone_ip = "nope".into();
-    assert!(form.to_request().unwrap_err().to_string().contains("phone IP"));
+    assert!(form
+        .to_request()
+        .unwrap_err()
+        .to_string()
+        .contains("phone IP"));
     form.phone_ip = "10.0.0.5".into();
     form.dns = "1.1.1.1,bad".into();
     assert!(form.to_request().unwrap_err().to_string().contains("DNS"));

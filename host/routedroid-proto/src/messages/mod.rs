@@ -31,14 +31,18 @@ impl From<serde_json::Error> for BodyError {
 }
 
 fn field(field: &'static str, reason: impl Into<String>) -> BodyError {
-    BodyError::Field { field, reason: reason.into() }
+    BodyError::Field {
+        field,
+        reason: reason.into(),
+    }
 }
 
 /// §4.1: 1–40 characters from `A-Z a-z 0-9 . _ -`.
 pub fn valid_session(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= MAX_SESSION_LEN
-        && s.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
 /// Parse a control body and apply the spec's field rules.

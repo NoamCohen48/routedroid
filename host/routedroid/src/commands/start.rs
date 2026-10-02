@@ -8,7 +8,9 @@ use std::time::Duration;
 
 use anyhow::{bail, Result};
 use clap::Args;
-use routedroid_ipc::{Client, ConnectionState, Event, Kind, Outcome, Request, Response, StartRequest};
+use routedroid_ipc::{
+    Client, ConnectionState, Event, Kind, Outcome, Request, Response, StartRequest,
+};
 
 use crate::connect::connect;
 use crate::output::state_line;
@@ -46,7 +48,10 @@ pub struct StartArgs {
 }
 
 fn parse_seconds(text: &str) -> std::result::Result<Duration, String> {
-    text.trim_end_matches('s').parse::<u64>().map(Duration::from_secs).map_err(|error| error.to_string())
+    text.trim_end_matches('s')
+        .parse::<u64>()
+        .map(Duration::from_secs)
+        .map_err(|error| error.to_string())
 }
 
 impl StartArgs {
@@ -82,10 +87,15 @@ pub async fn run(client: &mut Client, socket: &Path, args: StartArgs) -> Result<
 /// Prints each state of our connection until it ends; returns how it ended.
 async fn follow(client: &mut Client, serial: &str) -> Result<Outcome> {
     loop {
-        let Some(event) = client.next_event().await? else { bail!("routedroidd closed the connection") };
+        let Some(event) = client.next_event().await? else {
+            bail!("routedroidd closed the connection")
+        };
         match event {
             Event::Connection { serial: other, .. } if other != serial => {}
-            Event::Connection { state: ConnectionState::Ended(outcome), .. } => {
+            Event::Connection {
+                state: ConnectionState::Ended(outcome),
+                ..
+            } => {
                 println!("{}", state_line(&ConnectionState::Ended(outcome.clone())));
                 return Ok(outcome);
             }
@@ -106,10 +116,14 @@ async fn follow(client: &mut Client, serial: &str) -> Result<Outcome> {
 /// After missed events: `Some(outcome)` if our phone is no longer connected.
 async fn ended_meanwhile(client: &mut Client, serial: &str) -> Result<Option<Outcome>> {
     match client.call_ok(Request::Status).await? {
-        Response::Status { connections } if connections.iter().any(|c| c.serial == serial) => Ok(None),
-        Response::Status { .. } => {
-            Ok(Some(Outcome { ok: false, kind: None, message: "the connection ended while events were missed".into() }))
+        Response::Status { connections } if connections.iter().any(|c| c.serial == serial) => {
+            Ok(None)
         }
+        Response::Status { .. } => Ok(Some(Outcome {
+            ok: false,
+            kind: None,
+            message: "the connection ended while events were missed".into(),
+        })),
         other => bail!("unexpected answer to status: {other:?}"),
     }
 }
@@ -135,6 +149,9 @@ fn exit_code(outcome: &Outcome) -> i32 {
     if outcome.ok {
         0
     } else {
-        outcome.kind.map(Kind::exit_code).unwrap_or(Kind::Internal.exit_code())
+        outcome
+            .kind
+            .map(Kind::exit_code)
+            .unwrap_or(Kind::Internal.exit_code())
     }
 }

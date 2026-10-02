@@ -16,7 +16,10 @@ pub struct AdbDevice {
 
 impl AdbDevice {
     pub(super) fn new(adb: Adb, serial: &str) -> Self {
-        Self { adb, serial: serial.to_string() }
+        Self {
+            adb,
+            serial: serial.to_string(),
+        }
     }
 
     pub fn serial(&self) -> &str {
@@ -31,37 +34,66 @@ impl AdbDevice {
 
     /// `adb -s SERIAL shell <args>` with optional bytes on stdin. Returns
     /// `(stdout, stderr)`: many shell tools exit 0 and print their errors.
-    pub(super) async fn shell(&self, args: &[&str], stdin: Option<&[u8]>) -> Result<(String, String)> {
+    pub(super) async fn shell(
+        &self,
+        args: &[&str],
+        stdin: Option<&[u8]>,
+    ) -> Result<(String, String)> {
         let mut full = vec!["shell"];
         full.extend_from_slice(args);
         self.run_with_stdin(&full, stdin).await
     }
 
-    async fn run_with_stdin(&self, args: &[&str], stdin: Option<&[u8]>) -> Result<(String, String)> {
+    async fn run_with_stdin(
+        &self,
+        args: &[&str],
+        stdin: Option<&[u8]>,
+    ) -> Result<(String, String)> {
         let mut cmd = Command::new(&self.adb.binary);
-        cmd.arg("-s").arg(&self.serial).args(args).kill_on_drop(true);
-        cmd.stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() });
+        cmd.arg("-s")
+            .arg(&self.serial)
+            .args(args)
+            .kill_on_drop(true);
+        cmd.stdin(if stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        });
         let desc = format!("adb -s {} {}", self.serial, args.join(" "));
         let fut = async {
-            let mut child =
-                cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().with_context(|| format!("spawn {desc}"))?;
+            let mut child = cmd
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .with_context(|| format!("spawn {desc}"))?;
             if let Some(bytes) = stdin {
                 use tokio::io::AsyncWriteExt;
                 let mut pipe = child.stdin.take().expect("piped stdin");
                 pipe.write_all(bytes).await.context("write to adb stdin")?;
                 drop(pipe);
             }
-            let out = child.wait_with_output().await.with_context(|| format!("wait {desc}"))?;
+            let out = child
+                .wait_with_output()
+                .await
+                .with_context(|| format!("wait {desc}"))?;
             let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
             let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
             if !out.status.success() {
-                bail!("{desc} failed ({}): {}{}", out.status, stdout.trim(), stderr.trim());
+                bail!(
+                    "{desc} failed ({}): {}{}",
+                    out.status,
+                    stdout.trim(),
+                    stderr.trim()
+                );
             }
             Ok::<_, anyhow::Error>((stdout, stderr))
         };
         match tokio::time::timeout(self.adb.timeout, fut).await {
             Ok(r) => r.fault(Kind::Adb),
-            Err(_) => Err(Fault::msg(Kind::Adb, format!("{desc} timed out after {:?}", self.adb.timeout))),
+            Err(_) => Err(Fault::msg(
+                Kind::Adb,
+                format!("{desc} timed out after {:?}", self.adb.timeout),
+            )),
         }
     }
 }

@@ -17,7 +17,8 @@ impl SessionId {
     /// A fresh id from the kernel's CSPRNG: unique across processes and boots.
     pub fn random() -> Result<Self> {
         let mut bytes = [0u8; 8];
-        let n = rustix::rand::getrandom(&mut bytes, rustix::rand::GetRandomFlags::empty()).context("getrandom")?;
+        let n = rustix::rand::getrandom(&mut bytes, rustix::rand::GetRandomFlags::empty())
+            .context("getrandom")?;
         if n != bytes.len() {
             bail!("getrandom returned {n} of {} bytes", bytes.len());
         }
@@ -41,7 +42,11 @@ impl FromStr for SessionId {
 
     /// Exactly the 16 lowercase hex digits `Display` writes, nothing else.
     fn from_str(s: &str) -> Result<Self> {
-        if s.len() != 16 || !s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        if s.len() != 16
+            || !s
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
             bail!("session id {s:?} is not 16 lowercase hex digits");
         }
         Ok(Self(u64::from_str_radix(s, 16)?))
@@ -84,7 +89,14 @@ mod tests {
 
     #[test]
     fn rejects_anything_display_would_not_write() {
-        for bad in ["", "abc", "00ABCDEF01234567", "+0abcdef01234567", "00abcdef012345678", "../../etc/passwd"] {
+        for bad in [
+            "",
+            "abc",
+            "00ABCDEF01234567",
+            "+0abcdef01234567",
+            "00abcdef012345678",
+            "../../etc/passwd",
+        ] {
             assert!(bad.parse::<SessionId>().is_err(), "{bad:?}");
         }
     }

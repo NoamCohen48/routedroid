@@ -13,18 +13,34 @@ use crate::op::{nft_table_name, Op, SysctlKey};
 use crate::plan::Plan;
 use crate::session_id::SessionId;
 
-pub fn apply<K: Kernel>(env: &Env<K>, plan: &Plan, op: &Op, tun: &mut Option<K::Tun>) -> Result<()> {
+pub fn apply<K: Kernel>(
+    env: &Env<K>,
+    plan: &Plan,
+    op: &Op,
+    tun: &mut Option<K::Tun>,
+) -> Result<()> {
     let session = plan.session();
     match op {
         Op::Tun { name } => {
-            *tun = Some(env.kernel.create_tun(name, &session.tag(), plan.request().mtu)?);
+            *tun = Some(
+                env.kernel
+                    .create_tun(name, &session.tag(), plan.request().mtu)?,
+            );
             Ok(())
         }
         Op::NftTable { .. } => env.kernel.create_firewall(&plan.firewall()),
-        Op::Sysctl { ifname, leaf } => env.claims.acquire(&env.kernel, session, &SysctlKey::new(ifname.clone(), *leaf)),
+        Op::Sysctl { ifname, leaf } => {
+            env.claims
+                .acquire(&env.kernel, session, &SysctlKey::new(ifname.clone(), *leaf))
+        }
         Op::Route { dst, tun, src } => {
-            let link = owned_link(&env.kernel, tun, session)?.with_context(|| format!("{tun} is not ours"))?;
-            env.kernel.add_route(&HostRoute { dst: *dst, oif: link.index, src: *src })
+            let link = owned_link(&env.kernel, tun, session)?
+                .with_context(|| format!("{tun} is not ours"))?;
+            env.kernel.add_route(&HostRoute {
+                dst: *dst,
+                oif: link.index,
+                src: *src,
+            })
         }
     }
 }
@@ -42,7 +58,9 @@ pub fn undo<K: Kernel>(env: &Env<K>, session: SessionId, op: &Op) -> Result<()> 
         Op::NftTable { tun } => {
             let name = nft_table_name(tun);
             match kernel.nft_table(&name)? {
-                Some(table) if table.comment == Some(session.tag()) => kernel.delete_nft_table(table.handle),
+                Some(table) if table.comment == Some(session.tag()) => {
+                    kernel.delete_nft_table(table.handle)
+                }
                 Some(_) => {
                     info!(table = %name, "table belongs to another owner; leaving it");
                     Ok(())
@@ -50,11 +68,20 @@ pub fn undo<K: Kernel>(env: &Env<K>, session: SessionId, op: &Op) -> Result<()> 
                 None => Ok(()),
             }
         }
-        Op::Sysctl { ifname, leaf } => env.claims.release(kernel, session, &SysctlKey::new(ifname.clone(), *leaf)),
+        Op::Sysctl { ifname, leaf } => {
+            env.claims
+                .release(kernel, session, &SysctlKey::new(ifname.clone(), *leaf))
+        }
         Op::Route { dst, tun, src } => {
             // The route lives and dies with our TUN: no tagged TUN, no route.
-            let Some(link) = owned_link(kernel, tun, session)? else { return Ok(()) };
-            let route = HostRoute { dst: *dst, oif: link.index, src: *src };
+            let Some(link) = owned_link(kernel, tun, session)? else {
+                return Ok(());
+            };
+            let route = HostRoute {
+                dst: *dst,
+                oif: link.index,
+                src: *src,
+            };
             if kernel.routes()?.iter().any(|r| route.matches(r)) {
                 kernel.delete_route(&route)
             } else {
@@ -66,5 +93,7 @@ pub fn undo<K: Kernel>(env: &Env<K>, session: SessionId, op: &Op) -> Result<()> 
 
 /// `name`, if it exists and carries `session`'s tag.
 fn owned_link(kernel: &impl Kernel, name: &IfName, session: SessionId) -> Result<Option<Link>> {
-    Ok(kernel.link(name)?.filter(|link| link.alias == Some(session.tag())))
+    Ok(kernel
+        .link(name)?
+        .filter(|link| link.alias == Some(session.tag())))
 }

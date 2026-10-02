@@ -29,9 +29,16 @@ pub struct Handles {
 impl Answer for Handles {
     async fn answer(&self, request: Request) -> Response {
         match request {
-            Request::Version => Response::Version { daemon: env!("CARGO_PKG_VERSION").into(), api: API_VERSION },
-            Request::Devices => Response::Devices { devices: self.devices_view().await },
-            Request::Status => Response::Status { connections: self.connections.info().await },
+            Request::Version => Response::Version {
+                daemon: env!("CARGO_PKG_VERSION").into(),
+                api: API_VERSION,
+            },
+            Request::Devices => Response::Devices {
+                devices: self.devices_view().await,
+            },
+            Request::Status => Response::Status {
+                connections: self.connections.info().await,
+            },
             Request::Start(start) => {
                 let serial = start.serial.clone();
                 match self.connections.start(start).await {
@@ -66,10 +73,19 @@ pub fn parse(line: &str) -> Result<ClientMessage, (u64, Response)> {
             .ok()
             .and_then(|value| value.get("id")?.as_u64())
             .unwrap_or(0);
-        (id, Response::Error { kind: Kind::Usage, message: format!("bad request: {e}") })
+        (
+            id,
+            Response::Error {
+                kind: Kind::Usage,
+                message: format!("bad request: {e}"),
+            },
+        )
     })
 }
 
 fn error(fault: Fault) -> Response {
-    Response::Error { kind: fault.kind(), message: fault.to_string() }
+    Response::Error {
+        kind: fault.kind(),
+        message: fault.to_string(),
+    }
 }

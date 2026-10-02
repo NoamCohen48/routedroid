@@ -47,7 +47,10 @@ struct Cli {
 }
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt().with_target(false).with_writer(std::io::stderr).init();
+    tracing_subscriber::fmt()
+        .with_target(false)
+        .with_writer(std::io::stderr)
+        .init();
     let cli = Cli::parse();
     let args = run::ClientArgs {
         lan_if: cli.lan_if,

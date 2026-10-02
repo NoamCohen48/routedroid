@@ -23,12 +23,21 @@ pub fn locate(candidates: &[&str]) -> Result<PathBuf> {
 }
 
 /// Run `program` to completion within `timeout`; its stdout on success.
-pub fn run(program: &Path, args: &[&str], stdin: Option<&str>, timeout: Duration) -> Result<String> {
+pub fn run(
+    program: &Path,
+    args: &[&str],
+    stdin: Option<&str>,
+    timeout: Duration,
+) -> Result<String> {
     let shown = format!("{} {}", program.display(), args.join(" "));
     let mut child = Command::new(program)
         .args(args)
         .env_clear()
-        .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdin(if stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -38,7 +47,8 @@ pub fn run(program: &Path, args: &[&str], stdin: Option<&str>, timeout: Duration
     let stdout = drain(child.stdout.take());
     let stderr = drain(child.stderr.take());
     if let (Some(input), Some(mut pipe)) = (stdin, child.stdin.take()) {
-        pipe.write_all(input.as_bytes()).with_context(|| format!("write stdin of {shown}"))?;
+        pipe.write_all(input.as_bytes())
+            .with_context(|| format!("write stdin of {shown}"))?;
     }
     let status = wait(&mut child, timeout).with_context(|| format!("wait for {shown}"))?;
     let stdout = stdout.join().unwrap_or_default();
@@ -80,20 +90,34 @@ mod tests {
 
     /// Also holds the fork gate (see `test_util`) for the calling test.
     fn sh() -> (crate::test_util::Spawning, PathBuf) {
-        (crate::test_util::spawning(), locate(&["/bin/sh", "/usr/bin/sh"]).unwrap())
+        (
+            crate::test_util::spawning(),
+            locate(&["/bin/sh", "/usr/bin/sh"]).unwrap(),
+        )
     }
 
     #[test]
     fn output_input_and_environment() {
         let (_gate, sh) = sh();
-        let out = run(&sh, &["-c", "read x; echo \"$x:${HOME-unset}\""], Some("hi\n"), Duration::from_secs(5));
+        let out = run(
+            &sh,
+            &["-c", "read x; echo \"$x:${HOME-unset}\""],
+            Some("hi\n"),
+            Duration::from_secs(5),
+        );
         assert_eq!(out.unwrap(), "hi:unset\n");
     }
 
     #[test]
     fn failure_carries_stderr() {
         let (_gate, sh) = sh();
-        let err = run(&sh, &["-c", "echo boom >&2; exit 3"], None, Duration::from_secs(5)).unwrap_err();
+        let err = run(
+            &sh,
+            &["-c", "echo boom >&2; exit 3"],
+            None,
+            Duration::from_secs(5),
+        )
+        .unwrap_err();
         assert!(format!("{err:#}").contains("boom"), "{err:#}");
     }
 

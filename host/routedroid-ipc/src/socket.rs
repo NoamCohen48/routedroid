@@ -12,6 +12,8 @@ pub fn default_path() -> PathBuf {
     }
     let runtime = std::env::var("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(format!("/run/user/{}", rustix::process::getuid().as_raw())));
+        .unwrap_or_else(|_| {
+            PathBuf::from(format!("/run/user/{}", rustix::process::getuid().as_raw()))
+        });
     runtime.join("routedroid").join("control.sock")
 }

@@ -30,7 +30,11 @@ const EXIT_NO_DAEMON: i32 = 3;
 const EXIT_INCOMPATIBLE: i32 = 4;
 
 #[derive(Debug, Parser)]
-#[command(name = "routedroid-tui", version, about = "Routedroid terminal UI: control routedroidd from the keyboard")]
+#[command(
+    name = "routedroid-tui",
+    version,
+    about = "Routedroid terminal UI: control routedroidd from the keyboard"
+)]
 struct Args {
     /// Control socket of routedroidd.
     #[arg(long, env = routedroid_ipc::socket::SOCKET_ENV, default_value_os_t = routedroid_ipc::socket::default_path())]
@@ -58,7 +62,12 @@ async fn main() {
 
     let (command_sender, command_receiver) = mpsc::channel::<Command>(32);
     let (incoming_sender, incoming_receiver) = mpsc::channel::<Incoming>(256);
-    let client_task = tokio::spawn(client_task::run(args.socket, client, command_receiver, incoming_sender));
+    let client_task = tokio::spawn(client_task::run(
+        args.socket,
+        client,
+        command_receiver,
+        incoming_sender,
+    ));
 
     let terminal = ratatui::init();
     let outcome = run_ui(terminal, command_sender, incoming_receiver).await;
@@ -95,7 +104,9 @@ async fn run_ui(
             // Never block rendering on the connection task.
             match commands.try_send(command) {
                 Ok(()) => {}
-                Err(mpsc::error::TrySendError::Full(_)) => app.push_log(Level::Error, "busy; try again".into()),
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    app.push_log(Level::Error, "busy; try again".into())
+                }
                 Err(mpsc::error::TrySendError::Closed(_)) => anyhow::bail!("connection task ended"),
             }
         }

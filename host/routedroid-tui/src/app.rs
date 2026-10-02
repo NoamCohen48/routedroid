@@ -110,7 +110,10 @@ impl App {
                 vec![]
             }
             Incoming::Connections(connections) => {
-                self.connections = connections.into_iter().map(|c| (c.serial.clone(), c)).collect();
+                self.connections = connections
+                    .into_iter()
+                    .map(|c| (c.serial.clone(), c))
+                    .collect();
                 vec![]
             }
             Incoming::Started { serial } => {

@@ -25,7 +25,10 @@ pub struct LastRx {
 
 impl LastRx {
     pub fn new() -> Self {
-        Self { base: Instant::now(), nanos: AtomicU64::new(0) }
+        Self {
+            base: Instant::now(),
+            nanos: AtomicU64::new(0),
+        }
     }
 
     pub fn touch(&self) {
@@ -55,7 +58,10 @@ pub enum Idle {
 
 impl Keepalive {
     pub fn new(last_rx: Arc<LastRx>) -> Self {
-        Self { last_rx, pinged_at: None }
+        Self {
+            last_rx,
+            pinged_at: None,
+        }
     }
 
     fn pinged_since_rx(&self, last: Instant) -> bool {
@@ -65,7 +71,11 @@ impl Keepalive {
     /// When to act next if nothing arrives.
     pub fn deadline(&self) -> Instant {
         let last = self.last_rx.get();
-        last + if self.pinged_since_rx(last) { KEEPALIVE_DEAD } else { KEEPALIVE_IDLE }
+        last + if self.pinged_since_rx(last) {
+            KEEPALIVE_DEAD
+        } else {
+            KEEPALIVE_IDLE
+        }
     }
 
     /// The timer fired; decide against the latest receive time.
@@ -91,7 +101,9 @@ pub struct PhaseTimer {
 
 impl PhaseTimer {
     pub fn new() -> Self {
-        Self { started: Instant::now() }
+        Self {
+            started: Instant::now(),
+        }
     }
 
     pub fn reset(&mut self) {
@@ -100,7 +112,9 @@ impl PhaseTimer {
 
     pub fn budget(state: State) -> Option<Duration> {
         match state {
-            State::Connected | State::Authenticating | State::Negotiated => Some(HANDSHAKE_DEADLINE),
+            State::Connected | State::Authenticating | State::Negotiated => {
+                Some(HANDSHAKE_DEADLINE)
+            }
             State::Configuring => Some(CONSENT_DEADLINE),
             State::Active | State::Closed => None,
         }

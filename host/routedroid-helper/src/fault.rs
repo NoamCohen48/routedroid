@@ -18,7 +18,9 @@ pub struct CrashHook;
 impl CrashHook {
     #[cfg(feature = "testing")]
     pub fn at(&self, stage: &str) {
-        let Ok(armed) = std::fs::read_to_string(&self.0) else { return };
+        let Ok(armed) = std::fs::read_to_string(&self.0) else {
+            return;
+        };
         if armed.trim() != stage {
             return;
         }

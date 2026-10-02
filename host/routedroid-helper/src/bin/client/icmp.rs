@@ -28,7 +28,11 @@ pub fn echo_request(src: Ipv4Addr, dst: Ipv4Addr, id: u16, seq: u16) -> Vec<u8> 
 fn checksum(d: &[u8]) -> u16 {
     let mut s = 0u32;
     for ch in d.chunks(2) {
-        s += u32::from(if ch.len() == 2 { u16::from_be_bytes([ch[0], ch[1]]) } else { u16::from(ch[0]) << 8 });
+        s += u32::from(if ch.len() == 2 {
+            u16::from_be_bytes([ch[0], ch[1]])
+        } else {
+            u16::from(ch[0]) << 8
+        });
     }
     while s >> 16 != 0 {
         s = (s & 0xffff) + (s >> 16);

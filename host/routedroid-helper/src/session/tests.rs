@@ -21,8 +21,14 @@ fn start_applies_tagged_state_and_stop_restores_the_baseline() {
         let state = lab.kernel.lock();
         let tun = &state.links["phone0"];
         assert_eq!(tun.alias.as_deref(), Some("routedroid:0000000000000001"));
-        assert_eq!(state.tables["routedroid_phone0"].0.comment.as_deref(), Some("routedroid:0000000000000001"));
-        assert!(state.routes.iter().any(|r| r.dst.to_string() == "10.0.0.5" && r.oif == Some(tun.index)));
+        assert_eq!(
+            state.tables["routedroid_phone0"].0.comment.as_deref(),
+            Some("routedroid:0000000000000001")
+        );
+        assert!(state
+            .routes
+            .iter()
+            .any(|r| r.dst.to_string() == "10.0.0.5" && r.oif == Some(tun.index)));
         assert_eq!(state.sysctls[&key("lan0", Leaf::ProxyArp)], ENABLED);
         assert_eq!(state.sysctls[&key("phone0", Leaf::Forwarding)], ENABLED);
     }
@@ -41,9 +47,15 @@ fn a_failure_at_any_step_rolls_everything_back() {
         let baseline = lab.kernel.snapshot();
         lab.kernel.lock().failing.insert(failing);
         let error = start(&lab, 1, "phone0", "10.0.0.5").err().unwrap();
-        assert!(format!("{error:#}").contains(failing), "{failing}: {error:#}");
+        assert!(
+            format!("{error:#}").contains(failing),
+            "{failing}: {error:#}"
+        );
         assert_eq!(lab.kernel.snapshot(), baseline, "{failing}");
-        assert!(lab.journals().is_empty(), "{failing}: rollback succeeded, so the journal resolves");
+        assert!(
+            lab.journals().is_empty(),
+            "{failing}: rollback succeeded, so the journal resolves"
+        );
     }
 }
 
@@ -56,7 +68,10 @@ fn a_failed_rollback_keeps_the_journal() {
         state.failing.insert("delete_nft_table");
     }
     let error = start(&lab, 1, "phone0", "10.0.0.5").err().unwrap();
-    assert!(format!("{error:#}").contains("rollback failed too"), "{error:#}");
+    assert!(
+        format!("{error:#}").contains("rollback failed too"),
+        "{error:#}"
+    );
     assert_eq!(lab.journals().len(), 1);
     // Undo stopped at the firewall; the table stays, and the journal says so.
     assert!(lab.kernel.lock().tables.contains_key("routedroid_phone0"));
@@ -77,9 +92,15 @@ fn names_and_addresses_are_reserved_while_a_journal_exists() {
     start(&lab, 1, "phone0", "10.0.0.5").unwrap().crash();
     // The crashed session's TUN is gone, but its journal still reserves both.
     let tun = start(&lab, 2, "phone0", "10.0.0.6").err().unwrap();
-    assert!(format!("{tun:#}").contains("held by session 0000000000000001"), "{tun:#}");
+    assert!(
+        format!("{tun:#}").contains("held by session 0000000000000001"),
+        "{tun:#}"
+    );
     let ip = start(&lab, 3, "phone1", "10.0.0.5").err().unwrap();
-    assert!(format!("{ip:#}").contains("held by session 0000000000000001"), "{ip:#}");
+    assert!(
+        format!("{ip:#}").contains("held by session 0000000000000001"),
+        "{ip:#}"
+    );
 }
 
 #[test]
@@ -95,6 +116,13 @@ fn foreign_objects_with_our_names_are_never_touched() {
     lab.kernel.create_firewall(&foreign).unwrap();
     let baseline = lab.kernel.snapshot();
     let error = start(&lab, 1, "phone0", "10.0.0.5").err().unwrap();
-    assert!(format!("{error:#}").contains("EEXIST"), "never merged into: {error:#}");
-    assert_eq!(lab.kernel.snapshot(), baseline, "and never deleted by the rollback");
+    assert!(
+        format!("{error:#}").contains("EEXIST"),
+        "never merged into: {error:#}"
+    );
+    assert_eq!(
+        lab.kernel.snapshot(),
+        baseline,
+        "and never deleted by the rollback"
+    );
 }

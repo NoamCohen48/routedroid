@@ -32,11 +32,20 @@ pub fn usable(device: &DeviceInfo) -> String {
 /// One log line per event; `None` for events too frequent to log (traffic).
 pub fn event(event: &Event) -> Option<String> {
     match event {
-        Event::Connection { serial, state } => Some(format!("{serial}: {}", connection_state(state))),
+        Event::Connection { serial, state } => {
+            Some(format!("{serial}: {}", connection_state(state)))
+        }
         Event::Traffic { .. } => None,
         Event::Devices { devices } => {
-            let serials: Vec<&str> = devices.iter().map(|device| device.serial.as_str()).collect();
-            Some(format!("devices: {} attached [{}]", devices.len(), serials.join(", ")))
+            let serials: Vec<&str> = devices
+                .iter()
+                .map(|device| device.serial.as_str())
+                .collect();
+            Some(format!(
+                "devices: {} attached [{}]",
+                devices.len(),
+                serials.join(", ")
+            ))
         }
         Event::Shutdown => Some("daemon is shutting down".into()),
         Event::Lagged { missed } => Some(format!("missed {missed} events; refreshing")),

@@ -18,7 +18,11 @@ impl App {
         }
         match event {
             Event::Connection { serial, state } => self.apply_connection(serial, state),
-            Event::Traffic { serial, packets_to_phone, packets_from_phone } => {
+            Event::Traffic {
+                serial,
+                packets_to_phone,
+                packets_from_phone,
+            } => {
                 if let Some(connection) = self.connections.get_mut(&serial) {
                     connection.packets_to_phone = packets_to_phone;
                     connection.packets_from_phone = packets_from_phone;
@@ -36,7 +40,11 @@ impl App {
 
     fn apply_connection(&mut self, serial: String, state: ConnectionState) -> Vec<Command> {
         let ended = matches!(state, ConnectionState::Ended(_));
-        if let Some(device) = self.devices.iter_mut().find(|device| device.serial == serial) {
+        if let Some(device) = self
+            .devices
+            .iter_mut()
+            .find(|device| device.serial == serial)
+        {
             device.connection = if ended { None } else { Some(state.clone()) };
         }
         if ended {

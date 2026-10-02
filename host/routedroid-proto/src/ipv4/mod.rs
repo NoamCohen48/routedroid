@@ -29,7 +29,10 @@ pub fn check(packet: &[u8]) -> Result<(), PacketError> {
     }
     let total = u16::from_be_bytes([packet[2], packet[3]]);
     if usize::from(total) != packet.len() {
-        return Err(PacketError::TotalLength { total, body: packet.len() });
+        return Err(PacketError::TotalLength {
+            total,
+            body: packet.len(),
+        });
     }
     let header = u16::from(ihl) * 4;
     if total < header {
