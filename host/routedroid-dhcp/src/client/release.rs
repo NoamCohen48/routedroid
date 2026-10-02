@@ -1,14 +1,14 @@
 //! The replyless messages: RELEASE when done with a lease, DECLINE when
 //! its address turns out to be in use.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use tracing::{info, warn};
 
 use super::{Bound, Client};
 use crate::dhcp::{self, CLIENT_PORT, Identity, SERVER_PORT};
 use crate::identity::ClientId;
-use crate::lease::Lease;
-use crate::packet;
+use crate::lease::{Held, Lease};
+use crate::packet::{self, parse_mac};
 use crate::random;
 use crate::sock;
 
@@ -45,9 +45,10 @@ impl Client {
 
 /// RELEASE `lease` without a runtime or a client: open, send, close. For
 /// undoing a lease after a crash, when only its record is left.
-pub fn release_now(lease: &Lease) -> Result<()> {
+pub fn release_now(lease: &Held) -> Result<()> {
     let client_id = ClientId::parse(&lease.client_id)?;
-    let server_mac = lease.server_mac()?;
+    let server_mac = parse_mac(&lease.server_mac)
+        .with_context(|| format!("lease: bad server_mac {:?}", lease.server_mac))?;
     let xid = random::xid()?;
     sock::send_once(&lease.iface, |iface| {
         let id = Identity {

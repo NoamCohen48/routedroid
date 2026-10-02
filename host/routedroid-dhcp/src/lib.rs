@@ -21,7 +21,7 @@ mod sock;
 
 pub use client::{Acquire, Bound, Client, Event, Lost, Outcome, mask_prefix, release_now};
 pub use identity::{BadClientId, ClientId};
-pub use lease::{Lease, Schedule, unix_now};
+pub use lease::{Held, Lease, Schedule, unix_now};
 pub use link::{ArpMode, Link, PROBE, Probe};
 pub use sock::Iface;
 

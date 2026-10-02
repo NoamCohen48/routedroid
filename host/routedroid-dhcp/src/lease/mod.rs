@@ -37,6 +37,18 @@ pub struct Lease {
     pub vlan_tagged_replies: bool,
 }
 
+/// What a RELEASE needs: enough to give a lease back after a crash, when
+/// nothing but this record is left.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Held {
+    pub iface: String,
+    pub client_id: String,
+    pub address: Ipv4Addr,
+    pub server_id: Ipv4Addr,
+    pub server_mac: String,
+}
+
 pub fn unix_now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -51,6 +63,16 @@ impl Lease {
 
     pub fn client_id(&self) -> Result<ClientId> {
         ClientId::parse(&self.client_id).context("lease")
+    }
+
+    pub fn held(&self) -> Held {
+        Held {
+            iface: self.iface.clone(),
+            client_id: self.client_id.clone(),
+            address: self.address,
+            server_id: self.server_id,
+            server_mac: self.server_mac.clone(),
+        }
     }
 
     pub fn expires_at(&self) -> u64 {
