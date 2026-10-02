@@ -1,0 +1,22 @@
+[package]
+name = "routedroid-helper-ipc"
+version.workspace = true
+description = "Controller <-> privileged helper IPC: version handshake, typed control messages and raw IPv4 packets over one Unix SOCK_SEQPACKET connection"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+rustix = { workspace = true, features = ["net", "time"] }
+serde.workspace = true
+serde_json.workspace = true
+socket2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["net"] }
+
+[dev-dependencies]
+rustix = { workspace = true, features = ["process"] }
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints]
+workspace = true

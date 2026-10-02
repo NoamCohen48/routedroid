@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "routedroid-proto",
+    "routedroid-helper-ipc",
 ]
 # cargo fuzz targets: nightly-only, built on their own.
 exclude = ["fuzz"]
@@ -16,6 +17,7 @@ publish = false
 
 # Every external and internal dependency, versioned once; crates add features.
 [workspace.dependencies]
+routedroid-helper-ipc = { path = "routedroid-helper-ipc" }
 routedroid-proto = { path = "routedroid-proto" }
 anyhow = "1"
 chrono = { version = "0.4", default-features = false }
