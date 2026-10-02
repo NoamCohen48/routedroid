@@ -1,0 +1,25 @@
+[package]
+name = "routedroid-tui"
+version.workspace = true
+description = "Routedroid terminal UI: a keyboard-driven client of routedroidd"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "routedroid-tui"
+path = "src/main.rs"
+
+[dependencies]
+routedroid-ipc.workspace = true
+anyhow.workspace = true
+chrono = { workspace = true, features = ["clock"] }
+clap = { workspace = true, features = ["env"] }
+crossterm = { workspace = true, features = ["event-stream"] }
+futures-util.workspace = true
+humantime.workspace = true
+ratatui.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync"] }
+
+[lints]
+workspace = true

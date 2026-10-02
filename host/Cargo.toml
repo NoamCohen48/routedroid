@@ -4,6 +4,7 @@ members = [
     "routedroid",
     "routedroidd",
     "routedroid-ipc",
+    "routedroid-tui",
     "routedroid-proto",
     "routedroid-helper-ipc",
     "routedroid-helper",
