@@ -23,10 +23,13 @@ impl AdbDevice {
         for (key, value) in extras {
             args.extend(["--es", key, value]);
         }
-        let (out, _) = self.shell(&args, None).await?;
-        // `am start` exits 0 even when the component is missing; surface that.
-        if out.contains("Error") || out.contains("does not exist") {
-            return Err(Fault::msg(Kind::Adb, format!("am start reported: {}", out.trim())));
+        let (out, err) = self.shell(&args, None).await?;
+        // `am start` exits 0 even when the component is missing; it prints
+        // `Error: ...` or `Error type N` lines instead. Warnings (an intent
+        // delivered to the running activity) are success.
+        let failure = out.lines().chain(err.lines()).map(str::trim).find(|l| l.starts_with("Error"));
+        if let Some(line) = failure {
+            return Err(Fault::msg(Kind::Adb, format!("am start reported: {line}")));
         }
         Ok(())
     }

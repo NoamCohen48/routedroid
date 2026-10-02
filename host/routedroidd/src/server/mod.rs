@@ -8,7 +8,7 @@ mod view;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use tokio::net::{UnixListener, UnixStream};
+use tokio::net::UnixStream;
 use tokio::signal::unix::{signal, SignalKind};
 use tracing::{info, warn};
 
@@ -20,17 +20,17 @@ use crate::Args;
 /// The control socket and the daemon behind it: owns both for the process's
 /// life and takes both down together.
 pub struct Server {
-    listener: UnixListener,
+    bound: bind::Bound,
     path: PathBuf,
     daemon: Daemon,
 }
 
 impl Server {
     pub async fn bind(args: Args) -> Result<Self> {
-        let listener = bind::listen(&args.socket).await?;
+        let bound = bind::listen(&args.socket)?;
         let daemon = Daemon::start(Adb::new(&args.adb, DEFAULT_TIMEOUT), args.helper_socket.clone()).await;
         info!(socket = %args.socket.display(), "routedroidd ready");
-        Ok(Self { listener, path: args.socket, daemon })
+        Ok(Self { bound, path: args.socket, daemon })
     }
 
     /// Accept until a signal, then stop every device connection.
@@ -40,7 +40,7 @@ impl Server {
         let mut sigterm = signal(SignalKind::terminate())?;
         loop {
             tokio::select! {
-                accepted = self.listener.accept() => match accepted {
+                accepted = self.bound.listener.accept() => match accepted {
                     Ok((stream, _)) => self.accept(stream),
                     Err(error) => warn!(%error, "accept failed"),
                 },
@@ -75,8 +75,9 @@ impl Server {
     /// Unlink first so new clients get "unreachable", not a silent backlog;
     /// then stop the connections, unless a second signal says to give up.
     async fn shutdown(self, sigterm: &mut tokio::signal::unix::Signal) {
-        drop(self.listener);
+        // Unlink under the lock (still held by `bound`), then stop listening.
         let _ = std::fs::remove_file(&self.path);
+        drop(self.bound);
         info!("shutting down: disconnecting devices (signal again to give up waiting)");
         tokio::select! {
             _ = self.daemon.stop_all() => {}

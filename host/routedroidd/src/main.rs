@@ -42,7 +42,10 @@ pub struct Args {
 
 fn main() {
     let args = Args::parse();
-    logging::init(&args.log);
+    if let Err(e) = logging::init(&args.log) {
+        eprintln!("routedroidd: {e}");
+        std::process::exit(2);
+    }
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
     // Bind first: a socket we cannot take (another daemon on it, a shared
     // directory) must fail before anything else starts.

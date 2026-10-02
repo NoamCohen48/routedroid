@@ -24,6 +24,7 @@ tokio-util = { version = "0.7", features = ["codec"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 hex = "0.4"
+rustix = { version = "1", features = ["fs", "process"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }

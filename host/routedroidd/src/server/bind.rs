@@ -1,36 +1,58 @@
-//! Binding the control socket: a private directory, no other daemon on it,
-//! mode 0600. Free functions — they own no state and touch no daemon.
+//! Binding the control socket: a private directory, one daemon per socket,
+//! mode 0600 from the start. Free functions; they own no daemon state.
 
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::fs::{DirBuilder, File, OpenOptions};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
-use tokio::net::{UnixListener, UnixStream};
+use rustix::fs::{flock, FlockOperation, Mode};
+use tokio::net::UnixListener;
 
 pub fn current_uid() -> u32 {
-    std::fs::metadata("/proc/self").expect("/proc/self").uid()
+    rustix::process::getuid().as_raw()
 }
 
-/// Create the socket's directory (0700) if missing — an existing one must be
-/// ours and private — refuse if another daemon answers, replace a stale
-/// socket file, and bind with mode 0600.
-pub async fn listen(path: &Path) -> Result<UnixListener> {
+/// The bound socket and the lock that makes it ours; the socket may only be
+/// unlinked while the lock is held.
+pub struct Bound {
+    pub listener: UnixListener,
+    _lock: File,
+}
+
+/// Create the socket's directory (0700) if missing (an existing one must be
+/// ours and private), take `<socket>.lock` so no second daemon can race us,
+/// replace whatever socket file a dead daemon left, and bind with mode 0600.
+pub fn listen(path: &Path) -> Result<Bound> {
     if let Some(dir) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) {
-        match std::fs::create_dir(dir) {
-            Ok(()) => std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?,
+        match DirBuilder::new().mode(0o700).create(dir) {
+            Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => check_private_dir(dir)?,
             Err(e) => return Err(e).with_context(|| format!("create {}", dir.display())),
         }
     }
-    if path.exists() {
-        if UnixStream::connect(path).await.is_ok() {
-            bail!("another routedroidd is already serving {}", path.display());
-        }
-        std::fs::remove_file(path).with_context(|| format!("remove stale {}", path.display()))?;
+    let lock_path = path.with_extension("lock");
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .mode(0o600)
+        .open(&lock_path)
+        .with_context(|| format!("open {}", lock_path.display()))?;
+    if flock(&lock, FlockOperation::NonBlockingLockExclusive).is_err() {
+        bail!("another routedroidd is already serving {}", path.display());
     }
-    let listener = UnixListener::bind(path).with_context(|| format!("bind {}", path.display()))?;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-    Ok(listener)
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e).with_context(|| format!("remove stale {}", path.display())),
+    }
+    // The umask covers the window between bind() creating the file and any
+    // chmod: the socket is never reachable by anyone else, not even briefly.
+    let old = rustix::process::umask(Mode::from_raw_mode(0o177));
+    let listener = UnixListener::bind(path).with_context(|| format!("bind {}", path.display()));
+    rustix::process::umask(old);
+    Ok(Bound { listener: listener?, _lock: lock })
 }
 
 /// The socket directory must belong to us and be closed to everyone else;
