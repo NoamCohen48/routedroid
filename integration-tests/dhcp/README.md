@@ -45,7 +45,9 @@ classless-route decoding, builder/state-table conformance.
   checksum-not-ready status are read per frame).
 - Ethernet/IPv4/UDP/BOOTP/DHCP built by hand; IPv4 header and UDP
   checksums computed; `chaddr` = interface MAC, option 61 = `00` + client-id
-  string, option 55 = `1,3,6,51,54,58,59,121`, option 57 = 1500, BROADCAST
+  `routedroid:<16 hex>:<12 hex>` derived from `--serial` (first 8 bytes of
+  SHA-256 of `"routedroid device id v1\0"` + serial) and the interface MAC,
+  and required back in every reply that carries one; option 55 = `1,3,6,51,54,58,59,121`, option 57 = 1500, BROADCAST
   flag, random XID per transaction, `secs` since start, RFC 2131 backoff
   (4 s doubling to 64 s plus jitter) under a global `--timeout`.
 - Replies are accepted only if XID, `op=2`, `htype/hlen`, `chaddr` and the
@@ -61,6 +63,12 @@ classless-route decoding, builder/state-table conformance.
   with the interface MAC (never a local address). Without that no server can
   deliver the unicast RENEW/REBIND ACK it is required to send to `ciaddr`.
   `--no-arp` turns this off to demonstrate the failure.
+- Before an ACKed address is used it must not be one of the host's own
+  addresses and must not answer an RFC 5227 probe (3 ARP probes 200 ms apart,
+  then 500 ms of listening; `--no-probe` skips it). A failed check sends a
+  broadcast DECLINE, pauses 10 s and restarts from DISCOVER, giving up after
+  3 declines. A bound address is announced twice and watched: another
+  station claiming it while held ends the lease (DECLINE, exit non-zero).
 
 ## Checks vs. the §3.3 acceptance list
 
@@ -72,6 +80,7 @@ classless-route decoding, builder/state-table conformance.
 | renewal works | check 3: `renew` from state → ACK, same address; sniffer proves REQUEST unicast to the server MAC from `LEASE_IP` with `ciaddr`, and the ACK unicast back to `LEASE_IP`/host MAC; dnsmasq log has no "broadcast response" | proven in ns |
 | INIT-REBOOT restores a persisted lease and handles NAK | check 4: valid state → ACK exit 0 (broadcast REQUEST, `ciaddr` 0); state edited to `.200` → NAK exit 3, real lease untouched | proven in ns (dnsmasq needs `--dhcp-authoritative` to NAK instead of staying silent → exit 4) |
 | release works | check 5: unicast RELEASE on the wire, `DHCPRELEASE` logged, address gone from the lease file | proven in ns |
+| an address already in use is never taken | check 7: dnsmasq is made to offer an address the LAN side owns (the probe sees its ARP reply) and the host's own address (the host-address check); both are DECLINEd on the wire and in dnsmasq's log, neither is bound | proven in ns |
 | broadcast replies captured reliably | OFFER/ACK arrive as Ethernet broadcast to `255.255.255.255` (sniffer + client log) although the host has no such lease address | proven in ns |
 | unicast raw-frame renewal/release without a local alias | checks 3 and 5 | proven in ns |
 | VLAN-netdevice operation and packet metadata | check 6: acquire on `hv.10` gets a `192.168.60.x` lease; the parent-side sniffer sees the DISCOVER with VLAN 10 in `PACKET_AUXDATA`; the client bound to the VLAN device sees untagged frames (kernel strips the tag below the VLAN device) | proven in ns |
@@ -83,7 +92,7 @@ classless-route decoding, builder/state-table conformance.
 - A real router/AP: does it honour option 61 for a second identity on the
   same MAC, or key leases by `chaddr` only (then the phone identity and the
   PC would fight over one lease)? Run
-  `sudo host/target/release/routedroid-dhcp acquire --iface eno1 --client-id routedroid:phase0:test1 --state /tmp/rd-test1.json --hold 120 --renew-after 30 --release-on-exit`
+  `sudo host/target/release/routedroid-dhcp acquire --iface eno1 --serial lab-test1 --state /tmp/rd-test1.json --hold 120 --renew-after 30 --release-on-exit`
   and watch the PC's own lease (`nmcli device show eno1`) stay unchanged.
 - Whether the server unicasts the RENEW ACK to `ciaddr` (needs our ARP
   reply) or broadcasts; whether the switch/AP drops frames from a MAC/IP pair

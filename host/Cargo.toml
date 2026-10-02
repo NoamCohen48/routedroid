@@ -23,6 +23,7 @@ publish = false
 
 # Every external and internal dependency, versioned once; crates add features.
 [workspace.dependencies]
+routedroid-dhcp = { path = "routedroid-dhcp", default-features = false }
 routedroid-helper-ipc = { path = "routedroid-helper-ipc" }
 routedroid-ipc = { path = "routedroid-ipc" }
 routedroid-proto = { path = "routedroid-proto" }

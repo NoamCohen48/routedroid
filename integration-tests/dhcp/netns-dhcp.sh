@@ -4,6 +4,7 @@
 #   host-ns: hv  192.168.50.10/24 static ("the PC's own address")   veth
 #   lan-ns : lv  192.168.50.1/24 + dnsmasq (range .100-.150, 1h)  <──────>
 #            lv.10 192.168.60.1/24 + dnsmasq (VLAN 10, optional check 6)
+#            lv also holds .120, which dnsmasq is made to offer (check 7)
 #
 # The client binds an AF_PACKET socket to hv and must obtain, renew, restore
 # (INIT-REBOOT) and release extra leases WITHOUT ever adding an address to hv.
@@ -43,10 +44,14 @@ RANGE_HI=192.168.50.150
 VLAN_ID=10
 VLAN_LAN_IP=192.168.60.1
 VLAN_HOST_IP=192.168.60.10
-CID_A="routedroid:lab:$$:a"
-CID_B="routedroid:lab:$$:b"
-CID_C="routedroid:lab:$$:c"
-CID_V="routedroid:lab:$$:vlan"
+# Device serials; the client-id is derived from serial and interface MAC.
+SER_A="lab-$$-a"
+SER_B="lab-$$-b"
+SER_C="lab-$$-c"
+SER_V="lab-$$-vlan"
+SER_D="lab-$$-squat"
+SER_E="lab-$$-self"
+SQUAT_IP=192.168.50.120
 
 TMP=$(mktemp -d /tmp/rd3-lab.XXXXXX)
 FAILS=0
@@ -71,11 +76,16 @@ dhcp() { local logf=$1; shift; ip netns exec "$NS_HOST" "$BIN" "$@" 2>"$logf"; }
 json() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d[sys.argv[2]])' "$1" "$2"; }
 in_range() { python3 -c 'import ipaddress,sys; a=ipaddress.ip_address(sys.argv[1]); sys.exit(0 if ipaddress.ip_address(sys.argv[2])<=a<=ipaddress.ip_address(sys.argv[3]) else 1)' "$1" "$2" "$3"; }
 host_v4_addrs() { ip -n "$NS_HOST" -4 -o addr show dev "$1" | awk '{print $4}' | sort | tr '\n' ' '; }
+# cid <serial> <iface>: the client-id, derived independently of the Rust code
+# (architecture §6): routedroid:<8 bytes of SHA-256 of the serial>:<MAC>.
+cid() {
+    local mac; mac=$(ip -n "$NS_HOST" -o link show dev "$2" | grep -o 'link/ether [0-9a-f:]*' | cut -d' ' -f2)
+    python3 -c 'import hashlib,sys; h=hashlib.sha256(b"routedroid device id v1\0"+sys.argv[1].encode()).hexdigest()[:16]; print("routedroid:%s:%s" % (h, sys.argv[2].replace(":","")))' "$1" "$mac"
+}
 # dnsmasq stores a type-0 client-id as "00:<hex bytes>" in its lease file.
 cid_hex() { python3 -c 'import sys; print(":".join(["00"] + ["%02x" % b for b in sys.argv[1].encode()]))' "$1"; }
 export -f json in_range host_v4_addrs cid_hex
 export NS_HOST
-HEX_A=$(cid_hex "$CID_A"); HEX_B=$(cid_hex "$CID_B"); HEX_C=$(cid_hex "$CID_C"); HEX_V=$(cid_hex "$CID_V")
 
 # ------------------------------------------------------------- preconditions
 for t in ip python3 dnsmasq; do command -v "$t" >/dev/null || { echo "missing tool: $t"; exit 2; }; done
@@ -131,6 +141,8 @@ ip -n $NS_LAN link set $VETH_LAN up
 HOST_MAC=$(ip -n $NS_HOST -o link show $VETH_HOST | sed -n 's/.*link\/ether \([0-9a-f:]*\).*/\1/p')
 LAN_MAC=$(ip -n $NS_LAN -o link show $VETH_LAN | sed -n 's/.*link\/ether \([0-9a-f:]*\).*/\1/p')
 log "host $VETH_HOST $HOST_MAC $HOST_IP ; lan $VETH_LAN $LAN_MAC $LAN_IP"
+CID_A=$(cid "$SER_A" $VETH_HOST); CID_B=$(cid "$SER_B" $VETH_HOST); CID_C=$(cid "$SER_C" $VETH_HOST)
+HEX_A=$(cid_hex "$CID_A"); HEX_B=$(cid_hex "$CID_B"); HEX_C=$(cid_hex "$CID_C")
 
 # --------------------------------------------------------- sniffer in lan-ns
 # Records every DHCP frame seen on an interface in lan-ns, with the Ethernet
@@ -186,11 +198,13 @@ for _ in $(seq 1 30); do grep -q '# ready' "$TMP/sniff.log" 2>/dev/null && break
 start_dnsmasq() { # start_dnsmasq <iface> <range-lo> <range-hi> <leasefile> <logfile>; echoes pid
     ip netns exec $NS_LAN dnsmasq --no-daemon --interface="$1" --bind-interfaces \
         --dhcp-range="$2,$3,1h" --dhcp-leasefile="$4" --log-dhcp --port=0 \
-        --dhcp-authoritative --log-facility=- --no-hosts --no-resolv >"$5" 2>&1 &
+        --dhcp-authoritative --log-facility=- --no-hosts --no-resolv \
+        --dhcp-hostsfile="$TMP/hosts.$1" >"$5" 2>&1 &
     echo $!
 }
 LEASES=$TMP/leases
 : >"$LEASES"
+: >"$TMP/hosts.$VETH_LAN"; : >"$TMP/hosts.$VETH_LAN.$VLAN_ID"
 DNSMASQ_PID=$(start_dnsmasq $VETH_LAN $RANGE_LO $RANGE_HI "$LEASES" "$TMP/dnsmasq.log")
 for _ in $(seq 1 50); do grep -q 'DHCP, sockets bound' "$TMP/dnsmasq.log" 2>/dev/null && break; sleep 0.1; done
 if ! kill -0 "$DNSMASQ_PID" 2>/dev/null || ! grep -q 'DHCP, sockets bound' "$TMP/dnsmasq.log"; then
@@ -203,7 +217,7 @@ check "host-ns $VETH_HOST has exactly one IPv4 address before the probe ($BASE_A
 
 # ------------------------------------------------------- 1. acquire (no hold)
 log "check 1: acquire for $CID_A"
-dhcp "$TMP/a.log" acquire --iface $VETH_HOST --client-id "$CID_A" --state "$TMP/a.json" --timeout 30 >"$TMP/a.out"
+dhcp "$TMP/a.log" acquire --iface $VETH_HOST --serial "$SER_A" --state "$TMP/a.json" --timeout 30 >"$TMP/a.out"
 rc=$?
 check "1. acquire exited 0 and wrote a lease record (rc=$rc)" bash -c "[[ $rc -eq 0 && -s $TMP/a.json ]]"
 if [[ -s $TMP/a.json ]]; then
@@ -213,6 +227,8 @@ if [[ -s $TMP/a.json ]]; then
     check "1. lease $A_IP is inside $RANGE_LO-$RANGE_HI" in_range "$A_IP" $RANGE_LO $RANGE_HI
     check "1. lease record: prefix 24, router $LAN_IP, server_id $LAN_IP, server_mac = lan veth MAC, lease 3600" \
         bash -c "[[ \$(json $TMP/a.json prefix) == 24 && \$(json $TMP/a.json router) == $LAN_IP && '$A_SRV' == $LAN_IP && '$A_SMAC' == $LAN_MAC && \$(json $TMP/a.json lease_secs) == 3600 ]]"
+    check "1. lease record's client_id is $CID_A (derived from serial and MAC)" \
+        bash -c "[[ \$(json $TMP/a.json client_id) == '$CID_A' ]]"
     check "1. stdout carried the same JSON record" bash -c "grep -q '\"address\":\"$A_IP\"' $TMP/a.out"
     check "1. dnsmasq lease file lists $A_IP with client-id $CID_A" \
         bash -c "sleep 0.5; grep -q ' $A_IP .*$HEX_A' $LEASES"
@@ -230,9 +246,9 @@ check "1. host-ns has no address in 192.168.50.100-150 on any interface" \
 
 # --------------------------------------------- 2. two identities concurrently
 log "check 2: concurrent acquire for $CID_B and $CID_C"
-dhcp "$TMP/b.log" acquire --iface $VETH_HOST --client-id "$CID_B" --state "$TMP/b.json" --timeout 30 >"$TMP/b.out" &
+dhcp "$TMP/b.log" acquire --iface $VETH_HOST --serial "$SER_B" --state "$TMP/b.json" --timeout 30 >"$TMP/b.out" &
 PB=$!
-dhcp "$TMP/c.log" acquire --iface $VETH_HOST --client-id "$CID_C" --state "$TMP/c.json" --timeout 30 >"$TMP/c.out" &
+dhcp "$TMP/c.log" acquire --iface $VETH_HOST --serial "$SER_C" --state "$TMP/c.json" --timeout 30 >"$TMP/c.out" &
 PC=$!
 wait $PB; rcb=$?
 wait $PC; rcc=$?
@@ -340,11 +356,12 @@ if [[ $vlan_ok -eq 1 ]]; then
     ip -n $NS_LAN link set $VETH_LAN.$VLAN_ID up
     ip -n $NS_HOST addr add $VLAN_HOST_IP/24 dev $VETH_HOST.$VLAN_ID
     ip -n $NS_HOST link set $VETH_HOST.$VLAN_ID up
+    CID_V=$(cid "$SER_V" $VETH_HOST.$VLAN_ID); HEX_V=$(cid_hex "$CID_V")
     VLEASES=$TMP/leases-vlan; : >"$VLEASES"
     DNSMASQ_VLAN_PID=$(start_dnsmasq $VETH_LAN.$VLAN_ID 192.168.60.100 192.168.60.150 "$VLEASES" "$TMP/dnsmasq-vlan.log")
     for _ in $(seq 1 50); do grep -q 'DHCP, sockets bound' "$TMP/dnsmasq-vlan.log" 2>/dev/null && break; sleep 0.1; done
     MARK=$(wc -l <"$TMP/sniff.log")
-    dhcp "$TMP/v.log" acquire --iface $VETH_HOST.$VLAN_ID --client-id "$CID_V" --state "$TMP/v.json" --timeout 30 --release-on-exit >"$TMP/v.out"
+    dhcp "$TMP/v.log" acquire --iface $VETH_HOST.$VLAN_ID --serial "$SER_V" --state "$TMP/v.json" --timeout 30 --release-on-exit >"$TMP/v.out"
     rc=$?
     check "6. acquire on VLAN netdevice $VETH_HOST.$VLAN_ID exited 0 (rc=$rc)" bash -c "[[ $rc -eq 0 && -s $TMP/v.json ]]"
     if [[ -s $TMP/v.json ]]; then
@@ -362,6 +379,31 @@ if [[ $vlan_ok -eq 1 ]]; then
         sed 's/^/      | /' "$TMP/v.log" | tail -20
     fi
 fi
+
+# --------------------------------------------- 7. unusable leases are declined
+# dnsmasq is told (hostsfile, SIGHUP) to give one identity $SQUAT_IP, which lv
+# already owns, and another the host's own $HOST_IP. The first must be caught
+# by the ARP probe, the second by the host-address check; both DECLINEd.
+log "check 7: offered addresses that are in use"
+CID_D=$(cid "$SER_D" $VETH_HOST); CID_E=$(cid "$SER_E" $VETH_HOST)
+ip -n $NS_LAN addr add $SQUAT_IP/32 dev $VETH_LAN
+printf 'id:%s,%s\nid:%s,%s\n' "$(cid_hex "$CID_D")" $SQUAT_IP "$(cid_hex "$CID_E")" $HOST_IP >"$TMP/hosts.$VETH_LAN"
+kill -HUP "$DNSMASQ_PID"; sleep 0.5
+for who in d e; do
+    ser=$SER_D; [[ $who == e ]] && ser=$SER_E
+    dhcp "$TMP/$who.log" acquire --iface $VETH_HOST --serial "$ser" --state "$TMP/$who.json" --timeout 15 >"$TMP/$who.out"
+    printf '%s' $? >"$TMP/$who.rc"
+done
+check "7. probe found $SQUAT_IP answered by the LAN side ($LAN_MAC) and the client declined it" \
+    bash -c "grep -q 'ARP probe: address in use.*$LAN_MAC' $TMP/d.log && grep -q 'DHCPDECLINE.*$SQUAT_IP' $TMP/dnsmasq.log"
+check "7. host-owned $HOST_IP declined by the host-address check, then another address bound" \
+    bash -c "grep -q 'is in use on this host' $TMP/e.log && grep -q 'DHCPDECLINE.*$HOST_IP' $TMP/dnsmasq.log && [[ \$(cat $TMP/e.rc) == 0 ]]"
+check "7. DECLINEs were broadcast from 0.0.0.0" \
+    bash -c "grep -q 'dst=ff:ff:ff:ff:ff:ff src=$HOST_MAC ip=0.0.0.0>255.255.255.255 port=68>67 type=4' $TMP/sniff.log"
+none_bound() { ! cat "$TMP"/d.json "$TMP"/e.json "$TMP"/d.out "$TMP"/e.out 2>/dev/null | grep -qE "\"address\":\"($SQUAT_IP|$HOST_IP)\""; }
+check "7. neither client bound an unusable address (rc d=$(cat "$TMP/d.rc") e=$(cat "$TMP/e.rc"))" none_bound
+check "7. host-ns $VETH_HOST still has only $HOST_IP/24" bash -c "[[ '$(host_v4_addrs $VETH_HOST)' == '$HOST_IP/24 ' ]]"
+ip -n $NS_LAN addr del $SQUAT_IP/32 dev $VETH_LAN
 
 # ----------------------------------------------------------------- baseline
 teardown
