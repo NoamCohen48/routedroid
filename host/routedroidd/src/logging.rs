@@ -1,4 +1,7 @@
 //! Structured logging: human-readable by default, JSON lines with `--log-json`.
+//! Colour only on a terminal, so journald and log files get plain text.
+
+use std::io::IsTerminal;
 
 use clap::Args;
 use tracing_subscriber::EnvFilter;
@@ -20,6 +23,7 @@ pub fn init(opts: &LogOptions) -> Result<(), String> {
     let builder = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
+        .with_ansi(std::io::stderr().is_terminal())
         .with_target(false);
     if opts.log_json {
         builder.json().init();

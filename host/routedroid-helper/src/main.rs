@@ -88,6 +88,8 @@ fn main() -> Result<()> {
         )
         .with_target(false)
         .with_writer(std::io::stderr)
+        // journald under systemd: no colour codes in the journal.
+        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stderr()))
         .init();
     let cli = Cli::parse();
     let hook = cli.hook();
