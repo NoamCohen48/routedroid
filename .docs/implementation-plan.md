@@ -17,8 +17,9 @@ Open items against §11 and §12:
 - **Hardware matrix (M4).** Verified on the emulator and on one Samsung phone (Android 10)
   before DHCP sessions existed. Leased sessions and egress are verified only in namespaces
   against dnsmasq. A run on real LANs and phones is still due.
-- **ADB reconnect (§11.9).** An unplugged phone ends its connection cleanly. It does not
-  reconnect.
+- **ADB reconnect (§11.9).** An unplugged phone ends its connection when the transport
+  closes, or at the latest at the 30 s keepalive deadline, and teardown follows. It does not
+  reconnect, and no rig unplugs a phone yet.
 - **Distribution packages and reproducible APKs.** `install.sh` and Gradle builds exist.
   Neither distribution packages nor build reproducibility exist yet.
 
