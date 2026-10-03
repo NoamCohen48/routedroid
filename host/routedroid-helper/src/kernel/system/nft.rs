@@ -23,6 +23,22 @@ pub fn find(nft: &Path, name: &str) -> Result<Option<NftTable>> {
     parse_tables(&json, name)
 }
 
+/// Every `inet` table, by name.
+pub fn all(nft: &Path) -> Result<Vec<(String, NftTable)>> {
+    let json = command::run(nft, &["-j", "list", "tables", "inet"], None, TIMEOUT)?;
+    Ok(tables(&json)?
+        .into_iter()
+        .filter(|t| t.family == "inet")
+        .map(|t| {
+            let table = NftTable {
+                handle: t.handle,
+                comment: t.comment,
+            };
+            (t.name, table)
+        })
+        .collect())
+}
+
 pub fn delete(nft: &Path, handle: u64) -> Result<()> {
     command::run(
         nft,
@@ -51,12 +67,18 @@ struct Table {
     comment: Option<String>,
 }
 
-fn parse_tables(json: &str, name: &str) -> Result<Option<NftTable>> {
+fn tables(json: &str) -> Result<Vec<Table>> {
     let listing: Listing = serde_json::from_str(json).context("parse `nft -j list tables`")?;
-    let mut found = listing
+    Ok(listing
         .nftables
         .into_iter()
         .filter_map(|item| item.table)
+        .collect())
+}
+
+fn parse_tables(json: &str, name: &str) -> Result<Option<NftTable>> {
+    let mut found = tables(json)?
+        .into_iter()
         .filter(|table| table.family == "inet" && table.name == name);
     let table = found.next();
     if found.next().is_some() {
@@ -91,6 +113,16 @@ mod tests {
             None
         );
         assert_eq!(parse_tables(LISTING, "routedroid_phone1").unwrap(), None);
+    }
+
+    #[test]
+    fn lists_every_inet_table() {
+        let names: Vec<_> = tables(LISTING)
+            .unwrap()
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+        assert_eq!(names, ["filter", "routedroid_phone0"]);
     }
 
     #[test]

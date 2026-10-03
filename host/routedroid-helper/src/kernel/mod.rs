@@ -13,6 +13,7 @@ use routedroid_helper_ipc::IfName;
 
 use crate::op::SysctlKey;
 
+mod forward_drop;
 mod system;
 
 #[cfg(test)]
@@ -22,6 +23,8 @@ pub use system::{AsyncTun, System};
 
 /// Routedroid's rtnetlink route protocol number (`proto 82` in `ip route`),
 /// outside the values iproute2 names in `rt_protos`.
+pub use forward_drop::{ForwardDrop, HostFirewall};
+
 pub const ROUTE_PROTOCOL: u8 = 82;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,6 +185,11 @@ pub trait Kernel: Send + Sync + 'static {
     /// Create `inet routedroid_<tun>` atomically; fails if the table exists.
     fn create_firewall(&self, firewall: &Firewall) -> Result<()>;
     fn nft_table(&self, name: &str) -> Result<Option<NftTable>>;
+    /// Every `inet` table, by name.
+    fn nft_tables(&self) -> Result<Vec<(String, NftTable)>>;
+    /// The host's own IPv4 forward-hook chains with policy drop whose
+    /// table does not already let `phone*` through both ways.
+    fn forward_drops(&self) -> Result<Vec<ForwardDrop>>;
     fn delete_nft_table(&self, handle: u64) -> Result<()>;
 
     /// RELEASE a DHCP lease from its record. Fire and forget: the server

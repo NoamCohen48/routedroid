@@ -40,6 +40,15 @@ controller.
   unresolved journal after *any* exit (including SIGKILL), and every `serve`
   does the same before it accepts; `routedroid-helper check` exits 1 while an
   orphaned or unreadable journal exists;
+- **doctor** (`Inspect`/`Repair` over the socket, `routedroid-helper doctor
+  [--repair]` as root, `routedroid doctor [--repair]` for everyone else):
+  orphaned or unreadable journals with the undo each still needs, objects
+  proven Routedroid's (a `routedroid:<session>` tag, protocol 82 in a phone's
+  egress table) that no journal accounts for, sysctl holders without a
+  journal, and the host's own forward chains with policy drop (which drop
+  phone traffic Routedroid's chain accepted). Without `--repair` it changes
+  nothing and names every change it would make; objects are listed before
+  journals are read, so a session starting meanwhile is never a leftover;
 - **controller death** closes the socket → the helper undoes everything and exits;
 - **shared sysctls are reference-counted** (`/var/lib/routedroid/sysctl/<key>.json`,
   updated under `flock`): the first session on a LAN interface records the
@@ -96,7 +105,8 @@ only without a gateway, and the LAN interface vanishing mid-session — 32 check
 interface through one helper (`serve --socket` serves every connection, the
 stand-in for `Accept=yes` instances), a third one probing phone-to-phone
 traffic, duplicate TUN / address refusals, refcounted sysctl restore, and one
-client's SIGKILL leaving the other session intact — 32 checks.
+client's SIGKILL leaving the other session intact, and doctor finding and
+repairing what a deleted journal left behind — 41 checks.
 
 ## Kill tests
 

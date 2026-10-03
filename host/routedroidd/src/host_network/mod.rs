@@ -5,13 +5,16 @@
 //! No address is ever added to the LAN interface.
 
 mod client;
+mod doctor;
 mod gateway;
 mod helper;
 mod interfaces;
 mod relay;
 
 pub use client::HostNetwork;
+pub use doctor::doctor;
 pub use gateway::default_gateway;
+pub use helper::connect;
 pub use interfaces::interfaces;
 pub use relay::HelperEvent;
 pub use routedroid_helper_ipc::DEFAULT_SOCKET;

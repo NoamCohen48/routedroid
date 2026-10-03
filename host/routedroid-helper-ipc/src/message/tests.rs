@@ -102,3 +102,31 @@ fn unknown_fields_and_bad_names_are_refused() {
     let bad_device = r#"{"type":"start","lan_if":"eno1","phone_ip":null,"device":"emulator-5554","tun":"phone0","mtu":1400}"#;
     assert!(serde_json::from_str::<Request>(bad_device).is_err());
 }
+
+#[test]
+fn inspection_and_repair() {
+    assert_eq!(
+        serde_json::to_string(&Request::Inspect).unwrap(),
+        r#"{"type":"inspect"}"#
+    );
+    let finding = Finding {
+        subject: "link phone0".into(),
+        problem: "tagged for a session with no journal".into(),
+        warning: false,
+        repair: vec!["delete link phone0".into()],
+    };
+    let repaired = Reply::Repaired {
+        done: vec!["delete link phone0".into()],
+        remaining: vec![finding.clone()],
+    };
+    let wire = serde_json::to_string(&repaired).unwrap();
+    assert_eq!(
+        wire,
+        concat!(
+            r#"{"type":"repaired","done":["delete link phone0"],"remaining":[{"subject":"link phone0","#,
+            r#""problem":"tagged for a session with no journal","warning":false,"#,
+            r#""repair":["delete link phone0"]}]}"#
+        )
+    );
+    assert_eq!(serde_json::from_str::<Reply>(&wire).unwrap(), repaired);
+}

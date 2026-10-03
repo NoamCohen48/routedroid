@@ -10,6 +10,7 @@
 
 pub mod client;
 mod describe;
+mod doctor;
 mod event;
 mod kind;
 mod request;
@@ -19,6 +20,7 @@ mod state;
 pub mod wire;
 
 pub use client::{Calls, Client, ConnectError, DaemonError, Events};
+pub use doctor::{Check, CheckStatus};
 pub use event::Event;
 pub use kind::Kind;
 pub use request::{DnsChoice, Request, StartRequest};
@@ -32,7 +34,7 @@ pub use wire::{ClientMessage, ServerMessage};
 /// 2: a phone's connectivity is a *device connection* on the wire.
 /// 3: tagged envelope, `Outcome` as clean-or-failed, a response per request,
 ///    optional `phone_ip` (DHCP), DNS choice, traffic bytes and drops,
-///    the phone's network, and `interfaces`.
+///    the phone's network, `interfaces` and `doctor`.
 pub const API_VERSION: u32 = 3;
 
 #[cfg(test)]

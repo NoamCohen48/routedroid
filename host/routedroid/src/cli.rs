@@ -42,6 +42,13 @@ pub enum Command {
     Status,
     /// Print every daemon event, forever (JSON lines, with or without --json).
     Events,
+    /// Check adb, the helper, its policy and what Routedroid left behind;
+    /// exit 1 if anything fails.
+    Doctor {
+        /// Make the changes the checks name (by default only lists them).
+        #[arg(long)]
+        repair: bool,
+    },
     /// Print the CLI and daemon versions.
     Version,
 }

@@ -126,11 +126,13 @@ async fn execute(calls: &Calls, command: Command) -> Result<Incoming> {
         Response::Interfaces { interfaces } => Incoming::Interfaces(interfaces),
         Response::Started { serial, tun } => Incoming::Started { serial, tun },
         Response::Stopped { serial, outcome } => Incoming::Stopped { serial, outcome },
-        other @ (Response::Version { .. } | Response::Subscribed) => Incoming::Failed {
-            what,
-            serial,
-            message: format!("unexpected answer {other:?}"),
-        },
+        other @ (Response::Version { .. } | Response::Subscribed | Response::Doctor { .. }) => {
+            Incoming::Failed {
+                what,
+                serial,
+                message: format!("unexpected answer {other:?}"),
+            }
+        }
     })
 }
 

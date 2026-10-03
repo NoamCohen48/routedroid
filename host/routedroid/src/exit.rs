@@ -4,6 +4,8 @@
 use routedroid_ipc::{ConnectError, DaemonError, Kind, Outcome};
 
 pub const OK: i32 = 0;
+/// `doctor` found something that fails.
+pub const PROBLEMS: i32 = 1;
 /// Nothing is listening at the control socket.
 pub const DAEMON_UNREACHABLE: i32 = 3;
 /// The daemon speaks another API version.
@@ -63,6 +65,7 @@ pub fn report(error: &anyhow::Error) -> i32 {
 pub fn help() -> String {
     let mut text =
         String::from("Exit codes:\n  0    success (for `start`: the connection ended cleanly)\n");
+    text += &format!("  {PROBLEMS:<4} `doctor` found a failing check\n");
     text += &format!(
         "  {DAEMON_UNREACHABLE:<4} daemon unreachable; start it with `systemctl --user start routedroid`\n"
     );

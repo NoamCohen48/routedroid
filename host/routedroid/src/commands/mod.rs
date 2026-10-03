@@ -1,6 +1,7 @@
 //! One module per subcommand; `run` dispatches and yields the exit code.
 
 pub mod devices;
+pub mod doctor;
 pub mod events;
 pub mod interfaces;
 pub mod start;
@@ -27,6 +28,7 @@ pub async fn run(cli: Cli) -> Result<i32> {
         Command::Stop { serial } => stop::run(&client, &serial, json).await,
         Command::Status => status::run(&client, json).await,
         Command::Events => events::run(&mut client).await,
+        Command::Doctor { repair } => doctor::run(&client, repair, json).await,
         Command::Version => unreachable!("answered above"),
     }
 }

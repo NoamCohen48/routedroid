@@ -16,6 +16,7 @@ use crate::kernel::System;
 
 mod claims;
 mod connection;
+mod doctor;
 mod env;
 mod fault;
 mod journal;
@@ -66,6 +67,12 @@ enum Cmd {
     Check,
     /// Undo every orphaned session; exit 1 if anything remains.
     Cleanup,
+    /// What Routedroid left behind and what gets in its way, with the
+    /// changes `--repair` makes; exit 1 if anything is (still) wrong.
+    Doctor {
+        #[arg(long)]
+        repair: bool,
+    },
 }
 
 impl Cli {
@@ -119,5 +126,6 @@ fn main() -> Result<()> {
         }
         Cmd::Check => recovery::check(&cli.state_dir.join("journal")),
         Cmd::Cleanup => recovery::cleanup(&env()?),
+        Cmd::Doctor { repair } => doctor::run(&env()?, *repair),
     }
 }

@@ -4,8 +4,10 @@
 mod fake_adb;
 mod fake_app;
 mod fake_helper;
+mod fake_replies;
 
 mod connections;
+mod doctor;
 mod leased;
 
 use std::net::Ipv4Addr;
@@ -47,6 +49,7 @@ impl Drop for Scratch {
 
 struct Lab {
     adb: FakeAdb,
+    devices: AttachedDevices,
     helper: FakeHelper,
     connections: DeviceConnections,
     events: broadcast::Receiver<Event>,
@@ -60,10 +63,15 @@ impl Lab {
         let helper = FakeHelper::spawn(scratch.path());
         let events = EventBus::new();
         let devices = AttachedDevices::start(adb.adb()).await;
-        let connections =
-            DeviceConnections::new(adb.adb(), helper.socket.clone(), events.clone(), devices);
+        let connections = DeviceConnections::new(
+            adb.adb(),
+            helper.socket.clone(),
+            events.clone(),
+            devices.clone(),
+        );
         Self {
             adb,
+            devices,
             helper,
             connections,
             events: events.subscribe(),

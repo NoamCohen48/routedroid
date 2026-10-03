@@ -5,7 +5,7 @@ use std::net::Ipv4Addr;
 use routedroid_ipc::{ConnectionState, DnsChoice, Kind, Lease, Outcome};
 
 use super::fake_app::FakeApp;
-use super::fake_helper::{ENDED, LEASE_DNS, LEASED_IP};
+use super::fake_replies::{ENDED, LEASE_DNS, LEASED_IP};
 use super::{Lab, request};
 
 const PHONE: &str = "R58FAKE01";

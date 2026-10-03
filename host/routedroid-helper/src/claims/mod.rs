@@ -84,6 +84,24 @@ impl Claims {
         Ok(read(&self.path(key))?.is_some_and(|claim| claim.holders.contains(&session)))
     }
 
+    /// Every key with holders not in `live`, and those holders.
+    pub fn unheld(&self, live: &BTreeSet<SessionId>) -> Result<Vec<(SysctlKey, Vec<SessionId>)>> {
+        let mut out = Vec::new();
+        for path in self.list()? {
+            let Some(claim) = read(&path)? else { continue };
+            let stale: Vec<_> = claim
+                .holders
+                .into_iter()
+                .filter(|h| !live.contains(h))
+                .collect();
+            if !stale.is_empty() {
+                out.push((claim.key, stale));
+            }
+        }
+        out.sort();
+        Ok(out)
+    }
+
     /// Drop holders with no journal left (a record lost to a bug or by hand),
     /// so no key stays claimed forever. `sessions` must be read from the
     /// journal directory after this call started; see `recovery`.

@@ -4,7 +4,7 @@ use std::net::Ipv4Addr;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ConnectionState, Kind, Outcome, Traffic};
+use crate::{Check, ConnectionState, Kind, Outcome, Traffic};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -33,6 +33,11 @@ pub enum Response {
         connections: Vec<ConnectionInfo>,
     },
     Subscribed,
+    Doctor {
+        checks: Vec<Check>,
+        /// The changes a repair made, in order.
+        done: Vec<String>,
+    },
     Error {
         kind: Kind,
         message: String,
@@ -66,6 +71,9 @@ pub struct InterfaceInfo {
     pub default_route: bool,
     /// The blocks the helper's policy lets phones take here; empty if none.
     pub phone_addresses: Vec<Ipv4Net>,
+    /// The policy lets phones lease an address here by DHCP.
+    #[serde(default)]
+    pub dhcp: bool,
     /// `None` when a phone may join the LAN through it; otherwise why not.
     pub ineligible: Option<String>,
 }
