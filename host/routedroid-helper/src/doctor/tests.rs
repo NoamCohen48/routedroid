@@ -98,4 +98,7 @@ fn foreign_objects_are_never_leftovers_and_the_firewall_needs_a_person() {
     assert!(done.is_empty());
     assert_eq!(remaining, found);
     assert_eq!(lab.kernel.lock().rules.len(), 1);
+    // A warning alone is no failure: scripts (uninstall) go on.
+    run(&lab.env, false).unwrap();
+    run(&lab.env, true).unwrap();
 }
