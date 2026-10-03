@@ -12,14 +12,10 @@ impl AdbDevice {
             .shell(&["content", "write", "--uri", uri], Some(bytes))
             .await?;
         // `content` exits 0 even on provider errors; it prints them (to either stream) instead.
-        let out = format!("{stdout}{stderr}");
-        if !out.trim().is_empty() {
-            return Err(Fault::msg(
-                Kind::Adb,
-                format!("content write reported: {}", out.trim()),
-            ));
+        match content_failure(uri, &format!("{stdout}{stderr}")) {
+            Some(message) => Err(Fault::msg(Kind::Adb, message)),
+            None => Ok(()),
         }
-        Ok(())
     }
 
     /// `am start -n COMPONENT` with string extras (`--es KEY VALUE`).
@@ -43,3 +39,24 @@ impl AdbDevice {
         Ok(())
     }
 }
+
+/// What `content` printed, if anything, said plainly: a missing provider is
+/// an app that is not installed, not a Java stack trace.
+fn content_failure(uri: &str, out: &str) -> Option<String> {
+    let out = out.trim();
+    if out.is_empty() {
+        return None;
+    }
+    if out.contains("Could not find provider") {
+        let app = uri.trim_start_matches("content://");
+        let app = app.split('/').next().unwrap_or(app);
+        return Some(format!(
+            "nothing on the phone provides {app}: is the Routedroid app installed? \
+             (adb install routedroid.apk)"
+        ));
+    }
+    Some(format!("content write reported: {out}"))
+}
+
+#[cfg(test)]
+mod tests;
