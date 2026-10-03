@@ -11,6 +11,7 @@ fn interface(name: &str, default_route: bool, ineligible: Option<&str>) -> Inter
         addresses: vec![],
         default_route,
         phone_addresses: vec![],
+        dhcp: false,
         ineligible: ineligible.map(Into::into),
     }
 }

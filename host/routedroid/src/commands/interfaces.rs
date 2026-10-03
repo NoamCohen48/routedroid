@@ -29,9 +29,11 @@ fn row(interface: &InterfaceInfo) -> Vec<String> {
         (true, false) => "up",
         (false, _) => "down",
     };
-    let verdict = match &interface.ineligible {
-        None => nets(&interface.phone_addresses),
-        Some(reason) => format!("no: {reason}"),
+    let verdict = match (&interface.ineligible, interface.dhcp) {
+        (Some(reason), _) => format!("no: {reason}"),
+        (None, false) => nets(&interface.phone_addresses),
+        (None, true) if interface.phone_addresses.is_empty() => "DHCP".into(),
+        (None, true) => format!("{}, DHCP", nets(&interface.phone_addresses)),
     };
     vec![
         interface.name.clone(),

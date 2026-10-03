@@ -53,7 +53,8 @@ if [[ -n $USER_TO_ADD ]] && ! id -nG "$USER_TO_ADD" | tr ' ' '\n' | grep -qx rou
     usermod -aG routedroid "$USER_TO_ADD"
     echo "added $USER_TO_ADD to group routedroid: it may now have the helper attach phones to"
     echo "  the interfaces and addresses /etc/routedroid/helper.toml allows (proxy ARP for them"
-    echo "  on that LAN). Takes effect in new logins; 'sg routedroid -c ...' or newgrp meanwhile."
+    echo "  on that LAN). Log out completely (or reboot) before starting the daemon: a running"
+    echo "  systemd --user keeps its old groups, and so does every service it starts."
 fi
 install -d -m 0755 "$BINDIR" "$LIBEXECDIR" /etc/routedroid "$USER_UNITS"
 if [[ ! -e /etc/routedroid/helper.toml ]]; then

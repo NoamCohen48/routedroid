@@ -24,7 +24,7 @@ mod record;
 mod scan;
 
 pub use record::{Header, Phase, Reservation, Step, VERSION};
-pub use scan::{sessions, take_all};
+pub use scan::{peek_all, reservations, sessions, take_all};
 
 use record::{Record, Steps};
 

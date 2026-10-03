@@ -213,6 +213,7 @@ fn lists() {
             address: Ipv4Addr::new(192, 168, 1, 200),
             prefix: 29,
         }],
+        dhcp: true,
         ineligible: None,
     };
     pinned(
@@ -222,7 +223,7 @@ fn lists() {
         concat!(
             r#"{"msg":"response","id":7,"type":"interfaces","interfaces":[{"name":"eno1","up":true,"#,
             r#""addresses":[{"address":"192.168.1.10","prefix":24}],"default_route":true,"#,
-            r#""phone_addresses":[{"address":"192.168.1.200","prefix":29}],"ineligible":null}]}"#
+            r#""phone_addresses":[{"address":"192.168.1.200","prefix":29}],"dhcp":true,"ineligible":null}]}"#
         ),
     );
 }

@@ -116,6 +116,10 @@ impl DeviceConnections {
         }
     }
 
+    pub fn helper_socket(&self) -> &std::path::Path {
+        &self.helper_socket
+    }
+
     /// The helper's word on which links may carry phones.
     pub async fn interfaces(&self) -> Result<Vec<InterfaceInfo>> {
         host_network::interfaces(&self.helper_socket).await

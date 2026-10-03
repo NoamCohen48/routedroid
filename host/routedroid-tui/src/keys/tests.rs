@@ -81,6 +81,7 @@ fn the_interface_is_picked_with_the_arrows() {
         addresses: vec![],
         default_route: false,
         phone_addresses: vec![],
+        dhcp: false,
         ineligible: None,
     };
     app.apply(Incoming::Interfaces(vec![

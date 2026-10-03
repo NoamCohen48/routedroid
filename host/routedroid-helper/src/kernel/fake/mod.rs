@@ -10,7 +10,10 @@ use anyhow::{Result, bail};
 use routedroid_dhcp::Held;
 use routedroid_helper_ipc::IfName;
 
-use super::{Address, Egress, Firewall, HostRoute, Kernel, Link, LinkKind, NftTable, Route, Rule};
+use super::{
+    Address, Egress, Firewall, ForwardDrop, HostRoute, Kernel, Link, LinkKind, NftTable, Route,
+    Rule,
+};
 use crate::op::{SysctlKey, nft_table_name};
 
 mod routing;
@@ -151,6 +154,19 @@ impl Kernel for Fake {
             .tables
             .get(name)
             .map(|(table, _)| table.clone()))
+    }
+
+    fn nft_tables(&self) -> Result<Vec<(String, NftTable)>> {
+        let state = self.call("nft_tables")?;
+        Ok(state
+            .tables
+            .iter()
+            .map(|(name, (table, _))| (name.clone(), table.clone()))
+            .collect())
+    }
+
+    fn forward_drops(&self) -> Result<Vec<ForwardDrop>> {
+        Ok(self.call("forward_drops")?.forward_drops.clone())
     }
 
     fn delete_nft_table(&self, handle: u64) -> Result<()> {

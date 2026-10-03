@@ -8,7 +8,7 @@ use routedroid_ipc::{API_VERSION, DeviceInfo, Request, Response};
 use tokio::sync::watch;
 
 use super::super::view;
-use crate::daemon::{AttachedDevices, DeviceConnections, Snapshot};
+use crate::daemon::{AttachedDevices, DeviceConnections, Snapshot, doctor};
 use crate::fault::{Fault, Kind};
 
 /// What a client connection may ask of the daemon.
@@ -57,6 +57,11 @@ impl Answer for Handles {
                 Ok(outcome) => Response::Stopped { serial, outcome },
                 Err(fault) => error(fault),
             },
+            Request::Doctor { repair } => {
+                let socket = self.connections.helper_socket();
+                let (checks, done) = doctor::run(&self.devices, socket, repair).await;
+                Response::Doctor { checks, done }
+            }
             Request::Subscribe => Response::Subscribed,
         }
     }

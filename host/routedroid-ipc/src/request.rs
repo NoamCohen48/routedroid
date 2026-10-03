@@ -24,6 +24,12 @@ pub enum Request {
     Status,
     /// Receive `Event`s on this connection from now on; answered `subscribed`.
     Subscribe,
+    /// Check adb, the helper, its policy and what Routedroid left behind;
+    /// with `repair`, also make the changes the checks name.
+    Doctor {
+        #[serde(default)]
+        repair: bool,
+    },
 }
 
 /// Every optional field has a daemon-owned default, so a client sends only
