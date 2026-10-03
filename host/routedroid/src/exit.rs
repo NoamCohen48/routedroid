@@ -61,23 +61,39 @@ pub fn report(error: &anyhow::Error) -> i32 {
     for_kind(Kind::Internal)
 }
 
-/// The `--help` epilogue, built from the table above so it cannot drift.
+/// The `--help` epilogue, built from the table above so it cannot drift,
+/// in numeric order.
 pub fn help() -> String {
-    let mut text =
-        String::from("Exit codes:\n  0    success (for `start`: the connection ended cleanly)\n");
-    text += &format!("  {PROBLEMS:<4} `doctor` found a failing check\n");
-    text += &format!(
-        "  {DAEMON_UNREACHABLE:<4} daemon unreachable; start it with `systemctl --user start routedroid`\n"
+    let mut lines = vec![
+        (
+            OK,
+            "success (for `start`: the connection ended cleanly)".to_string(),
+        ),
+        (PROBLEMS, "`doctor` found a failing check".into()),
+        (
+            DAEMON_UNREACHABLE,
+            "daemon unreachable; start it with `systemctl --user start routedroid`".into(),
+        ),
+        (
+            DAEMON_INCOMPATIBLE,
+            "daemon speaks another API version; restart it after an upgrade".into(),
+        ),
+        (
+            ABANDONED,
+            "Ctrl-C twice: stopped waiting, the daemon finishes the stop".into(),
+        ),
+    ];
+    lines.extend(
+        Kind::ALL
+            .into_iter()
+            .map(|kind| (for_kind(kind), kind.to_string())),
     );
-    text += &format!(
-        "  {DAEMON_INCOMPATIBLE:<4} daemon speaks another API version; restart it after an upgrade\n"
-    );
-    for kind in Kind::ALL {
-        text += &format!("  {:<4} {kind}\n", for_kind(kind));
-    }
-    text +=
-        &format!("  {ABANDONED:<4} Ctrl-C twice: stopped waiting, the daemon finishes the stop");
-    text
+    lines.sort_by_key(|(code, _)| *code);
+    let lines: Vec<String> = lines
+        .iter()
+        .map(|(code, meaning)| format!("  {code:<4} {meaning}"))
+        .collect();
+    format!("Exit codes:\n{}", lines.join("\n"))
 }
 
 #[cfg(test)]
