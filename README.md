@@ -157,6 +157,9 @@ Routedroid's own table still limits each phone to its address and its LAN.
   time.
 - **Connected, but the phone gets no traffic**: look for a firewall warning in
   `routedroid doctor` (see Firewalls above). Also make sure the LAN is not isolating clients.
+- **Watching packets**: `tcpdump -ni phone0` shows what the phone sends and receives, and
+  `tcpdump -ni eno1 host <phone address>` shows the same packets on the LAN. The phone's own
+  address appears on both, with no NAT. `ip rule` and `ip route show table all` show its egress.
 - **After a crash or a power loss**: `routedroid doctor` lists what was left behind, and
   `routedroid doctor --repair` removes it. Repair touches only objects that carry
   Routedroid's tags.

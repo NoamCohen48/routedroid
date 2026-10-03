@@ -1,5 +1,27 @@
 # Routedroid Implementation Plan
 
+## Status (2026-10-03)
+
+| Phase | State |
+|---|---|
+| 0 Feasibility | Closed (decisions 0001, 0002). Multi-alias source selection failed, so v1 uses one alias per phone |
+| 1 Protocol foundation | Done: protocol v1 with fixtures shared by Rust and Kotlin; the app is rebuilt around `DeviceLink` |
+| 2 Safe host networking | Done: policy-driven root helper, write-ahead journal, ownership tags, per-session nft table, refcounted sysctls, kill matrix (264 checks) |
+| 3 Automatic DHCP | Done: `routedroid-dhcp` (RFC 2131/5227, fuzzed). The helper leases, renews, declines and releases, even after a crash (`dhcp-session.sh`) |
+| 4 Interface selection, egress | Done: `routedroid interfaces` shows eligibility and policy. Per-phone policy routing keeps egress on the LAN. Losing the interface ends the session |
+| 5 Helper hardening, recovery | Done: sandboxed socket-activated units, `ExecStopPost` cleanup, `doctor [--repair]` with a dry-run default |
+| 6 UX, packaging | Done for the host: CLI, TUI, JSON, `install.sh` with uninstall and purge, top-level README. The app shows status, its address and Stop |
+
+Open items against §11 and §12:
+
+- **Hardware matrix (M4).** Verified on the emulator and on one Samsung phone (Android 10)
+  before DHCP sessions existed. Leased sessions and egress are verified only in namespaces
+  against dnsmasq. A run on real LANs and phones is still due.
+- **ADB reconnect (§11.9).** An unplugged phone ends its connection cleanly. It does not
+  reconnect.
+- **Distribution packages and reproducible APKs.** `install.sh` and Gradle builds exist.
+  Neither distribution packages nor build reproducibility exist yet.
+
 ## 1. Delivery Strategy
 
 Build the smallest end-to-end routed packet path first, prove the platform and network feasibility gates, and only then automate host networking. Each phase has an acceptance gate. Work does not proceed by assuming that DHCP aliasing, proxy ARP, Android source selection, protected bootstrap, or cleanup behavior is uniform.
