@@ -44,18 +44,17 @@ pub fn run<K: Kernel>(env: &Env<K>, fix: bool) -> Result<()> {
 pub fn inspect<K: Kernel>(env: &Env<K>) -> Result<Vec<Finding>> {
     let mut findings = journals(env)?;
     findings.extend(leftover::find(env)?.iter().map(leftover::Leftover::finding));
-    findings.extend(
-        env.kernel
-            .forward_drops()?
-            .into_iter()
-            .map(|chain| Finding {
-                subject: format!("nft {chain}"),
-                problem: "drops forwarded traffic by default, so it may drop the phones' too"
-                    .into(),
-                warning: true,
-                repair: vec![],
-            }),
-    );
+    findings.extend(env.kernel.forward_drops()?.into_iter().map(|chain| {
+        Finding {
+            subject: format!("nft {chain}"),
+            problem: "drops forwarded traffic by default, so it may drop the phones' too; \
+                          let iifname/oifname \"phone*\" through it (Routedroid's own table \
+                          already limits what they carry)"
+                .into(),
+            warning: true,
+            repair: vec![],
+        }
+    }));
     Ok(findings)
 }
 
