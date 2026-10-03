@@ -11,6 +11,37 @@ Reviewed 2026-09-23 at commit `f198e53`. Code only; docs were out of scope. 247 
 
 Finding IDs: `R-n` daemon/clients/protocol, `A-n.n` Android, `H-/J-/M-/P-/D-/T-/X-/N-/W-/S-/E-/F-n` helper and infrastructure.
 
+## Status (2026-10-03, branch `review-fixes`)
+
+Every "Fix first" item is resolved:
+
+| # | Finding | Resolved by |
+|---|---|---|
+| 1 | A-1.1 | `6b3a77a`: `PacketPath` wakes every blocking point on stop (TUN poll + wake pipe) |
+| 2 | H-1 / H-2 | `81a87cd`: root-owned policy names interfaces and address blocks; the plan refuses gateways, host addresses, neighbours and routed addresses |
+| 3 | H-3 | `81a87cd`: `routedroid:<session>` tags on TUN and nft table, proto 82 routes; undo touches only its own tags |
+| 4 | H-4 / J-3 / J-7 | `81a87cd`: the session is an RAII guard with one teardown path; a failed undo keeps the journal |
+| 5 | J-1 / J-2 | `81a87cd`: a torn tail is truncated; journals are created locked and validated as a state machine |
+| 6 | A-2.1 | `6b3a77a`: `DeviceLink` owns the session, not an Activity |
+| 7 | R-4, A-2.2, A-2.3 | `f37d33a`, `6b3a77a`: a squatter cannot hold the app port; the device port lives in the shell-written record; `LaunchGate` is gone |
+| 8 | H-7, R-5 | `81a87cd` (routes `NLM_F_EXCL`, routed addresses refused), `41f5ad3` (`adb reverse --no-rebind`) |
+| 9 | R-1, R-3 | `4781976`: one pump per direction; a dead helper channel ends the connection |
+| 10 | A-4.1 | `6b3a77a`: `:protocol` uses its own strict JSON codec, the same one the fixtures run against |
+
+The three structural problems in the verdict are gone too:
+
+- Phase-0 code is off the production path. `phase0-tunnel` is deleted (`217e1ad`). The
+  helper was rewritten (`81a87cd`) and DHCP moved to `routedroid-dhcp` (`11ab5d3`).
+- CI, lints and a pinned toolchain exist (`716897e`), and so do tests for the CLI, IPC wire,
+  app module and the helper's session and recovery logic.
+- Rootless namespace rigs cover kill-at-every-step (264 checks), multi-session (41) and DHCP
+  (32).
+
+Other findings: commits name the IDs they address (`git log --grep 'R-17'`). The helper
+(H-, J-, M-, P-, T-) and Android (A-) findings were filed against code that has since been
+rewritten, rather than patched finding by finding. This file and `code-review.html` keep the
+review as it was written on 2026-09-23.
+
 ## Verdict
 
 Routedroid's *shape* is right: a pure protocol crate with golden fixtures shared by Rust and Kotlin, an unprivileged daemon with typed clients, and a root helper with write-ahead journaling and a systemd cleanup backstop. The code is readable, files are small, and the default `cargo clippy` run is clean. Default `cargo test` passes, 107 tests in all.
