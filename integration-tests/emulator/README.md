@@ -46,11 +46,11 @@ Prerequisites:
 
 | Check | Emulator, Android 14 (API 34) | Samsung SM-J810G, Android 10, USB |
 |---|---|---|
-| `userns.sh sigint` (13 checks) | PASS | PASS |
-| `userns.sh app` (14 checks: Stop button → host sees STOP) | PASS | PASS |
-| `userns.sh early` (8 checks) | PASS | PASS |
+| `userns.sh sigint` (15 checks) | PASS (re-run 2026-10-03) | PASS (13 checks then) |
+| `userns.sh app` (16 checks: Stop button → host sees STOP) | PASS (re-run 2026-10-03) | PASS (14 checks then) |
+| `userns.sh early` (10 checks) | PASS (re-run 2026-10-03) | PASS (8 checks then) |
 | `SQUAT=3 userns.sh sigint` | PASS | not run |
-| `hostile.sh` | PASS | PASS |
+| `hostile.sh` | PASS (re-run 2026-10-03) | PASS |
 | `cargo test --workspace`, `./gradlew :protocol:test :app:testDebugUnitTest` | PASS | — |
 
 `fake_host.py` cases. "Closed" means the socket closed with no VPN on the phone:
