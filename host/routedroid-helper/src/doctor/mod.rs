@@ -26,14 +26,17 @@ pub fn run<K: Kernel>(env: &Env<K>, fix: bool) -> Result<()> {
         inspect(env)?
     };
     for finding in &findings {
-        println!("{}: {}", finding.subject, finding.problem);
+        let warning = if finding.warning { "warning: " } else { "" };
+        println!("{warning}{}: {}", finding.subject, finding.problem);
         let verb = if fix { "failed" } else { "would" };
         finding
             .repair
             .iter()
             .for_each(|change| println!("  {verb}: {change}"));
     }
-    anyhow::ensure!(findings.is_empty(), "{} finding(s)", findings.len());
+    // Warnings are the host's own setup: said, but nothing Routedroid can repair.
+    let problems = findings.iter().filter(|f| !f.warning).count();
+    anyhow::ensure!(problems == 0, "{problems} problem(s)");
     println!("nothing to repair");
     Ok(())
 }

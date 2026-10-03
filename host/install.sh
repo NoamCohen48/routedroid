@@ -7,13 +7,15 @@
 #   - the daemon's user unit                       -> /etc/systemd/user
 #   - group `routedroid` (owns the helper socket) and a deny-all policy
 #
-#   sudo ./install.sh [--uninstall]      (PREFIX defaults to /usr/local)
+#   sudo ./install.sh [--uninstall [--purge]]   (PREFIX defaults to /usr/local)
 #
 # Members of group `routedroid` can ask the helper for a TUN, a /32 route,
 # proxy ARP, forwarding and a DHCP lease on any interface and address
 # /etc/routedroid/helper.toml allows, and nothing else. A fresh install allows
-# nothing; edit the policy to enable. Uninstall removes binaries and units and
-# leaves the policy, /var/lib/routedroid and the group.
+# nothing; edit the policy to enable. Uninstall replays every journal, removes
+# whatever else Routedroid provably left on the host (`doctor --repair`), then
+# binaries and units; it leaves the policy, /var/lib/routedroid and the group
+# unless --purge is given.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 RELEASE=$HERE/target/release
@@ -27,19 +29,32 @@ CLIENTS=(routedroid routedroidd routedroid-tui)
 [[ $EUID -eq 0 ]] || { echo "run with sudo"; exit 2; }
 
 if [[ ${1:-} == --uninstall ]]; then
+    PURGE=0; [[ ${2:-} == --purge ]] && PURGE=1
     systemctl disable --now "$UNIT.socket" 2>/dev/null || true
     # Waits for every instance, ExecStopPost cleanup included, to finish.
     systemctl stop "$UNIT@*.service" 2>/dev/null || true
     # The binary is about to go: replay anything an instance left behind first.
-    if [[ -x $LIBEXECDIR/routedroid-helper ]] && ! "$LIBEXECDIR/routedroid-helper" cleanup; then
-        echo "warning: cleanup left journals in /var/lib/routedroid/journal; see above" >&2
+    CLEAN=1
+    if [[ -x $LIBEXECDIR/routedroid-helper ]]; then
+        "$LIBEXECDIR/routedroid-helper" cleanup || CLEAN=0
+        "$LIBEXECDIR/routedroid-helper" doctor --repair || CLEAN=0
+    fi
+    if [[ $CLEAN -eq 0 ]]; then
+        echo "warning: something could not be undone; see above (state kept in /var/lib/routedroid)" >&2
+        PURGE=0
     fi
     rm -f "$SYSTEM_UNITS/$UNIT.socket" "$SYSTEM_UNITS/$UNIT.service" "$SYSTEM_UNITS/$UNIT@.service"
     rm -f "$USER_UNITS/routedroid.service"
     systemctl daemon-reload
     for bin in "${CLIENTS[@]}"; do rm -f "$BINDIR/$bin"; done
     rm -rf "$LIBEXECDIR" /run/routedroid
-    echo "removed binaries and units (/etc/routedroid, /var/lib/routedroid and group routedroid left in place)"
+    if [[ $PURGE -eq 1 ]]; then
+        rm -rf /etc/routedroid /var/lib/routedroid
+        groupdel routedroid 2>/dev/null || true
+        echo "removed binaries, units, the policy, the helper's state and group routedroid"
+    else
+        echo "removed binaries and units (/etc/routedroid, /var/lib/routedroid and group routedroid left in place)"
+    fi
     echo "a running daemon keeps going until: systemctl --user disable --now routedroid"
     exit 0
 fi
@@ -91,3 +106,4 @@ echo
 echo "installed. Next, as yourself (not root):"
 echo "  systemctl --user enable --now routedroid"
 echo "  routedroid interfaces        # then allow one in /etc/routedroid/helper.toml"
+echo "  routedroid doctor            # adb, the helper, the policy, leftovers"
