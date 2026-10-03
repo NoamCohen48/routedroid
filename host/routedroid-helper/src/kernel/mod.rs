@@ -182,6 +182,10 @@ pub trait Kernel: Send + Sync + 'static {
     /// Create `inet routedroid_<tun>` atomically; fails if the table exists.
     fn create_firewall(&self, firewall: &Firewall) -> Result<()>;
     fn nft_table(&self, name: &str) -> Result<Option<NftTable>>;
+    /// Every `inet` table, by name.
+    fn nft_tables(&self) -> Result<Vec<(String, NftTable)>>;
+    /// The host's own forward-hook chains with policy drop, named.
+    fn forward_drops(&self) -> Result<Vec<String>>;
     fn delete_nft_table(&self, handle: u64) -> Result<()>;
 
     /// RELEASE a DHCP lease from its record. Fire and forget: the server

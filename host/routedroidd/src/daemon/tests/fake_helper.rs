@@ -8,23 +8,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use routedroid_helper_ipc::{
-    Datagram, ErrorCode, Lease, Listener, MAX_DATAGRAM, Reply, Request, SeqPacket, VERSION,
+    Datagram, ErrorCode, Listener, MAX_DATAGRAM, Reply, Request, SeqPacket, VERSION,
 };
 use tokio::sync::Notify;
 
-pub const HOST_IP: [u8; 4] = [10, 0, 0, 1];
-pub const LEASED_IP: [u8; 4] = [10, 0, 0, 50];
-pub const LEASE_DNS: [u8; 4] = [10, 0, 0, 53];
-pub const ENDED: &str = "02:00:00:00:00:99 also uses 10.0.0.50";
+use super::fake_replies::{ENDED, LEASED_IP, interfaces, lease, leftover};
 
-pub fn lease(expires_at: u64) -> Lease {
-    Lease {
-        server: [10, 0, 0, 254].into(),
-        router: Some([10, 0, 0, 254].into()),
-        dns: vec![LEASE_DNS.into()],
-        expires_at,
-    }
-}
+pub const HOST_IP: [u8; 4] = [10, 0, 0, 1];
 
 #[derive(Clone)]
 pub struct FakeHelper {
@@ -108,7 +98,28 @@ impl FakeHelper {
                 }
                 Request::Stop => (Reply::Stopped, true),
                 Request::Ping => (Reply::Pong, false),
-                Request::Interfaces => (Reply::Interfaces { interfaces: vec![] }, false),
+                Request::Interfaces => (
+                    Reply::Interfaces {
+                        interfaces: interfaces(),
+                    },
+                    false,
+                ),
+                Request::Inspect => (
+                    Reply::Health {
+                        findings: vec![leftover()],
+                    },
+                    false,
+                ),
+                Request::Repair => {
+                    let done = leftover().repair;
+                    (
+                        Reply::Repaired {
+                            done,
+                            remaining: vec![],
+                        },
+                        false,
+                    )
+                }
             };
             let _ = conn.send_control(&reply).await;
             if last {

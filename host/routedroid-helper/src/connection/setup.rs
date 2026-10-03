@@ -1,5 +1,5 @@
-//! Before a session: `Hello`, then any number of `Ping`s and `Interfaces`,
-//! then `Start`, all within the deadline.
+//! Before a session: `Hello`, then any number of `Ping`s, `Interfaces`,
+//! `Inspect`s and `Repair`s, then `Start`, all within the deadline.
 
 use std::sync::Arc;
 
@@ -11,6 +11,7 @@ use tracing::warn;
 
 use super::address::Start;
 use super::error;
+use crate::doctor;
 use crate::env::Env;
 use crate::kernel::System;
 use crate::policy::Policy;
@@ -75,6 +76,11 @@ pub async fn setup(
                 conn.send_control(&interfaces(env).await).await?;
                 continue;
             }
+            (true, Ok(Datagram::Control(request @ (Request::Inspect | Request::Repair)))) => {
+                conn.send_control(&doctor(env, request == Request::Repair).await)
+                    .await?;
+                continue;
+            }
             (true, Ok(Datagram::Control(Request::Ping))) => {
                 conn.send_control(&Reply::Pong).await?;
                 continue;
@@ -97,5 +103,22 @@ async fn interfaces(env: &Arc<Env<System>>) -> Reply {
         Ok(Ok(interfaces)) => Reply::Interfaces { interfaces },
         Ok(Err(e)) => error(ErrorCode::QueryFailed, format!("{e:#}")),
         Err(e) => error(ErrorCode::QueryFailed, format!("survey panicked: {e}")),
+    }
+}
+
+async fn doctor(env: &Arc<Env<System>>, fix: bool) -> Reply {
+    let env = Arc::clone(env);
+    let ran = spawn_blocking(move || {
+        if fix {
+            doctor::repair(&env).map(|(done, remaining)| Reply::Repaired { done, remaining })
+        } else {
+            doctor::inspect(&env).map(|findings| Reply::Health { findings })
+        }
+    })
+    .await;
+    match ran {
+        Ok(Ok(reply)) => reply,
+        Ok(Err(e)) => error(ErrorCode::QueryFailed, format!("{e:#}")),
+        Err(e) => error(ErrorCode::QueryFailed, format!("doctor panicked: {e}")),
     }
 }

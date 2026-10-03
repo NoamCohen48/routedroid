@@ -153,6 +153,19 @@ impl Kernel for Fake {
             .map(|(table, _)| table.clone()))
     }
 
+    fn nft_tables(&self) -> Result<Vec<(String, NftTable)>> {
+        let state = self.call("nft_tables")?;
+        Ok(state
+            .tables
+            .iter()
+            .map(|(name, (table, _))| (name.clone(), table.clone()))
+            .collect())
+    }
+
+    fn forward_drops(&self) -> Result<Vec<String>> {
+        Ok(self.call("forward_drops")?.forward_drops.clone())
+    }
+
     fn delete_nft_table(&self, handle: u64) -> Result<()> {
         let mut state = self.call("delete_nft_table")?;
         let Some(name) = state

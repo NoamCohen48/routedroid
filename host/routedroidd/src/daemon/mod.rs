@@ -11,6 +11,7 @@ mod background;
 mod connection;
 mod connections;
 mod devices;
+pub mod doctor;
 mod events;
 mod spec;
 #[cfg(test)]

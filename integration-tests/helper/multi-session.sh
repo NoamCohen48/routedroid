@@ -10,7 +10,8 @@
 # the last session ends (and left alone by the first one to end); a phone
 # cannot reach the other phone through the host (its own routing table
 # holds only the LAN); a duplicate TUN name or
-# phone address is refused; one controller's death undoes only its session.
+# phone address is refused; one controller's death undoes only its session;
+# doctor finds and repairs what a lost journal left behind.
 set -u -o pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source-path=SCRIPTDIR source=../lib.sh
@@ -114,4 +115,21 @@ check "proxy_arp still on for A"   sysctl_is proxy_arp 1
 kill -INT $APID; wait $APID; check "A stopped cleanly" grep -q ^STOPPED "$S/client-a2.log"
 check "baseline restored after all" baseline
 check "helper check passes"        "${HELPER[@]}" check
+
+echo "== doctor: leftovers whose journal is gone"
+check "doctor finds nothing"       "${HELPER[@]}" doctor
+echo active > "$S/crash-at"
+client crashed phone0 $A_IP --hold 30
+wait $HPID 2>/dev/null
+rm -f "$S/crash-at" "$S"/state/journal/*.journal
+"${HELPER[@]}" doctor > "$S/doctor.txt" 2>&1
+check "doctor names the table"     grep -q "would: delete table inet routedroid_phone0" "$S/doctor.txt"
+check "and the egress"             grep -q "would: delete rule from $A_IP and table" "$S/doctor.txt"
+check "and changed nothing"        has_table phone0
+"${HELPER[@]}" doctor --repair > "$S/repair.txt" 2>&1
+check "repair says what it did"    grep -q "done: delete table inet routedroid_phone0" "$S/repair.txt"
+check "no tables left"             no_table ''
+check "no rules left"              eval "! in_ns ip -4 rule | grep -q 'proto 82'"
+check "baseline restored"          baseline
+check "doctor finds nothing now"   "${HELPER[@]}" doctor
 rig_end

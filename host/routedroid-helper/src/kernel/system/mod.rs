@@ -11,6 +11,7 @@ use routedroid_helper_ipc::IfName;
 use super::{Address, Egress, Firewall, HostRoute, Kernel, Link, NftTable, Route, Rule};
 use crate::op::SysctlKey;
 
+mod chains;
 mod command;
 mod egress;
 mod link;
@@ -100,6 +101,14 @@ impl Kernel for System {
 
     fn nft_table(&self, name: &str) -> Result<Option<NftTable>> {
         nft::find(&self.nft, name)
+    }
+
+    fn nft_tables(&self) -> Result<Vec<(String, NftTable)>> {
+        nft::all(&self.nft)
+    }
+
+    fn forward_drops(&self) -> Result<Vec<String>> {
+        chains::forward_drops(&self.nft)
     }
 
     fn delete_nft_table(&self, handle: u64) -> Result<()> {

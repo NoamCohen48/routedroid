@@ -15,7 +15,9 @@ Install with the helper, as a `systemd --user` service:
 1. `cargo build --release` in `host/`, then `sudo host/install.sh` (binaries in
    `/usr/local/bin`, this unit in `/etc/systemd/user`, the helper's units system-wide).
 2. As yourself: `systemctl --user enable --now routedroid`.
-3. Check with `routedroid version`, `routedroid devices` and `routedroid interfaces`.
+3. Check with `routedroid doctor`: adb and its phones, the helper, which interfaces its
+   policy opens to phones, and anything a crash left behind (`--repair` removes that).
+   `routedroid devices` and `routedroid interfaces` give the detail.
 
 The unit is sandboxed only as far as a user unit can be without privileges, and leaves the
 filesystem alone: an adb server the daemon starts inherits the unit and needs `~/.android`

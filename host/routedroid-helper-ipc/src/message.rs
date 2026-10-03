@@ -8,7 +8,7 @@ use std::net::Ipv4Addr;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{DeviceId, IfName, Interface};
+use crate::{DeviceId, Finding, IfName, Interface};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -35,6 +35,12 @@ pub enum Request {
     /// List the host's links and where phones may join; answered with
     /// `Reply::Interfaces`.
     Interfaces,
+    /// What Routedroid left behind and what on the host gets in its way,
+    /// with the changes `Repair` would make; changes nothing. Answered with
+    /// `Reply::Health`.
+    Inspect,
+    /// Make those changes; answered with `Reply::Repaired`.
+    Repair,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,6 +67,15 @@ pub enum Reply {
     Pong,
     Interfaces {
         interfaces: Vec<Interface>,
+    },
+    Health {
+        findings: Vec<Finding>,
+    },
+    Repaired {
+        /// The changes made, in order.
+        done: Vec<String>,
+        /// What is still wrong afterwards.
+        remaining: Vec<Finding>,
     },
     Error {
         code: ErrorCode,
@@ -100,7 +115,7 @@ pub enum ErrorCode {
     /// The session ended on the helper's side (the phone's address was lost,
     /// the TUN failed) and has been undone. Unsolicited.
     SessionEnded,
-    /// A read-only request (`Interfaces`) could not be answered.
+    /// `Interfaces`, `Inspect` or `Repair` could not be answered.
     QueryFailed,
 }
 

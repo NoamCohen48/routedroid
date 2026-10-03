@@ -17,6 +17,8 @@ pub struct State {
     pub routes: Vec<Route>,
     pub rules: Vec<Rule>,
     pub tables: BTreeMap<String, (NftTable, Firewall)>,
+    /// The host firewall's forward chains that drop by default.
+    pub forward_drops: Vec<String>,
     /// Values of existing interfaces' keys; unset ones read as "0".
     pub sysctls: BTreeMap<SysctlKey, String>,
     /// Every lease RELEASEd, in order.
