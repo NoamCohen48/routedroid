@@ -1,0 +1,39 @@
+#cloud-config
+# The LAN's router: DHCP and DNS (dnsmasq) on lan0, NAT out through mgmt0.
+# It is also "another machine on the LAN" that reaches the phone.
+hostname: router
+users:
+  - name: dev
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys: [@KEY@]
+package_update: true
+packages: [dnsmasq, nftables, tcpdump, curl, iperf3, netcat-openbsd]
+write_files:
+  - path: /etc/dnsmasq.d/lan.conf
+    content: |
+      interface=lan0
+      bind-interfaces
+      dhcp-range=192.168.80.100,192.168.80.150,10m
+      dhcp-option=option:router,192.168.80.1
+      dhcp-option=option:dns-server,192.168.80.1
+      dhcp-authoritative
+      log-dhcp
+      # Upstream is qemu's resolver, not the router's own systemd-resolved stub.
+      no-resolv
+      server=10.0.2.3
+  - path: /etc/nftables.conf
+    content: |
+      flush ruleset
+      table ip nat {
+        chain postrouting {
+          type nat hook postrouting priority srcnat;
+          oifname "mgmt0" masquerade
+        }
+      }
+  - path: /etc/sysctl.d/90-router.conf
+    content: "net.ipv4.ip_forward = 1\n"
+runcmd:
+  - sysctl --system
+  - systemctl enable --now nftables
+  - systemctl restart dnsmasq
