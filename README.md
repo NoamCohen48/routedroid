@@ -31,19 +31,33 @@ LAN host ── LAN ── eno1 (proxy ARP) ── phone0 (TUN) ── adb ─�
 
 ## Install
 
+From packages (a [release](https://github.com/NoamCohen48/routedroid/releases), or
+`host/packaging/build.sh`, which writes them to `host/target/packages`):
+
 ```sh
-cd host && cargo build --release && sudo ./install.sh     # then log out completely (group routedroid)
-systemctl --user enable --now routedroid                  # the daemon, as yourself
+sudo apt install ./routedroid_0.1.0_amd64.deb      # Debian, Ubuntu
+sudo dnf install ./routedroid-0.1.0-1.x86_64.rpm   # Fedora
+sudo usermod -aG routedroid "$USER"                # then log out completely
+systemctl --user enable --now routedroid           # the daemon, as yourself
+adb install routedroid-0.1.0.apk
+```
+
+Or from source, into `/usr/local`:
+
+```sh
+cd host && cargo build --release && sudo ./install.sh     # adds you to group routedroid; log out completely
+systemctl --user enable --now routedroid
 (cd android && ./gradlew :app:assembleDebug)              # release builds: android/README.md
 adb install android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-The install puts these in place:
+Either way, these get installed:
 
-- `routedroid`, `routedroidd` and `routedroid-tui` in `/usr/local/bin`;
-- the root helper in `/usr/local/libexec/routedroid`;
-- the helper's socket-activated units and the daemon's user unit;
-- group `routedroid`, with you added to it;
+- `routedroid`, `routedroidd` and `routedroid-tui`, in `/usr/bin` (from the packages) or
+  `/usr/local/bin`;
+- the root helper, in `libexec/routedroid` under the same prefix;
+- the helper's socket-activated units, enabled, and the daemon's user unit;
+- group `routedroid`;
 - a policy that allows nothing.
 
 Next, allow the LAN interface the phones may join. `routedroid interfaces` lists the
@@ -173,14 +187,19 @@ Routedroid's own table still limits each phone to its address and its LAN.
 ## Uninstall
 
 ```sh
-sudo host/install.sh --uninstall            # replays journals, removes leftovers, binaries and units
+sudo apt remove routedroid    # or dnf remove; apt purge also drops the policy, state and group
+sudo host/install.sh --uninstall            # a source install
 sudo host/install.sh --uninstall --purge    # also the policy, /var/lib/routedroid and the group
 adb uninstall dev.routedroid
 ```
 
-Stop the daemon first (`systemctl --user disable --now routedroid`). Afterwards no TUN, route,
-rule, nftables table or sysctl change of Routedroid's remains. `--purge` keeps the state
-directory if anything could not be undone.
+Removal ends every connection first: it replays the journals and removes what was left behind,
+even with phones connected. Afterwards no TUN, route, rule, nftables table or sysctl change of
+Routedroid's remains. A purge keeps the state directory, and the group, if anything could not
+be undone. The daemon keeps running until `systemctl --user disable --now routedroid`.
+
+An upgrade leaves connections up. Running ones keep their helper, and the next one starts the
+new version.
 
 ## Known limits
 
@@ -199,7 +218,7 @@ directory if anything could not be undone.
 
 | Path | What |
 |---|---|
-| `host/` | Rust workspace: daemon, CLI, TUI, root helper, DHCP client, wire protocol, IPC crates, fuzz targets |
+| `host/` | Rust workspace: daemon, CLI, TUI, root helper, DHCP client, wire protocol, IPC crates, fuzz targets; `install.sh` and `packaging/` (.deb, .rpm) |
 | `android/` | The app (`VpnService`), its protocol library and a hostile test app ([README](android/README.md)) |
 | `protocol/` | The wire protocol ([version 1](protocol/version-1.md)) and its golden fixtures |
 | `integration-tests/` | Rootless namespace rigs for the helper (kill matrix, multi-session, DHCP), emulator rigs, and a [KVM lab](integration-tests/vm/README.md) with real root, systemd and a USB phone |
@@ -207,4 +226,6 @@ directory if anything could not be undone.
 
 Tests: run `cargo test --workspace` in `host/`, `./gradlew :protocol:test :app:testDebugUnitTest`
 in `android/`, and the rigs in `integration-tests/helper/`, which need no root. CI runs them
-all (`.github/workflows/ci.yml`).
+all, and builds the packages and installs, upgrades and removes them in Debian, Ubuntu and
+Fedora containers (`.github/workflows/ci.yml`). A `vX.Y.Z` tag drafts a release with the
+packages and the APK (`.github/workflows/release.yml`).

@@ -22,8 +22,8 @@ Open items against §11 and §12:
   closes, or at the latest at the 30 s keepalive deadline, and teardown follows. Seen once in the VM lab,
   when the phone dropped off USB mid-session: the lease was released and nothing was left.
   It does not reconnect, and no rig unplugs a phone on purpose yet.
-- **Distribution packages and reproducible APKs.** `install.sh` and Gradle builds exist.
-  Neither distribution packages nor build reproducibility exist yet.
+- **Reproducible APKs.** The .deb and .rpm (`host/packaging/`) and a release workflow
+  exist. The release APK is verified on hardware. Its build is not checked for reproducibility.
 
 ## 1. Delivery Strategy
 

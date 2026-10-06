@@ -1,0 +1,85 @@
+# A tag vX.Y.Z (matching [workspace.package] version in host/Cargo.toml)
+# builds the release and drafts a GitHub release with it: the host's .deb
+# and .rpm, the app's APK and their SHA-256 sums. The APK is signed when the
+# ROUTEDROID_SIGNING_* secrets exist (the keystore base64-encoded in
+# ROUTEDROID_SIGNING_KEYSTORE), and unsigned otherwise.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  host:
+    # The oldest supported build host: packages require the newest glibc the
+    # binaries link against, so this sets the floor (2.35).
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag is the product version
+        run: |
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' host/Cargo.toml)
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME, version $version"; exit 1; }
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host
+      - run: host/packaging/build.sh
+      - run: integration-tests/packages/containers.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: host
+          path: host/target/packages/*
+
+  android:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Signing key, if configured
+        env:
+          KEYSTORE: ${{ secrets.ROUTEDROID_SIGNING_KEYSTORE }}
+        run: |
+          if [ -n "$KEYSTORE" ]; then
+            echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "ROUTEDROID_SIGNING_STORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          fi
+      - run: ./gradlew --no-daemon :app:assembleRelease
+        env:
+          ROUTEDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ROUTEDROID_SIGNING_STORE_PASSWORD }}
+          ROUTEDROID_SIGNING_KEY_ALIAS: ${{ secrets.ROUTEDROID_SIGNING_KEY_ALIAS }}
+          ROUTEDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ROUTEDROID_SIGNING_KEY_PASSWORD }}
+      - name: Name the APK
+        run: |
+          apk=$(ls app/build/outputs/apk/release/*.apk)
+          case $apk in *unsigned*) suffix=-unsigned ;; *) suffix= ;; esac
+          mkdir -p out && cp "$apk" "out/routedroid-${GITHUB_REF_NAME#v}$suffix.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: android/out/*.apk
+
+  release:
+    needs: [host, android]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+      - run: cd dist && sha256sum * > SHA256SUMS
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --draft --title "Routedroid ${GITHUB_REF_NAME#v}" --generate-notes
