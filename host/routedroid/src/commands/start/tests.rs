@@ -55,4 +55,9 @@ fn timeouts_read_like_durations() {
         Some(1)
     );
     assert!(parse(&["--connect-timeout", "90sss"]).is_err());
+    let reconnect = |arg| parse(&["--reconnect-wait", arg]).unwrap().reconnect_secs;
+    assert_eq!(reconnect("5m"), Some(300));
+    // Zero is a choice (end at once), not "the default".
+    assert_eq!(reconnect("0s"), Some(0));
+    assert_eq!(parse(&[]).unwrap().reconnect_secs, None);
 }

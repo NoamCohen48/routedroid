@@ -95,7 +95,7 @@ impl SessionDriver {
         if PhaseTimer::budget(self.machine.state()) != PhaseTimer::budget(state_before) {
             self.phase.reset();
         }
-        if self.machine.state() == State::Active && !self.progress.counters.reached_active() {
+        if self.machine.state() == State::Active && !self.progress.reached_active() {
             self.progress.set_active();
             info!("session Active");
         }

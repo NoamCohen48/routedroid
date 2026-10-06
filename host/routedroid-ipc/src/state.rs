@@ -16,6 +16,12 @@ pub enum ConnectionState {
     /// App connected; the HELLO/AUTH/CONFIGURE handshake is in progress.
     Handshaking,
     Active,
+    /// The phone went away after being active (unplugged, or adb lost it).
+    /// Its host side, address and lease included, is held for up to
+    /// `wait_secs` while it comes back; then the connection resumes.
+    Reconnecting {
+        wait_secs: u64,
+    },
     Stopping,
     Ended {
         outcome: Outcome,

@@ -41,6 +41,10 @@ pub struct StartArgs {
     /// How long the app has to connect after launch, e.g. `90s` or `2m`.
     #[arg(long, value_parser = humantime::parse_duration)]
     pub connect_timeout: Option<Duration>,
+    /// How long an unplugged phone keeps its address and connection while
+    /// it comes back, e.g. `5m`; `0` ends the connection at once.
+    #[arg(long, value_parser = humantime::parse_duration)]
+    pub reconnect_wait: Option<Duration>,
     /// Start over a network ADB serial (host:port or mDNS). Unverified in
     /// version 1: the VPN default route may cut ADB itself (decision 0001, gate 5).
     #[arg(long)]
@@ -64,13 +68,16 @@ impl StartArgs {
             tun: self.tun.clone(),
             mtu: self.mtu,
             dns,
-            // Rounded up: a sub-second timeout still means "a moment", not "none".
-            connect_timeout_secs: self
-                .connect_timeout
-                .map(|d| d.as_secs() + u64::from(d.subsec_nanos() > 0)),
+            connect_timeout_secs: self.connect_timeout.map(whole_secs),
+            reconnect_secs: self.reconnect_wait.map(whole_secs),
             allow_network_adb: self.allow_network_adb,
         }
     }
+}
+
+/// Rounded up: a sub-second wait still means "a moment", not "none".
+fn whole_secs(wait: Duration) -> u64 {
+    wait.as_secs() + u64::from(wait.subsec_nanos() > 0)
 }
 
 pub async fn run(client: Client, args: StartArgs, json: bool) -> Result<i32> {

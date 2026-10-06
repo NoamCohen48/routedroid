@@ -7,16 +7,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use routedroid_helper_ipc::DeviceId;
-use routedroid_ipc::{DnsChoice, EndReason, Lease, NetworkInfo, Outcome};
+use routedroid_ipc::{ConnectionState, DnsChoice, EndReason, Lease, NetworkInfo, Outcome};
 use tokio::sync::watch;
 use tracing::{info, warn};
 
 use super::sink::StateSink;
 use crate::adb::Adb;
-use crate::app_listener::AppListener;
 use crate::daemon::connections::DeviceConnections;
+use crate::daemon::devices::AttachedDevices;
 use crate::daemon::spec::ConnectionSpec;
-use crate::device::AdbBridge;
 use crate::fault::{Fault, Kind, Result};
 use crate::host_network::{HostNetwork, default_gateway};
 use crate::session::Counters;
@@ -27,7 +26,8 @@ const HELPER_START_TIMEOUT: Duration = Duration::from_secs(45);
 /// Everything one device connection needs for its whole life, in one place:
 /// the connection's task owns it and drops it when the connection is over.
 pub(super) struct ConnectionRun {
-    adb: Adb,
+    pub(super) adb: Adb,
+    pub(super) devices: AttachedDevices,
     helper_socket: Arc<PathBuf>,
     pub(super) spec: Arc<ConnectionSpec>,
     pub(super) counters: Arc<Counters>,
@@ -43,6 +43,7 @@ impl ConnectionRun {
     ) -> Self {
         Self {
             adb: owner.adb.clone(),
+            devices: owner.devices.clone(),
             helper_socket: owner.helper_socket.clone(),
             spec,
             counters,
@@ -63,12 +64,10 @@ impl ConnectionRun {
         (outcome, self.sink)
     }
 
-    /// Bring up the host side and the phone side, drive the connection, then
-    /// undo both whatever the outcome was.
-    async fn connect(&self, stop_rx: watch::Receiver<bool>) -> Result<EndReason> {
+    /// Bring up the host side, run the phone's sessions on it, then undo
+    /// both whatever the outcome was.
+    async fn connect(&self, mut stop_rx: watch::Receiver<bool>) -> Result<EndReason> {
         let spec = &self.spec;
-        let adb = self.adb.device(&spec.serial);
-        let listener = AppListener::bind().await?;
 
         let start = HostNetwork::start(
             &self.helper_socket,
@@ -87,24 +86,24 @@ impl ConnectionRun {
                     format!("helper did not answer Start within {waited:?}"),
                 )
             })??;
-        let placed = self.placed(&network);
-        info!(serial = adb.serial(), tun = %network.tun, host_ip = %network.host_ip,
+        let mut placed = self.placed(&network);
+        info!(serial = %spec.serial, tun = %network.tun, host_ip = %network.host_ip,
               lan_prefix = network.lan_prefix, phone_ip = %network.phone_ip, dns = ?placed.dns,
               helper_session = %network.session, "host network ready");
         self.sink.set_network(placed.clone());
 
-        let mut bridge = match AdbBridge::open(adb, listener.port()).await {
-            Ok(bridge) => bridge,
-            Err(fault) => {
-                network.stop().await;
-                return Err(fault);
+        let mut events = network.listen();
+        let (outcome, bridge) = self
+            .sessions(&mut network, &mut placed, &mut events, &mut stop_rx)
+            .await;
+        self.sink.set(ConnectionState::Stopping);
+        // Concurrent: a hung adb must not delay releasing the host network.
+        let close = async {
+            if let Some(bridge) = bridge {
+                bridge.close().await;
             }
         };
-        let outcome = self
-            .drive(listener, &placed, &mut bridge, &mut network, stop_rx)
-            .await;
-        // Concurrent: a hung adb must not delay releasing the host network.
-        tokio::join!(bridge.close(), network.stop());
+        tokio::join!(close, network.stop());
         outcome
     }
 

@@ -23,6 +23,7 @@ fn uplink(result: fn() -> io::Result<bool>) -> (Uplink, Arc<Mutex<Vec<Vec<u8>>>>
         Uplink {
             inject,
             counters: Arc::default(),
+            active: Arc::default(),
         },
         seen,
     )

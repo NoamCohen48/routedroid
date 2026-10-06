@@ -1,6 +1,6 @@
 use std::net::Ipv4Addr;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use routedroid_helper_ipc::{DeviceId, IfName, Lease, Reply, Request, SeqPacket};
@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use super::helper::{self, request};
-use super::relay::HelperEvent;
+use super::relay::Downlink;
 use crate::fault::{Fault, FaultExt, Kind, Result};
 
 const STOP_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
@@ -19,11 +19,12 @@ const STOP_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10)
 /// lease. Created by `start`, torn down by `stop`.
 pub struct HostNetwork {
     pub(super) conn: Arc<SeqPacket>,
-    /// Control replies seen by the relay's receive task (it owns the socket
-    /// once `relay()` ran, so `stop()` must read the ack from here).
+    /// Control replies seen by the receive task (it owns the socket once
+    /// `listen()` ran, so `stop()` must read the ack from here).
     pub(super) control_rx: Option<mpsc::Receiver<Reply>>,
-    /// Renewals and the helper's own end of the session, once `relay()` ran.
-    pub(super) events_rx: Option<mpsc::Receiver<HelperEvent>>,
+    /// Where packets from the TUN go: the current protocol session's
+    /// downlink, or nowhere between sessions.
+    pub(super) downlink: Arc<Mutex<Downlink>>,
     /// The helper ended the session itself: there is nothing left to stop.
     ended: bool,
     pub tun: IfName,
@@ -67,7 +68,7 @@ impl HostNetwork {
                 Ok(Self {
                     conn: Arc::new(conn),
                     control_rx: None,
-                    events_rx: None,
+                    downlink: Arc::default(),
                     ended: false,
                     tun,
                     phone_ip,
@@ -83,12 +84,6 @@ impl HostNetwork {
             )),
             other => Err(helper::unexpected(&other)),
         }
-    }
-
-    /// What the helper said since `relay()` ran: renewals, and why it ended
-    /// the session if it did. `None` before `relay()` or once taken.
-    pub fn take_events(&mut self) -> Option<mpsc::Receiver<HelperEvent>> {
-        self.events_rx.take()
     }
 
     /// The helper said it ended the session (and undid it), so `stop` has

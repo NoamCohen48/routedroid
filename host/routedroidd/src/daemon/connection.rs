@@ -10,8 +10,10 @@ use std::time::Duration;
 use routedroid_ipc::{ConnectionInfo, ConnectionState, NetworkInfo, Outcome, Traffic};
 use tokio::sync::watch;
 
+mod away;
 mod drive;
 mod end;
+mod resume;
 mod run;
 mod sink;
 

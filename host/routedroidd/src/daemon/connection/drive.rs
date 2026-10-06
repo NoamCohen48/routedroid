@@ -1,7 +1,8 @@
-//! The part of a device connection between "both sides are up" and "the
-//! driver stopped": wait for the app, hand the socket to the protocol
-//! driver, and publish `Active` the moment the driver reaches it. The
-//! protocol's own word for what runs here is a *session*.
+//! One protocol session of a device connection, between "both sides are up"
+//! and "the driver stopped": wait for the app, hand the socket to the
+//! protocol driver, and publish `Active` the moment the driver reaches it.
+//! A connection has one session, and one more each time the phone comes
+//! back after going away (`resume`).
 
 use std::net::Ipv4Addr;
 
@@ -10,24 +11,25 @@ use routedroid_proto::messages::Prefix;
 use tokio::sync::watch;
 use tracing::info;
 
+use super::resume::{Driven, Shared};
 use super::run::ConnectionRun;
 use super::{end, run};
 use crate::app_listener::{AppListener, Expected};
 use crate::device::AdbBridge;
 use crate::fault::{Fault, Kind, Result};
-use crate::host_network::{HelperEvent, HostNetwork};
+use crate::host_network::HelperEvent;
 use crate::session::SessionEnd;
 use crate::session::{Machine, Progress, SessionConfig, SessionDriver};
 
 impl ConnectionRun {
+    /// `Err` is a failure before the app connected (adb, the listener).
     pub(super) async fn drive(
         &self,
         listener: AppListener,
-        placed: &NetworkInfo,
         bridge: &mut AdbBridge,
-        network: &mut HostNetwork,
+        shared: &mut Shared<'_>,
         mut stop_rx: watch::Receiver<bool>,
-    ) -> Result<EndReason> {
+    ) -> Result<Driven> {
         let mtu = self.spec.mtu;
         let secret = bridge.bootstrap().await?;
         self.sink.set(ConnectionState::WaitingForApp);
@@ -42,7 +44,11 @@ impl ConnectionRun {
         };
         let app = tokio::select! {
             accepted = listener.accept(connect_timeout, &expected) => accepted?,
-            _ = stop_rx.changed() => return Ok(EndReason::StoppedEarly),
+            _ = stop_rx.changed() => return Ok(Driven {
+                result: Ok(if shared.was_active { EndReason::Stopped } else { EndReason::StoppedEarly }),
+                lost: false,
+                reached_active: false,
+            }),
         };
         info!(
             host_port,
@@ -53,17 +59,16 @@ impl ConnectionRun {
 
         let config = SessionConfig {
             mtu,
-            addresses: vec![Prefix::new(placed.phone_ip, 32)],
+            addresses: vec![Prefix::new(shared.placed.phone_ip, 32)],
             routes: vec![Prefix::new(Ipv4Addr::UNSPECIFIED, 0)],
-            dns: placed.dns.clone(),
+            dns: shared.placed.dns.clone(),
             session_name: "Routedroid".into(),
             expected_session: bridge.session.clone(),
             expected_device_port: bridge.device_port(),
         };
         let (progress, mut active_rx) = Progress::new(self.counters.clone());
         let machine = Machine::new(config, secret, bridge.host_nonce);
-        let packets = network.relay();
-        let mut events = network.take_events().expect("relay() was just called");
+        let packets = shared.network.packets();
         let driver = SessionDriver::run(
             app.stream,
             Some(app.hello),
@@ -75,7 +80,6 @@ impl ConnectionRun {
         tokio::pin!(driver);
         // Publish Active the moment the driver flips it, and renewals as
         // they come; then wait for the end.
-        let mut placed = placed.clone();
         let mut ended = None;
         let mut watch_active = true;
         let mut watch_events = true;
@@ -87,15 +91,15 @@ impl ConnectionRun {
                     Ok(()) => {}
                     Err(_) => watch_active = false,
                 },
-                event = events.recv(), if watch_events => match event {
-                    Some(event) => self.on_helper(event, &mut placed, &mut ended),
+                event = shared.events.recv(), if watch_events => match event {
+                    Some(event) => self.on_helper(event, shared.placed, &mut ended),
                     None => watch_events = false,
                 },
             }
         };
         // The helper's word on why it ended comes just before it closes.
-        while let Ok(event) = events.try_recv() {
-            self.on_helper(event, &mut placed, &mut ended);
+        while let Ok(event) = shared.events.try_recv() {
+            self.on_helper(event, shared.placed, &mut ended);
         }
         info!(
             to_phone = summary.packets_to_phone,
@@ -104,20 +108,35 @@ impl ConnectionRun {
             congested = summary.congested,
             "traffic"
         );
-        self.sink.set(ConnectionState::Stopping);
         if ended.is_some() {
-            network.ended_by_helper();
+            shared.network.ended_by_helper();
         }
-        match ended {
+        let lost = ended.is_none()
+            && matches!(
+                summary.end,
+                SessionEnd::PeerClosed | SessionEnd::Transport(_) | SessionEnd::KeepaliveTimeout
+            );
+        let reached_active = summary.reached_active;
+        let result = match ended {
             Some(why) if matches!(summary.end, SessionEnd::HelperClosed) => Err(Fault::msg(
                 Kind::Helper,
                 format!("the helper ended the session: {why}"),
             )),
-            _ => end::reason(summary.end, summary.reached_active),
-        }
+            _ => end::reason(summary.end, reached_active || shared.was_active),
+        };
+        Ok(Driven {
+            result,
+            lost,
+            reached_active,
+        })
     }
 
-    fn on_helper(&self, event: HelperEvent, placed: &mut NetworkInfo, ended: &mut Option<String>) {
+    pub(super) fn on_helper(
+        &self,
+        event: HelperEvent,
+        placed: &mut NetworkInfo,
+        ended: &mut Option<String>,
+    ) {
         match event {
             HelperEvent::Renewed(lease) => {
                 info!(expires_at = lease.expires_at, "lease renewed");

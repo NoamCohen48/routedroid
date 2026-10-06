@@ -43,6 +43,7 @@ impl StartForm {
             mtu,
             dns: dns(self.dns.value())?,
             connect_timeout_secs: timeout.map(|d| d.as_secs() + u64::from(d.subsec_nanos() > 0)),
+            reconnect_secs: None,
             allow_network_adb: self.allow_network_adb,
         })
     }

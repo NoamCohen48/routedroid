@@ -27,7 +27,7 @@ type Table = HashMap<String, DeviceConnection>;
 #[derive(Clone)]
 pub struct DeviceConnections {
     live: Arc<Mutex<Table>>,
-    devices: AttachedDevices,
+    pub(super) devices: AttachedDevices,
     pub(super) adb: Adb,
     pub(super) helper_socket: Arc<PathBuf>,
     pub(super) events: EventBus,
