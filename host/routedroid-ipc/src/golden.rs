@@ -343,7 +343,7 @@ fn states_read_the_same_everywhere() {
         ConnectionState::WaitingForApp.to_string(),
         "waiting for app"
     );
-    assert!(format!("{:#}", ConnectionState::WaitingForApp).contains("VPN dialog"));
+    assert!(format!("{:#}", ConnectionState::Handshaking).contains("VPN permission"));
     let away = ConnectionState::Reconnecting { wait_secs: 120 };
     assert_eq!(away.to_string(), "reconnecting");
     assert!(format!("{away:#}").contains("held for up to 120 s"));
