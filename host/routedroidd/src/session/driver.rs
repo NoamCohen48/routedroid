@@ -73,6 +73,7 @@ impl SessionDriver {
         let uplink = Uplink {
             inject: packets.inject,
             counters: progress.counters.clone(),
+            active: progress.reached.clone(),
         };
         let reader = tokio::spawn(reader_task(
             rd,
@@ -102,7 +103,7 @@ impl SessionDriver {
         let mut watch_shutdown = true;
 
         let end = loop {
-            let active = driver.progress.counters.reached_active();
+            let active = driver.progress.reached_active();
             idle.as_mut().reset(driver.keepalive.deadline());
             let phase_deadline = driver.phase.deadline(driver.machine.state());
             if let Some(deadline) = phase_deadline {
@@ -155,7 +156,7 @@ impl SessionDriver {
         let counters = &progress.counters;
         SessionSummary {
             end,
-            reached_active: counters.reached_active(),
+            reached_active: progress.reached_active(),
             packets_to_phone: counters.packets_to_phone(),
             packets_from_phone: counters.packets_from_phone(),
             malformed: counters.malformed(),
