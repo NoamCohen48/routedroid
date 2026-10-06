@@ -18,10 +18,11 @@ Open items against §11 and §12:
   `integration-tests/vm/phone-session.sh`. It runs through the installed units on a KVM
   guest with a virtual LAN, a dnsmasq router and the phone on USB. Still due: physical LANs
   (consumer and enterprise routers, Wi-Fi) and more phones.
-- **ADB reconnect (§11.9).** An unplugged phone ends its connection when the transport
-  closes, or at the latest at the 30 s keepalive deadline, and teardown follows. Seen once in the VM lab,
-  when the phone dropped off USB mid-session: the lease was released and nothing was left.
-  It does not reconnect, and no rig unplugs a phone on purpose yet.
+- **ADB reconnect (§11.9): done.** A phone that goes away mid-connection is held as
+  `reconnecting` for `--reconnect-wait` (2 min by default). It resumes on the same helper
+  session, with the same address and lease, once adb sees it again. Covered by the daemon's
+  harness tests (`daemon/tests/reconnect.rs`) and by `integration-tests/vm/unplug.sh` on the
+  Samsung, where qemu pulls the USB device: 20/20.
 - **Reproducible APKs.** The .deb and .rpm (`host/packaging/`) and a release workflow
   exist. The release APK is verified on hardware. Its build is not checked for reproducibility.
 

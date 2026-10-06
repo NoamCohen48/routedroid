@@ -485,6 +485,11 @@ ICMP errors needed for Path MTU Discovery must be forwarded. The firewall must n
 
 - ADB loss makes the supervising helper immediately return the session firewall to not-ready deny state, pauses forwarding, bounds queued packets, and enters `Reconnecting`.
 - A short reconnect reuses valid leases and reconstructs the authenticated transport.
+  In the implementation, the daemon keeps the helper session (TUN, routes, rules, lease) for
+  the connection's `reconnect_wait` and runs a fresh bootstrap and handshake when adb lists
+  the phone again. The not-ready state is the absence of a protocol session. Nothing can be
+  injected into the TUN without one. Packets for the phone are dropped from bounded queues.
+  A new session forwards nothing before it is authenticated and Active.
 - Lease expiration removes the alias and route before another host can receive that address.
 - Selected-interface loss disables forwarding and reports it; Routedroid never moves the phone to another interface on its own because that would change the phone's address.
 - VPN revocation tears down forwarding and reports a user-actionable error.

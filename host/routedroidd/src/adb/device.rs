@@ -22,10 +22,6 @@ impl AdbDevice {
         }
     }
 
-    pub fn serial(&self) -> &str {
-        &self.serial
-    }
-
     /// Run `adb -s SERIAL <args>`; stdout on success, or an error carrying
     /// both streams. Never passes secrets: those go through [`Self::shell`]'s stdin.
     pub(super) async fn run(&self, args: &[&str]) -> Result<String> {
