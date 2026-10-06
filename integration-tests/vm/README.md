@@ -53,6 +53,10 @@ tar -C ~ -czf - .android/adbkey .android/adbkey.pub | ./lab.sh ssh host 'tar -C 
 The phone can be pulled and put back while a guest runs (`PHONE=… ./lab.sh unplug|plug NAME`,
 through qemu's QMP socket), as if the cable came out.
 
+The rigs run `../emulator/prepare-device.sh`, whose `appops set … ACTIVATE_VPN allow` does
+not take on Samsung. After the app is (re)installed, answer its VPN dialog once on the phone.
+Consent then persists across connections.
+
 Afterwards, `./lab.sh down` and `systemctl --user start gvfs-mtp-volume-monitor`. The phone
 returns to this PC once qemu exits.
 

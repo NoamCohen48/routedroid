@@ -32,9 +32,13 @@ impl fmt::Display for ConnectionState {
         match self {
             Self::Starting => f.write_str("starting"),
             Self::WaitingForApp if f.alternate() => {
-                f.write_str("waiting for the app to connect (answer the VPN dialog on the phone)")
+                f.write_str("waiting for the app to connect (is the phone unlocked?)")
             }
             Self::WaitingForApp => f.write_str("waiting for app"),
+            // The app asks for VPN permission once it has authenticated the host.
+            Self::Handshaking if f.alternate() => f.write_str(
+                "handshaking with the app (if the phone asks for VPN permission, answer it there)",
+            ),
             Self::Handshaking => f.write_str("handshaking"),
             Self::Active => f.write_str("active"),
             Self::Reconnecting { wait_secs } if f.alternate() => write!(
