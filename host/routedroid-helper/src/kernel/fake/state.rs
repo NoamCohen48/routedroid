@@ -6,7 +6,7 @@ use std::net::Ipv4Addr;
 
 use routedroid_dhcp::Held;
 
-use crate::kernel::{Address, Firewall, Link, LinkKind, NftTable, Route, Rule};
+use crate::kernel::{Address, Firewall, ForwardDrop, Link, LinkKind, NftTable, Route, Rule};
 use crate::op::SysctlKey;
 
 #[derive(Default)]
@@ -18,7 +18,7 @@ pub struct State {
     pub rules: Vec<Rule>,
     pub tables: BTreeMap<String, (NftTable, Firewall)>,
     /// The host firewall's forward chains that drop by default.
-    pub forward_drops: Vec<String>,
+    pub forward_drops: Vec<ForwardDrop>,
     /// Values of existing interfaces' keys; unset ones read as "0".
     pub sysctls: BTreeMap<SysctlKey, String>,
     /// Every lease RELEASEd, in order.

@@ -10,7 +10,10 @@ use anyhow::{Result, bail};
 use routedroid_dhcp::Held;
 use routedroid_helper_ipc::IfName;
 
-use super::{Address, Egress, Firewall, HostRoute, Kernel, Link, LinkKind, NftTable, Route, Rule};
+use super::{
+    Address, Egress, Firewall, ForwardDrop, HostRoute, Kernel, Link, LinkKind, NftTable, Route,
+    Rule,
+};
 use crate::op::{SysctlKey, nft_table_name};
 
 mod routing;
@@ -162,7 +165,7 @@ impl Kernel for Fake {
             .collect())
     }
 
-    fn forward_drops(&self) -> Result<Vec<String>> {
+    fn forward_drops(&self) -> Result<Vec<ForwardDrop>> {
         Ok(self.call("forward_drops")?.forward_drops.clone())
     }
 

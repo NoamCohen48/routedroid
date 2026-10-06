@@ -8,7 +8,9 @@ use anyhow::{Context, Result};
 use routedroid_dhcp::Held;
 use routedroid_helper_ipc::IfName;
 
-use super::{Address, Egress, Firewall, HostRoute, Kernel, Link, NftTable, Route, Rule};
+use super::{
+    Address, Egress, Firewall, ForwardDrop, HostRoute, Kernel, Link, NftTable, Route, Rule,
+};
 use crate::op::SysctlKey;
 
 mod chains;
@@ -107,7 +109,7 @@ impl Kernel for System {
         nft::all(&self.nft)
     }
 
-    fn forward_drops(&self) -> Result<Vec<String>> {
+    fn forward_drops(&self) -> Result<Vec<ForwardDrop>> {
         chains::forward_drops(&self.nft)
     }
 

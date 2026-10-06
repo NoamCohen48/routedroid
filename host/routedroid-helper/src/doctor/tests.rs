@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::*;
-use crate::kernel::Rule;
+use crate::kernel::{ForwardDrop, HostFirewall, Rule};
 use crate::session::Session;
 use crate::test_util::Lab;
 
@@ -80,9 +80,12 @@ fn foreign_objects_are_never_leftovers_and_the_firewall_needs_a_person() {
             src: Some(("10.0.0.9".parse().unwrap(), 32)),
             protocol: 0,
         });
-        state
-            .forward_drops
-            .push("inet firewalld chain filter_FORWARD".into());
+        state.forward_drops.push(ForwardDrop {
+            family: "inet".into(),
+            table: "firewalld".into(),
+            chain: "filter_FORWARD".into(),
+            firewall: HostFirewall::Firewalld,
+        });
     }
     let found = inspect(&lab.env).unwrap();
     assert_eq!(
@@ -90,6 +93,7 @@ fn foreign_objects_are_never_leftovers_and_the_firewall_needs_a_person() {
         ["nft inet firewalld chain filter_FORWARD"]
     );
     assert!(found[0].repair.is_empty() && found[0].warning);
+    assert!(found[0].problem.contains("firewalld zone that forwards"));
     let (done, remaining) = repair(&lab.env).unwrap();
     assert!(done.is_empty());
     assert_eq!(remaining, found);
