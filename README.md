@@ -180,8 +180,10 @@ Routedroid's own table still limits each phone to its address and its LAN.
 - **No lease** (`NoLease`): the LAN has no DHCP server or does not answer this client. Use
   `--phone-ip` with an address from `phone_addresses`.
 - **"is the Routedroid app installed?"**: run `adb install` with the APK.
-- **Waiting for the app**: answer the VPN dialog on the phone. `--connect-timeout` gives more
-  time.
+- **Waiting for the app**: the app was launched but has not connected. Unlock the phone, and
+  check that the app is installed. `--connect-timeout` gives more time.
+- **Stuck at handshaking**: the phone is showing the VPN permission dialog. Unlock the phone
+  and answer it. Without an answer within 2 minutes, the connection ends.
 - **Connected, but the phone gets no traffic**: look for a firewall warning in
   `routedroid doctor` (see Firewalls above). Also make sure the LAN is not isolating clients.
 - **Watching packets**: `tcpdump -ni phone0` shows what the phone sends and receives, and

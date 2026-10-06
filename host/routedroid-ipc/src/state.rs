@@ -11,9 +11,10 @@ pub enum ConnectionState {
     /// Helper session and reverse mapping being set up (and, without a
     /// static address, the DHCP lease being acquired).
     Starting,
-    /// App launched; waiting for it to dial in (consent dialog may be up).
+    /// App launched; waiting for it to dial in.
     WaitingForApp,
-    /// App connected; the HELLO/AUTH/CONFIGURE handshake is in progress.
+    /// App connected; the HELLO/AUTH/CONFIGURE handshake is in progress,
+    /// the VPN consent dialog included.
     Handshaking,
     Active,
     /// The phone went away after being active (unplugged, or adb lost it).
