@@ -36,7 +36,7 @@ fn starts(lab: &Lab) -> usize {
 
 /// Started and active, with the app's end of it.
 async fn active(lab: &mut Lab, request: StartRequest) -> FakeApp {
-    lab.connections.start(request).await.unwrap();
+    lab.connections.start(request).await.expect("start");
     let app = FakeApp::connect(&lab.adb, PHONE).await;
     lab.until(PHONE, is_active).await;
     app

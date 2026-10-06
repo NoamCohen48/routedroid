@@ -24,7 +24,7 @@ case "$1 $2" in
 "reverse --no-rebind") grep -q " $3 " "$R" && { echo "error: cannot rebind" >&2; exit 1; }
                        echo "$S $3 $4" >> "$R";;
 "reverse --remove") grep -v " $3 " "$R" > "$R.new"; mv "$R.new" "$R";;
-"shell content") cat > "$D/record.$S";;
+"shell content") cat > "$D/record.$S.new" && mv "$D/record.$S.new" "$D/record.$S";;  # whole, for the app's poll
 "shell am") echo "Starting: Intent { cmp=$5 }";;
 *) echo "fake adb: unknown $*" >&2; exit 2;;
 esac
@@ -40,6 +40,18 @@ impl FakeAdb {
         let script = dir.join("adb");
         std::fs::write(&script, SCRIPT).unwrap();
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // Another test forking while this one wrote the script holds the
+        // write descriptor until its child execs; running the script fails
+        // with ETXTBSY until then. Wait that out once, here.
+        for _ in 0..200 {
+            let run = std::process::Command::new(&script).arg("devices").output();
+            match run {
+                Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                _ => break,
+            }
+        }
         let list: String = serials.iter().map(|s| format!("{s}\n")).collect();
         std::fs::write(dir.join("serials"), list).unwrap();
         Self { dir: dir.into() }
