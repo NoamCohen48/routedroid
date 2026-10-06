@@ -94,8 +94,15 @@ routedroid-tui                              # the same, interactively
 The first time, the phone asks for VPN permission. Answer it on the phone. While connected,
 the phone shows its VPN key icon and a notification with Stop. A connection belongs to the
 daemon, not to the command that started it. `start --detach` returns immediately, and the
-phone stays on the LAN until `routedroid stop`, Stop on the phone, unplugging, or the daemon
-stopping. Several phones can be connected at once, each with its own address.
+phone stays on the LAN until `routedroid stop`, Stop on the phone, or the daemon stopping.
+Several phones can be connected at once, each with its own address.
+
+**Unplugging.** A phone that goes away while connected (cable out, adb restarted) is held
+for it, as `reconnecting`: its address, lease, TUN and routes stay. When adb sees the phone
+again, the connection resumes on its own, with the same address, and the phone's VPN comes
+back up. It waits 2 minutes by default. `--reconnect-wait 10m` waits longer, and `0` ends
+the connection at once. The app closing the connection, with the phone still attached, ends
+it.
 
 Every command takes `--json`. `routedroid events` streams state changes as JSON lines. Exit
 codes are listed in `routedroid --help`, so scripts can branch on why something failed.

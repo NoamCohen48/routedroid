@@ -52,6 +52,10 @@ pub struct StartRequest {
     /// Seconds to wait for the app to connect after launch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub connect_timeout_secs: Option<u64>,
+    /// Seconds an unplugged phone's address is held for it to come back;
+    /// 0 ends the connection at once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reconnect_secs: Option<u64>,
     /// Connect over a network ADB serial despite decision 0001 gate 5.
     #[serde(default)]
     pub allow_network_adb: bool,

@@ -96,6 +96,20 @@ from a clean guest:
 11 checks. `../packages/containers.sh` covers the same life without a phone in Debian, Ubuntu
 and Fedora containers, and CI runs it.
 
+## unplug.sh
+
+`PHONE=vendor:product unplug.sh SERIAL` runs on the `ubuntu` guest. qemu removes the phone's
+USB device from the guest and adds it back:
+
+- **Unplugged and back:** while away, the connection is `reconnecting`, and the address,
+  egress rule and TUN are held. Back, it is active again with the same address, on the same
+  helper session, reachable from the LAN and reaching it.
+- **The app closes it, the phone stays:** it ends as "the phone closed the connection".
+- **Away past `--reconnect-wait 15s`:** it ends and says why. The lease is RELEASEd, nothing
+  is left, and the phone is back for the next connection.
+
+20 checks.
+
 ## Results, 2026-10-06 (Samsung SM-J810G, Android 10)
 
 | Check | Result |
@@ -103,6 +117,7 @@ and Fedora containers, and CI runs it.
 | `phone-session.sh 85e49002` (Debian, nftables) | 17/17 |
 | `ufw.sh 85e49002` (Ubuntu 24.04, ufw) | 8/8, with `phone-session.sh` 17/17 inside |
 | `package.sh 85e49002` (the .deb) | 11/11 |
+| `PHONE=04e8:6860 unplug.sh 85e49002` | 20/20; back to active about 3 s after the replug |
 | `phone-session.sh` with the release APK (R8, signed with a test key) | 17/17 |
 | Phone dropped off USB mid-session (gvfs re-grab) | The connection ended ("the phone closed the connection"), the lease was RELEASEd, and no rule or table was left |
 | First .deb upgrade | Found that needrestart restarts a helper instance, which ends its session; the .deb now tells needrestart not to |

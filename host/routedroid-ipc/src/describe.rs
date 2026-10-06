@@ -37,6 +37,11 @@ impl fmt::Display for ConnectionState {
             Self::WaitingForApp => f.write_str("waiting for app"),
             Self::Handshaking => f.write_str("handshaking"),
             Self::Active => f.write_str("active"),
+            Self::Reconnecting { wait_secs } if f.alternate() => write!(
+                f,
+                "the phone went away (unplugged?): its address is held for up to {wait_secs} s while it comes back"
+            ),
+            Self::Reconnecting { .. } => f.write_str("reconnecting"),
             Self::Stopping => f.write_str("stopping"),
             Self::Ended { outcome } => write!(f, "ended: {outcome}"),
         }

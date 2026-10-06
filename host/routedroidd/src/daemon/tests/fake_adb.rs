@@ -17,6 +17,7 @@ track-devices) exit 1;;
 -s) S=$2; shift 2;;
 *) exit 2;;
 esac
+grep -qx "$S" "$D/serials" || { echo "error: device '$S' not found" >&2; exit 1; }
 R="$D/reverse.$S"; touch "$R"
 case "$1 $2" in
 "reverse --list") cat "$R";;
@@ -61,6 +62,32 @@ impl FakeAdb {
             self.dir.join("adb").to_str().unwrap(),
             Duration::from_secs(5),
         )
+    }
+
+    /// Pull the cable: adb forgets the phone, and with its transport the
+    /// reverse mappings and (as far as the daemon can tell) the record.
+    pub fn unplug(&self, serial: &str) {
+        let serials = self.dir.join("serials");
+        let list = std::fs::read_to_string(&serials).unwrap();
+        let kept: String = list
+            .lines()
+            .filter(|s| *s != serial)
+            .map(|s| format!("{s}\n"))
+            .collect();
+        std::fs::write(serials, kept).unwrap();
+        for file in [format!("record.{serial}"), format!("reverse.{serial}")] {
+            let _ = std::fs::remove_file(self.dir.join(file));
+        }
+    }
+
+    pub fn plug(&self, serial: &str) {
+        use std::io::Write;
+        let serials = self.dir.join("serials");
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(serials)
+            .unwrap();
+        writeln!(file, "{serial}").unwrap();
     }
 
     /// The bootstrap record the daemon wrote to the app's provider.

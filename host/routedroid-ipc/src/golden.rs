@@ -75,6 +75,7 @@ fn start_requests() {
         mtu: None,
         dns: DnsChoice::Auto,
         connect_timeout_secs: None,
+        reconnect_secs: None,
         allow_network_adb: false,
     };
     pinned(
@@ -87,6 +88,7 @@ fn start_requests() {
         mtu: Some(1400),
         dns: DnsChoice::Servers(vec![Ipv4Addr::new(9, 9, 9, 9)]),
         connect_timeout_secs: Some(30),
+        reconnect_secs: Some(0),
         allow_network_adb: true,
         ..minimal.clone()
     };
@@ -95,7 +97,7 @@ fn start_requests() {
         concat!(
             r#"{"id":2,"type":"start","serial":"R58M","lan_if":"eno1","phone_ip":"192.168.1.50","#,
             r#""tun":"phone3","mtu":1400,"dns":{"servers":["9.9.9.9"]},"connect_timeout_secs":30,"#,
-            r#""allow_network_adb":true}"#
+            r#""reconnect_secs":0,"allow_network_adb":true}"#
         ),
     );
     let no_dns = Request::Start(StartRequest {
@@ -161,6 +163,10 @@ fn outcomes() {
             r#"{"msg":"response","id":7,"type":"stopped","serial":"R58M","#,
             r#""outcome":{"result":"clean","reason":"phone_stopped"}}"#
         ),
+    );
+    pinned(
+        ConnectionState::Reconnecting { wait_secs: 120 },
+        r#"{"state":"reconnecting","wait_secs":120}"#,
     );
     let failed = ConnectionState::Ended {
         outcome: Outcome::failed(Kind::Vpn, "denied"),
@@ -338,4 +344,7 @@ fn states_read_the_same_everywhere() {
         "waiting for app"
     );
     assert!(format!("{:#}", ConnectionState::WaitingForApp).contains("VPN dialog"));
+    let away = ConnectionState::Reconnecting { wait_secs: 120 };
+    assert_eq!(away.to_string(), "reconnecting");
+    assert!(format!("{away:#}").contains("held for up to 120 s"));
 }

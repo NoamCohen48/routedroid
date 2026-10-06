@@ -11,6 +11,7 @@
 
 use std::io;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use routedroid_proto::frame::{self, Frame, FrameError, MessageType};
 use routedroid_proto::ipv4;
@@ -37,6 +38,8 @@ pub enum Inbound {
 pub struct Uplink {
     pub inject: Inject,
     pub counters: Arc<Counters>,
+    /// This session reached Active: packets go straight to the helper.
+    pub active: Arc<AtomicBool>,
 }
 
 impl Uplink {
@@ -75,7 +78,9 @@ pub async fn reader_task<R: AsyncRead + Unpin>(
         let inbound = match frame::read_frame(&mut rd, mtu).await {
             Ok(frame) => {
                 last_rx.touch();
-                if frame.message_type == MessageType::IpPacket && uplink.counters.reached_active() {
+                if frame.message_type == MessageType::IpPacket
+                    && uplink.active.load(Ordering::Relaxed)
+                {
                     match uplink.forward(&frame.body) {
                         Ok(()) => continue,
                         Err(e) => Inbound::HelperGone(e),

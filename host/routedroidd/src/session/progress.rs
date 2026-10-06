@@ -9,7 +9,6 @@ use tokio::sync::watch;
 /// Shared, lock-free counters; read by the daemon's status/traffic ticker.
 #[derive(Default, Debug)]
 pub struct Counters {
-    pub reached_active: AtomicBool,
     pub to_phone: AtomicU64,
     pub from_phone: AtomicU64,
     pub bytes_to_phone: AtomicU64,
@@ -37,10 +36,6 @@ impl Counters {
         self.congested.load(Ordering::Relaxed)
     }
 
-    pub fn reached_active(&self) -> bool {
-        self.reached_active.load(Ordering::Relaxed)
-    }
-
     pub(super) fn bump(counter: &AtomicU64) {
         counter.fetch_add(1, Ordering::Relaxed);
     }
@@ -52,16 +47,28 @@ impl Counters {
     }
 }
 
+/// One session's progress. Counters outlive the session (a connection's
+/// traffic spans its reconnects); whether it reached Active does not.
 pub struct Progress {
     pub counters: Arc<Counters>,
     /// Flips to `true` once, when the session reaches Active.
     pub active: watch::Sender<bool>,
+    /// The same, for the reader task's per-frame check.
+    pub(super) reached: Arc<AtomicBool>,
 }
 
 impl Progress {
     pub fn new(counters: Arc<Counters>) -> (Self, watch::Receiver<bool>) {
         let (active, rx) = watch::channel(false);
-        (Self { counters, active }, rx)
+        let reached = Arc::default();
+        (
+            Self {
+                counters,
+                active,
+                reached,
+            },
+            rx,
+        )
     }
 
     /// For callers that do not care.
@@ -70,8 +77,12 @@ impl Progress {
         Self::new(Arc::default()).0
     }
 
+    pub fn reached_active(&self) -> bool {
+        self.reached.load(Ordering::Relaxed)
+    }
+
     pub(super) fn set_active(&self) {
-        self.counters.reached_active.store(true, Ordering::Relaxed);
+        self.reached.store(true, Ordering::Relaxed);
         let _ = self.active.send(true);
     }
 }

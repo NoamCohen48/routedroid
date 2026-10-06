@@ -9,6 +9,7 @@ fn request() -> StartRequest {
         mtu: None,
         dns: DnsChoice::Auto,
         connect_timeout_secs: None,
+        reconnect_secs: None,
         allow_network_adb: false,
     }
 }
@@ -28,6 +29,7 @@ fn defaults_are_the_daemons() {
     let spec = StartSpec::parse(request()).unwrap();
     assert_eq!(spec.mtu, DEFAULT_MTU);
     assert_eq!(spec.connect_timeout, DEFAULT_CONNECT_TIMEOUT);
+    assert_eq!(spec.reconnect_wait, DEFAULT_RECONNECT_WAIT);
     assert_eq!(spec.tun, None);
     assert_eq!(spec.dns, DnsChoice::Auto);
 }
@@ -109,10 +111,17 @@ fn mtu_and_timeout_are_bounded() {
         connect_timeout_secs: Some(u64::MAX),
         ..request()
     };
-    assert_eq!(
-        StartSpec::parse(long).unwrap().connect_timeout,
-        MAX_CONNECT_TIMEOUT
-    );
+    assert_eq!(StartSpec::parse(long).unwrap().connect_timeout, MAX_WAIT);
+    let wait = |secs| {
+        let request = StartRequest {
+            reconnect_secs: Some(secs),
+            ..request()
+        };
+        StartSpec::parse(request).unwrap().reconnect_wait
+    };
+    // Zero is allowed for this one: it means "do not wait".
+    assert_eq!(wait(0), Duration::ZERO);
+    assert_eq!(wait(u64::MAX), MAX_WAIT);
 }
 
 #[test]

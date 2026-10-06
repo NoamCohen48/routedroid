@@ -9,6 +9,7 @@ mod fake_replies;
 mod connections;
 mod doctor;
 mod leased;
+mod reconnect;
 
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
@@ -120,6 +121,7 @@ fn request(serial: &str, phone_ip: [u8; 4]) -> StartRequest {
         mtu: None,
         dns: DnsChoice::None,
         connect_timeout_secs: Some(10),
+        reconnect_secs: None,
         allow_network_adb: false,
     }
 }
