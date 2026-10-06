@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # A LAN of KVM guests, run unprivileged, where Routedroid gets real root and
-# real systemd: `router` (DHCP, DNS, NAT, and a LAN peer) and `host` (the PC).
+# real systemd: `router` (DHCP, DNS, NAT, and a LAN peer), and the PC as
+# `host` (Debian 13, plain nftables) or `ubuntu` (Ubuntu 24.04, ufw on).
 #
-#   ./lab.sh up [router|host...]      create on first use, boot, wait for cloud-init
-#   PHONE=04e8:6860 ./lab.sh up host  pass that USB device (the phone) to host
+#   ./lab.sh up [router|host|ubuntu...]  create on first use, boot, wait for cloud-init
+#   PHONE=04e8:6860 ./lab.sh up host     pass that USB device (the phone) to a PC guest
+#   ./lab.sh unplug|plug NAME            pull the phone out of NAME, or put it back
 #   ./lab.sh ssh NAME [command...]    as user dev (passwordless sudo)
-#   ./lab.sh push                     build, copy and install Routedroid on host
+#   ./lab.sh push [NAME]              build, copy and install Routedroid (host)
 #   ./lab.sh down [NAME...] | status | destroy NAME
 #
 # Each guest has mgmt0 (qemu user networking: ssh from here on 127.0.0.1:220N,
@@ -15,13 +17,15 @@
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 LAB=${LAB_DIR:-$HOME/.cache/routedroid-vm}
-BASE=$LAB/debian-13-generic-amd64.qcow2
+DEBIAN=debian-13-generic-amd64.qcow2
 KEY=$LAB/id_lab
-declare -A INDEX=([router]=1 [host]=2) MEM=([router]=384 [host]=1024)
+declare -A INDEX=([router]=1 [host]=2 [ubuntu]=3) MEM=([router]=384 [host]=1024 [ubuntu]=1024)
+declare -A BASE=([router]=$DEBIAN [host]=$DEBIAN [ubuntu]=noble-server-cloudimg-amd64.img)
+GUESTS=(router host ubuntu)
 SSH_OPTS=(-i "$KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=3)
 
 die() { echo "lab: $*" >&2; exit 1; }
-known() { [[ -n ${INDEX[$1]:-} ]] || die "no guest named $1 (router, host)"; }
+known() { [[ -n ${INDEX[$1]:-} ]] || die "no guest named $1 (${GUESTS[*]})"; }
 port() { echo $((2200 + INDEX[$1])); }
 pidof_vm() { cat "$LAB/$1/pid" 2>/dev/null; }
 running() { local pid; pid=$(pidof_vm "$1") && kill -0 "$pid" 2>/dev/null; }
@@ -51,18 +55,19 @@ EOF
 }
 
 create() {
-    local dir=$LAB/$1
-    [[ -f $BASE ]] || die "missing $BASE (see README.md)"
+    local dir=$LAB/$1 base=$LAB/${BASE[$1]}
+    [[ -f $base ]] || die "missing $base (see README.md)"
     [[ -f $KEY ]] || ssh-keygen -q -t ed25519 -N '' -C routedroid-lab -f "$KEY"
     mkdir -p "$dir"
-    qemu-img create -q -f qcow2 -b "$BASE" -F qcow2 "$dir/disk.qcow2" 8G
+    qemu-img create -q -f qcow2 -b "$base" -F qcow2 "$dir/disk.qcow2" 8G
     seed "$1"
 }
 
 boot() {
     local name=$1 dir=$LAB/$1 n=${INDEX[$1]} usb=()
-    if [[ $name == host && -n ${PHONE:-} ]]; then
-        usb=(-device "qemu-xhci,id=xhci" -device "usb-host,bus=xhci.0,vendorid=0x${PHONE%:*},productid=0x${PHONE#*:}")
+    if [[ $name != router ]]; then
+        usb=(-device "qemu-xhci,id=xhci")
+        [[ -n ${PHONE:-} ]] && usb+=(-device "$(phone_device)")
     fi
     qemu-system-x86_64 -name "$name" -enable-kvm -cpu host -smp 2 -m "${MEM[$name]}" \
         -drive "file=$dir/disk.qcow2,if=virtio" -drive "file=$dir/seed.img,if=virtio,format=raw" \
@@ -71,7 +76,21 @@ boot() {
         -netdev socket,id=lan,mcast=230.0.0.1:5580,localaddr=127.0.0.1 \
         -device "virtio-net-pci,netdev=lan,mac=52:54:00:80:00:0$n" \
         "${usb[@]}" -display none -serial "file:$dir/console.log" \
-        -daemonize -pidfile "$dir/pid"
+        -qmp "unix:$dir/qmp.sock,server=on,wait=off" -daemonize -pidfile "$dir/pid"
+}
+
+phone_device() { echo "usb-host,id=phone,bus=xhci.0,vendorid=0x${PHONE%:*},productid=0x${PHONE#*:}"; }
+
+qmp() { # qmp NAME JSON: one QMP command, its reply on stdout
+    printf '{"execute":"qmp_capabilities"}\n%s\n' "$2" |
+        socat -t2 - "UNIX-CONNECT:$LAB/$1/qmp.sock" | tail -n +3
+}
+
+plug() { # plug NAME on|off: the phone as a hot-plugged USB device
+    local hmp
+    if [[ $2 == off ]]; then hmp="device_del phone"
+    else [[ -n ${PHONE:-} ]] || die "set PHONE=vendor:product"; hmp="device_add $(phone_device)"; fi
+    qmp "$1" "{\"execute\":\"human-monitor-command\",\"arguments\":{\"command-line\":\"$hmp\"}}"
 }
 
 wait_ready() {
@@ -108,8 +127,10 @@ case $cmd in
     up) if (($#)); then up "$@"; else up router host; fi ;;
     down) if (($#)); then down "$@"; else down host router; fi ;;
     ssh) known "$1"; vssh "$@" ;;
-    push) "$HERE/push.sh" ;;
-    status) for name in router host; do printf '%-7s %s\n' "$name" "$(running "$name" && echo running || echo stopped)"; done ;;
+    push) "$HERE/push.sh" "${1:-host}" ;;
+    unplug) known "$1"; plug "$1" off ;;
+    plug) known "$1"; plug "$1" on ;;
+    status) for name in "${GUESTS[@]}"; do printf '%-7s %s\n' "$name" "$(running "$name" && echo running || echo stopped)"; done ;;
     destroy) known "$1"; down "$1"; rm -rf "${LAB:?}/$1"; echo "$1: destroyed" ;;
     *) die "unknown command $cmd" ;;
 esac

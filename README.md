@@ -127,17 +127,21 @@ PC's other interfaces, other phones, or addresses it was not given.
 
 Routedroid adds one nftables table per connection (`inet routedroid_phoneN`), with
 policy-accept chains that filter only that phone's traffic. An accept there cannot override a
-drop in your own firewall. If `routedroid doctor` warns about a forward chain that drops by
-default (firewalld, UFW and many hand-written rulesets do), let the phone interfaces through.
-For example:
+drop in your own firewall. ufw, as Ubuntu ships it, is the common case. Ping still reaches the
+phone, but TCP and UDP to and from it are dropped, DNS included.
+
+`routedroid doctor` finds IPv4 forward chains that drop by default and prints the command
+that lets the phone interfaces through, in the firewall's own terms:
 
 ```sh
-nft insert rule inet filter forward iifname "phone*" accept        # your own nftables table
-nft insert rule inet filter forward oifname "phone*" accept
-ufw route allow in on phone0; ufw route allow out on phone0         # UFW, per TUN name
+sudo ufw route allow in on phone+ && sudo ufw route allow out on phone+            # ufw (tested)
+sudo iptables -I FORWARD -i phone+ -j ACCEPT && sudo iptables -I FORWARD -o phone+ -j ACCEPT
+sudo nft insert rule inet filter forward iifname "phone*" accept && \
+    sudo nft insert rule inet filter forward oifname "phone*" accept                # your own table
 ```
 
-With firewalld, put each TUN in a zone that forwards to and from your LAN's zone (for example
+Once the table lets `phone*` through both ways, doctor stops warning. With firewalld, put each
+TUN in a zone that forwards to and from your LAN's zone (for example
 `firewall-cmd --zone=trusted --add-interface=phone0`), then check from another LAN host.
 
 Routedroid's own table still limits each phone to its address and its LAN.

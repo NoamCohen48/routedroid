@@ -4,7 +4,7 @@
 # the LAN's DHCP server, gateway and the peer that reaches the phone.
 #
 #   ./lab.sh up router && PHONE=04e8:6860 ./lab.sh up host && ./push.sh
-#   ./phone-session.sh SERIAL
+#   [GUEST=ubuntu] ./phone-session.sh SERIAL      (the PC guest, host by default)
 #
 # Checks: doctor passes; a leased start; dnsmasq holds the lease; the phone's
 # egress rule and table; the router pings the phone and connects to it over
@@ -17,7 +17,8 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 source "$HERE/../lib.sh"
 SERIAL=${1:?usage: phone-session.sh SERIAL}
 rig_tmp phone-session
-host() { timeout 60 "$HERE/lab.sh" ssh host "$@"; }
+GUEST=${GUEST:-host}
+host() { timeout 60 "$HERE/lab.sh" ssh "$GUEST" "$@"; }
 router() { timeout 60 "$HERE/lab.sh" ssh router "$@"; }
 # ssh joins its arguments into one remote command line: quote them for it,
 # so a pipe in "$@" runs on the phone, not on the guest.
@@ -54,7 +55,8 @@ check "with its own address on the LAN" grep -q "IP $IP > 1.1.1.1" "$S/capture"
 check "phone resolves names"            eval "phone ping -c1 -W3 deb.debian.org | grep -q '1 received'"
 echo "== stop"
 check "stop"                            host routedroid stop -s "$SERIAL"
-check "the lease was released"          slowly eval "router sudo journalctl -u dnsmasq --no-pager | grep -q 'DHCPRELEASE(lan0) $IP'"
+# grep on the router: a local `grep -q` would SIGPIPE ssh, and pipefail fails the check.
+check "the lease was released"          slowly router "sudo journalctl -u dnsmasq --since -5min --no-pager | grep -q 'DHCPRELEASE(lan0) $IP'"
 check "no egress rule left"             eval "! host ip -4 rule | grep -q 'proto 82'"
 check "no nft table left"               eval "! host sudo nft list tables | grep -q routedroid"
 check "doctor finds nothing"            host routedroid doctor
