@@ -35,7 +35,7 @@ The guests are Debian 13 and Ubuntu 24.04 cloud images with cloud-init (`router.
 ## Run
 
 ```sh
-./lab.sh up                               # both guests; first boot installs packages
+./lab.sh up                               # router and host; first boot installs packages
 ./push.sh                                 # build here, install in host with install.sh
 ./lab.sh ssh host                         # then: systemctl --user enable --now routedroid
 ```

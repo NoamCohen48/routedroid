@@ -8,7 +8,7 @@
 #   ./lab.sh unplug|plug NAME            pull the phone out of NAME, or put it back
 #   ./lab.sh ssh NAME [command...]    as user dev (passwordless sudo)
 #   ./lab.sh push [NAME]              build, copy and install Routedroid (host)
-#   ./lab.sh down [NAME...] | status | destroy NAME
+#   ./lab.sh down [NAME...] | status | destroy NAME   (down: every guest by default)
 #
 # Each guest has mgmt0 (qemu user networking: ssh from here on 127.0.0.1:220N,
 # and the router's uplink) and lan0 on a multicast segment shared by every
@@ -125,7 +125,7 @@ down() {
 cmd=${1:-status}; shift || true
 case $cmd in
     up) if (($#)); then up "$@"; else up router host; fi ;;
-    down) if (($#)); then down "$@"; else down host router; fi ;;
+    down) if (($#)); then down "$@"; else down ubuntu host router; fi ;;
     ssh) known "$1"; vssh "$@" ;;
     push) "$HERE/push.sh" "${1:-host}" ;;
     unplug) known "$1"; plug "$1" off ;;
