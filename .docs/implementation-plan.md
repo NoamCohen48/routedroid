@@ -14,12 +14,14 @@
 
 Open items against §11 and §12:
 
-- **Hardware matrix (M4).** Verified on the emulator and on one Samsung phone (Android 10)
-  before DHCP sessions existed. Leased sessions and egress are verified only in namespaces
-  against dnsmasq. A run on real LANs and phones is still due.
+- **Hardware matrix (M4).** A leased session on a real phone (Samsung, Android 10) passes
+  `integration-tests/vm/phone-session.sh`. It runs through the installed units on a KVM
+  guest with a virtual LAN, a dnsmasq router and the phone on USB. Still due: physical LANs
+  (consumer and enterprise routers, Wi-Fi) and more phones.
 - **ADB reconnect (§11.9).** An unplugged phone ends its connection when the transport
-  closes, or at the latest at the 30 s keepalive deadline, and teardown follows. It does not
-  reconnect, and no rig unplugs a phone yet.
+  closes, or at the latest at the 30 s keepalive deadline, and teardown follows. Seen once in the VM lab,
+  when the phone dropped off USB mid-session: the lease was released and nothing was left.
+  It does not reconnect, and no rig unplugs a phone on purpose yet.
 - **Distribution packages and reproducible APKs.** `install.sh` and Gradle builds exist.
   Neither distribution packages nor build reproducibility exist yet.
 

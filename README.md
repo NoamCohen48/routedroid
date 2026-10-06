@@ -198,7 +198,7 @@ directory if anything could not be undone.
 | `host/` | Rust workspace: daemon, CLI, TUI, root helper, DHCP client, wire protocol, IPC crates, fuzz targets |
 | `android/` | The app (`VpnService`), its protocol library and a hostile test app ([README](android/README.md)) |
 | `protocol/` | The wire protocol ([version 1](protocol/version-1.md)) and its golden fixtures |
-| `integration-tests/` | Rootless namespace rigs for the helper (kill matrix, multi-session, DHCP) and emulator rigs |
+| `integration-tests/` | Rootless namespace rigs for the helper (kill matrix, multi-session, DHCP), emulator rigs, and a [KVM lab](integration-tests/vm/README.md) with real root, systemd and a USB phone |
 | `.docs/` | Architecture, decisions, implementation plan, code review |
 
 Tests: run `cargo test --workspace` in `host/`, `./gradlew :protocol:test :app:testDebugUnitTest`
