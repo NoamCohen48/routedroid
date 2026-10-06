@@ -73,19 +73,7 @@ if [[ -n $USER_TO_ADD ]] && ! id -nG "$USER_TO_ADD" | tr ' ' '\n' | grep -qx rou
 fi
 install -d -m 0755 "$BINDIR" "$LIBEXECDIR" /etc/routedroid "$USER_UNITS"
 if [[ ! -e /etc/routedroid/helper.toml ]]; then
-    install -m 0644 /dev/stdin /etc/routedroid/helper.toml <<'POLICY'
-# Which LAN interfaces may carry phones, and which addresses phones may take
-# there: requested ones inside `phone_addresses`, and with `dhcp = true` an
-# address leased from the LAN's DHCP server (inside `phone_addresses` too, if
-# any are listed). Owned by root, not writable by group or others, or the
-# helper refuses every session. `routedroid interfaces` shows what it allows.
-# Example:
-#
-# [[interface]]
-# name = "eno1"
-# phone_addresses = ["192.168.1.200/29"]
-# dhcp = true
-POLICY
+    install -m 0644 "$HERE/routedroid-helper/helper.toml" /etc/routedroid/helper.toml
     echo "wrote /etc/routedroid/helper.toml (allows nothing yet; add your LAN interface)"
 fi
 for bin in "${CLIENTS[@]}"; do install -m 0755 "$RELEASE/$bin" "$BINDIR/$bin"; done

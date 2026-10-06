@@ -1,0 +1,11 @@
+# Which LAN interfaces may carry phones, and which addresses phones may take
+# there: requested ones inside `phone_addresses`, and with `dhcp = true` an
+# address leased from the LAN's DHCP server (inside `phone_addresses` too, if
+# any are listed). Owned by root, not writable by group or others, or the
+# helper refuses every session. `routedroid interfaces` shows what it allows.
+# Example:
+#
+# [[interface]]
+# name = "eno1"
+# phone_addresses = ["192.168.1.200/29"]
+# dhcp = true
