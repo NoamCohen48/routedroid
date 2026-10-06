@@ -1,0 +1,75 @@
+# One description for the .deb and the .rpm; build.sh fills in the
+# environment (VERSION, ARCH, GLIBC) and stages the rendered units.
+name: routedroid
+version: ${VERSION}
+arch: ${ARCH}
+platform: linux
+section: net
+priority: optional
+maintainer: Noam Cohen <92931230+NoamCohen48@users.noreply.github.com>
+homepage: https://github.com/NoamCohen48/routedroid
+license: MIT OR Apache-2.0
+description: |-
+  Puts Android phones on your LAN over USB.
+  Each phone attached with adb gets its own address on the PC's LAN, from the
+  LAN's DHCP server or from a range you allow, and is reachable from every
+  other machine there. Install the Routedroid app on the phone. Then allow a
+  LAN interface in /etc/routedroid/helper.toml and add yourself to group
+  routedroid.
+
+contents:
+  # Owned, so that removing the package removes them (rpm keeps unowned ones).
+  - dst: /usr/libexec/routedroid
+    type: dir
+  - dst: /etc/routedroid
+    type: dir
+  - dst: /usr/share/doc/routedroid
+    type: dir
+  - src: ../target/packaging/bin/routedroid
+    dst: /usr/bin/routedroid
+  - src: ../target/packaging/bin/routedroidd
+    dst: /usr/bin/routedroidd
+  - src: ../target/packaging/bin/routedroid-tui
+    dst: /usr/bin/routedroid-tui
+  - src: ../target/packaging/bin/routedroid-helper
+    dst: /usr/libexec/routedroid/routedroid-helper
+  - src: ../target/packaging/units/routedroid-helper.socket
+    dst: /usr/lib/systemd/system/routedroid-helper.socket
+  - src: ../target/packaging/units/routedroid-helper@.service
+    dst: /usr/lib/systemd/system/routedroid-helper@.service
+  - src: ../target/packaging/units/routedroid.service
+    dst: /usr/lib/systemd/user/routedroid.service
+  - src: ../routedroid-helper/helper.toml
+    dst: /etc/routedroid/helper.toml
+    type: config|noreplace
+    file_info:
+      mode: 0644
+  - src: needrestart.conf
+    dst: /etc/needrestart/conf.d/routedroid.conf
+    type: config|noreplace
+    packager: deb
+  - src: ../../README.md
+    dst: /usr/share/doc/routedroid/README.md
+
+scripts:
+  postinstall: scripts/postinstall.sh
+  preremove: scripts/preremove.sh
+  postremove: scripts/postremove.sh
+
+# The helper drives nftables through `nft`; the daemon needs adb (or an adb
+# server it can reach), which may come from Google's platform-tools instead.
+depends:
+  - nftables
+overrides:
+  deb:
+    depends:
+      - libc6 (>= ${GLIBC})
+      - nftables
+    recommends:
+      - adb
+  rpm:
+    depends:
+      - glibc >= ${GLIBC}
+      - nftables
+    recommends:
+      - android-tools

@@ -27,6 +27,14 @@ SYSTEM_UNITS=/etc/systemd/system
 USER_UNITS=/etc/systemd/user
 CLIENTS=(routedroid routedroidd routedroid-tui)
 [[ $EUID -eq 0 ]] || { echo "run with sudo"; exit 2; }
+# user_managers ARGS: systemctl --user ARGS in every logged-in user's manager.
+user_managers() {
+    local unit user
+    for unit in $(systemctl list-units 'user@*.service' --state=running --no-legend --plain | cut -d' ' -f1); do
+        user=$(id -nu "$(basename "$unit" .service | cut -d@ -f2)" 2>/dev/null) || continue
+        systemctl --user -M "$user@" "$@" 2>/dev/null || true
+    done
+}
 
 if [[ ${1:-} == --uninstall ]]; then
     PURGE=0; [[ ${2:-} == --purge ]] && PURGE=1
@@ -46,6 +54,7 @@ if [[ ${1:-} == --uninstall ]]; then
     rm -f "$SYSTEM_UNITS/$UNIT.socket" "$SYSTEM_UNITS/$UNIT.service" "$SYSTEM_UNITS/$UNIT@.service"
     rm -f "$USER_UNITS/routedroid.service"
     systemctl daemon-reload
+    user_managers daemon-reload
     for bin in "${CLIENTS[@]}"; do rm -f "$BINDIR/$bin"; done
     rm -rf "$LIBEXECDIR" /run/routedroid
     if [[ $PURGE -eq 1 ]]; then
@@ -73,19 +82,7 @@ if [[ -n $USER_TO_ADD ]] && ! id -nG "$USER_TO_ADD" | tr ' ' '\n' | grep -qx rou
 fi
 install -d -m 0755 "$BINDIR" "$LIBEXECDIR" /etc/routedroid "$USER_UNITS"
 if [[ ! -e /etc/routedroid/helper.toml ]]; then
-    install -m 0644 /dev/stdin /etc/routedroid/helper.toml <<'POLICY'
-# Which LAN interfaces may carry phones, and which addresses phones may take
-# there: requested ones inside `phone_addresses`, and with `dhcp = true` an
-# address leased from the LAN's DHCP server (inside `phone_addresses` too, if
-# any are listed). Owned by root, not writable by group or others, or the
-# helper refuses every session. `routedroid interfaces` shows what it allows.
-# Example:
-#
-# [[interface]]
-# name = "eno1"
-# phone_addresses = ["192.168.1.200/29"]
-# dhcp = true
-POLICY
+    install -m 0644 "$HERE/routedroid-helper/helper.toml" /etc/routedroid/helper.toml
     echo "wrote /etc/routedroid/helper.toml (allows nothing yet; add your LAN interface)"
 fi
 for bin in "${CLIENTS[@]}"; do install -m 0755 "$RELEASE/$bin" "$BINDIR/$bin"; done
@@ -101,6 +98,7 @@ unit "$HERE/routedroid-helper/systemd/$UNIT.socket" "$SYSTEM_UNITS/$UNIT.socket"
 unit "$HERE/routedroid-helper/systemd/$UNIT@.service" "$SYSTEM_UNITS/$UNIT@.service"
 unit "$HERE/routedroidd/systemd/routedroid.service" "$USER_UNITS/routedroid.service"
 systemctl daemon-reload
+user_managers daemon-reload
 systemctl enable --now "$UNIT.socket"
 echo "$UNIT.socket: $(systemctl is-active "$UNIT.socket")"
 echo

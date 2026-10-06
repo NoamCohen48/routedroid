@@ -1,6 +1,7 @@
-# fmt, lints, tests and the no-root namespace rigs for the host; unit tests,
-# lint and a debug build for the app. The emulator rigs need a device and
-# run by hand (integration-tests/emulator/README.md).
+# fmt, lints, tests and the no-root namespace rigs for the host; the .deb and
+# .rpm in containers; unit tests, lint and a debug build for the app. The
+# emulator rigs and the VM lab need a device and run by hand
+# (integration-tests/emulator/README.md, integration-tests/vm/README.md).
 name: ci
 
 on:
@@ -43,6 +44,17 @@ jobs:
           ../integration-tests/helper/multi-session.sh
           ../integration-tests/helper/dhcp-session.sh
           ../integration-tests/dhcp/netns-dhcp.sh
+
+  packages:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host
+      # Install, upgrade and remove in Debian, Ubuntu and Fedora containers.
+      - run: host/packaging/build.sh
+      - run: integration-tests/packages/containers.sh
 
   scripts:
     runs-on: ubuntu-24.04

@@ -80,11 +80,30 @@ These are the checks:
 
 8 checks.
 
+## package.sh
+
+`package.sh SERIAL` takes the `ubuntu` guest through the .deb from `host/packaging/build.sh`,
+from a clean guest:
+
+- **Install:** apt installs it. The message's steps are followed: join the group, then
+  restart the user manager. The daemon then runs from `/usr/bin`, and `phone-session.sh`
+  passes.
+- **Upgrade under a live session:** needrestart defers the helper instance instead of
+  restarting it, and the session stays up and keeps carrying traffic.
+- **Remove under a live session:** nothing is left behind, and the policy and group remain.
+- **Purge:** no policy, state or group remains.
+
+11 checks. `../packages/containers.sh` covers the same life without a phone in Debian, Ubuntu
+and Fedora containers, and CI runs it.
+
 ## Results, 2026-10-06 (Samsung SM-J810G, Android 10)
 
 | Check | Result |
 |---|---|
 | `phone-session.sh 85e49002` (Debian, nftables) | 17/17 |
 | `ufw.sh 85e49002` (Ubuntu 24.04, ufw) | 8/8, with `phone-session.sh` 17/17 inside |
+| `package.sh 85e49002` (the .deb) | 11/11 |
+| `phone-session.sh` with the release APK (R8, signed with a test key) | 17/17 |
 | Phone dropped off USB mid-session (gvfs re-grab) | The connection ended ("the phone closed the connection"), the lease was RELEASEd, and no rule or table was left |
+| First .deb upgrade | Found that needrestart restarts a helper instance, which ends its session; the .deb now tells needrestart not to |
 | First install on a fresh guest | Found that a lingering `systemd --user` keeps its old groups; `doctor` now says so (`089a27d`) |
