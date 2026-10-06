@@ -48,7 +48,7 @@ async fn an_absent_helper_is_a_failure_with_a_hint() {
     let helper = find(&checks, "helper");
     assert_eq!(helper.status, CheckStatus::Fail);
     assert!(
-        helper.detail.contains("group routedroid"),
+        helper.detail.contains("routedroid-helper.socket enabled"),
         "{}",
         helper.detail
     );

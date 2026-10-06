@@ -10,6 +10,8 @@ use super::AttachedDevices;
 use crate::device::unusable;
 use crate::host_network;
 
+mod groups;
+
 /// The checks, and the changes a repair made.
 pub async fn run(
     devices: &AttachedDevices,
@@ -21,10 +23,11 @@ pub async fn run(
         checks.push(Check::new(
             "helper",
             CheckStatus::Fail,
-            format!(
-                "{fault}; is routedroid-helper.socket enabled (host/install.sh), \
-                 and is this user in group routedroid?"
-            ),
+            // Refused (EACCES) is about groups; anything else is the socket unit.
+            match fault.to_string().contains("Permission denied") {
+                true => format!("{fault}; {}", groups::hint()),
+                false => format!("{fault}; is routedroid-helper.socket enabled (host/install.sh)?"),
+            },
         ));
         return (checks, Vec::new());
     }

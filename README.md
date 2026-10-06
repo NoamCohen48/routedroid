@@ -32,7 +32,7 @@ LAN host ── LAN ── eno1 (proxy ARP) ── phone0 (TUN) ── adb ─�
 ## Install
 
 ```sh
-cd host && cargo build --release && sudo ./install.sh     # then log in again (group routedroid)
+cd host && cargo build --release && sudo ./install.sh     # then log out completely (group routedroid)
 systemctl --user enable --now routedroid                  # the daemon, as yourself
 (cd android && ./gradlew :app:assembleDebug)              # release builds: android/README.md
 adb install android/app/build/outputs/apk/debug/app-debug.apk
@@ -148,7 +148,9 @@ Routedroid's own table still limits each phone to its address and its LAN.
 - **The daemon is unreachable** (exit 3): `systemctl --user start routedroid`, and check
   `journalctl --user -u routedroid`.
 - **Helper refused or unreachable**: check that `routedroid-helper.socket` is active and that
-  you are in group `routedroid` (in a new login). The helper logs to
+  the daemon has group `routedroid`. `doctor` tells the two cases apart. A `systemd --user`
+  that started before you joined the group keeps running without it until you log out
+  completely, or until `sudo systemctl restart user@$(id -u)`. The helper logs to
   `journalctl -u 'routedroid-helper@*'`.
 - **No lease** (`NoLease`): the LAN has no DHCP server or does not answer this client. Use
   `--phone-ip` with an address from `phone_addresses`.
