@@ -1,0 +1,16 @@
+#cloud-config
+# The PC as most desktops ship it: Ubuntu 24.04 with ufw on (routed traffic
+# dropped by default), Routedroid installed on top.
+hostname: ubuntu
+users:
+  - name: dev
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    groups: [plugdev]
+    ssh_authorized_keys: [@KEY@]
+package_update: true
+packages: [adb, android-sdk-platform-tools-common, nftables, ufw, tcpdump, curl, netcat-openbsd]
+runcmd:
+  - ufw allow in on mgmt0 to any port 22 proto tcp
+  - ufw --force enable
+  - loginctl enable-linger dev

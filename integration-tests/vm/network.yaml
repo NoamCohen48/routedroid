@@ -1,0 +1,13 @@
+# mgmt0: qemu user networking (ssh from the PC, and the router's uplink).
+# lan0: the shared virtual LAN; lab.sh fills in its addressing per guest.
+version: 2
+ethernets:
+  mgmt0:
+    match: {macaddress: "@MGMT_MAC@"}
+    set-name: mgmt0
+    dhcp4: true
+    dhcp4-overrides: {route-metric: @MGMT_METRIC@}
+  lan0:
+    match: {macaddress: "@LAN_MAC@"}
+    set-name: lan0
+@LAN@
