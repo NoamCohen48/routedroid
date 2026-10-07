@@ -125,6 +125,19 @@ USB device from the guest and adds it back:
 10 checks. The phone is left with that app. Put a debug build back by uninstalling it and
 running `adb install`.
 
+## tui.sh
+
+`PHONE=vendor:product tui.sh SERIAL` runs the TUI on the `ubuntu` guest in an 80x24 tmux
+pane. Keys go in with `send-keys`, and checks read the screen with `capture-pane`:
+
+- **Connect:** the phone and the key hints are on screen. `s` opens the form, with the
+  reconnect wait, and Enter connects. Traffic reads in kB and MB.
+- **Unplugged and back:** the phone stays on screen as `gone` and `reconnecting`, its
+  address held. Back, it is active again on the same row.
+- **Disconnect:** `x` asks, `y` ends the connection, the log says so once, and `q` quits.
+
+13 checks. `TUI=/path` runs another build, copied into the guest first.
+
 ## Results, 2026-10-06 (Samsung SM-J810G, Android 10)
 
 | Check | Result |
@@ -135,6 +148,7 @@ running `adb install`.
 | `PHONE=04e8:6860 unplug.sh 85e49002` | 20/20; back to active about 3 s after the replug |
 | `phone-session.sh` with the release APK (R8, signed with a test key) | 17/17 |
 | `app-install.sh 85e49002` (2026-10-07, the daemon carrying that APK) | 10/10 |
+| `PHONE=04e8:6860 tui.sh 85e49002` (2026-10-07) | 13/13. The TUI before it failed 9 of them: an unplugged phone left the screen, no key hints at 80 columns, raw byte counts |
 | Phone dropped off USB mid-session (gvfs re-grab) | The connection ended ("the phone closed the connection"), the lease was RELEASEd, and no rule or table was left |
 | First .deb upgrade | Found that needrestart restarts a helper instance, which ends its session; the .deb now tells needrestart not to |
 | First install on a fresh guest | Found that a lingering `systemd --user` keeps its old groups; `doctor` now says so (`089a27d`) |

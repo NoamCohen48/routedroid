@@ -10,6 +10,7 @@ use crate::messages::{Command, Incoming};
 
 mod events;
 mod log;
+mod rows;
 
 pub use log::{Level, Log};
 
@@ -40,6 +41,10 @@ pub struct LastEnd {
 }
 
 pub struct App {
+    /// What adb lists, as the daemon last said.
+    attached: Vec<DeviceInfo>,
+    /// The table's rows: `attached`, then live connections to phones adb
+    /// no longer lists (`rows.rs`).
     pub devices: Vec<DeviceInfo>,
     pub connections: BTreeMap<String, ConnectionInfo>,
     pub interfaces: Vec<InterfaceInfo>,
@@ -51,11 +56,14 @@ pub struct App {
     pub daemon: DaemonLink,
     pub mode: Mode,
     pub quit: bool,
+    /// The device list last logged, so a repeat is not logged again.
+    devices_line: Option<String>,
 }
 
 impl App {
     pub fn new() -> Self {
         Self {
+            attached: Vec::new(),
             devices: Vec::new(),
             connections: BTreeMap::new(),
             interfaces: Vec::new(),
@@ -66,6 +74,7 @@ impl App {
             daemon: DaemonLink::Connecting,
             mode: Mode::Normal,
             quit: false,
+            devices_line: None,
         }
     }
 
@@ -132,6 +141,7 @@ impl App {
             Incoming::Connections(connections) => {
                 let by_serial = connections.into_iter().map(|c| (c.serial.clone(), c));
                 self.connections = by_serial.collect();
+                self.rebuild_rows();
                 vec![]
             }
             Incoming::Interfaces(interfaces) => {
@@ -146,10 +156,7 @@ impl App {
                 self.info(format!("{serial}: start accepted (TUN {tun})"));
                 vec![]
             }
-            Incoming::Stopped { serial, outcome } => {
-                self.info(format!("{serial}: {outcome}"));
-                vec![]
-            }
+            Incoming::Stopped => vec![],
             Incoming::Failed {
                 what,
                 serial,
@@ -171,11 +178,5 @@ impl App {
                 vec![]
             }
         }
-    }
-
-    pub(super) fn set_devices(&mut self, devices: Vec<DeviceInfo>) -> Vec<Command> {
-        self.devices = devices;
-        self.move_cursor(0);
-        vec![]
     }
 }

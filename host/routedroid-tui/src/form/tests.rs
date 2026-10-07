@@ -88,6 +88,7 @@ fn filled_fields_become_the_request() {
     form.dns = LineInput::new("1.1.1.1, 8.8.8.8");
     form.mtu = LineInput::new("1280");
     form.timeout = LineInput::new("2m");
+    form.reconnect_wait = LineInput::new("5m");
     form.allow_network_adb = true;
     let request = form.to_request().unwrap();
     assert_eq!(request.phone_ip.unwrap().to_string(), "10.0.0.5");
@@ -96,6 +97,7 @@ fn filled_fields_become_the_request() {
         (request.mtu, request.connect_timeout_secs),
         (Some(1280), Some(120))
     );
+    assert_eq!(request.reconnect_secs, Some(300));
     assert!(request.allow_network_adb);
     form.dns = LineInput::new("none");
     assert_eq!(form.to_request().unwrap().dns, DnsChoice::None);
@@ -115,6 +117,9 @@ fn invalid_fields_are_named_in_the_error() {
     form.dns = LineInput::default();
     form.timeout = LineInput::new("soon");
     assert!(error(&form).contains("timeout"));
+    form.timeout = LineInput::default();
+    form.reconnect_wait = LineInput::new("later");
+    assert!(error(&form).contains("reconnect wait"));
 }
 
 #[test]

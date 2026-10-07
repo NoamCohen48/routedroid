@@ -1,5 +1,6 @@
 //! One line: daemon link on the left, key hints for the current mode on the
-//! right, dropped when the terminal is too narrow for both.
+//! right: all of them when they fit, else the essential ones (an 80-column
+//! terminal), else none.
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -18,16 +19,22 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             Line::from(format!(" DISCONNECTED ({reason}); retrying ")).fg(Color::Red)
         }
     };
-    let hints = match app.mode {
-        Mode::Normal => "↑/↓ select  s connect  x disconnect  r refresh  PgUp/PgDn log  q quit",
-        Mode::StartForm(_) => "Tab next  ←/→ pick  Space toggle  Enter start  Esc keep & close",
-        Mode::ConfirmStop { .. } => "y confirm  any other key cancels",
+    let hints: &[&str] = match app.mode {
+        Mode::Normal => &[
+            "↑/↓ select  s connect  x disconnect  r refresh  PgUp/PgDn log  q quit",
+            "s connect  x disconnect  q quit",
+        ],
+        Mode::StartForm(_) => &[
+            "Tab next  ←/→ pick  Space toggle  Enter start  Esc keep & close",
+            "Tab next  Enter start  Esc close",
+        ],
+        Mode::ConfirmStop { .. } => &["y confirm  any other key cancels"],
     };
-    let needed = daemon.width() + hints.chars().count() + 1;
-    if usize::from(area.width) < needed {
+    let room = usize::from(area.width).saturating_sub(daemon.width() + 1);
+    let Some(hints) = hints.iter().find(|hints| hints.chars().count() <= room) else {
         frame.render_widget(Paragraph::new(daemon), area);
         return;
-    }
+    };
     let [daemon_area, hints_area] = Layout::horizontal([
         Constraint::Length(cells(daemon.width())),
         Constraint::Fill(1),
@@ -35,7 +42,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     .areas(area);
     frame.render_widget(Paragraph::new(daemon), daemon_area);
     frame.render_widget(
-        Paragraph::new(Line::from(hints).dim()).right_aligned(),
+        Paragraph::new(Line::from(*hints).dim()).right_aligned(),
         hints_area,
     );
 }

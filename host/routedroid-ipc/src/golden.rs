@@ -332,6 +332,12 @@ fn a_start_with_an_unknown_field_is_refused() {
 }
 
 #[test]
+fn bytes_read_like_bytes() {
+    assert_eq!(bytes(999), "999 B");
+    assert_eq!(bytes(1_234_567), "1.2 MB");
+}
+
+#[test]
 fn states_read_the_same_everywhere() {
     let ended = ConnectionState::Ended {
         outcome: Outcome::failed(Kind::Vpn, "denied"),

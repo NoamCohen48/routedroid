@@ -20,6 +20,7 @@ mod state;
 pub mod wire;
 
 pub use client::{Calls, Client, ConnectError, DaemonError, Events};
+pub use describe::bytes;
 pub use doctor::{Check, CheckStatus};
 pub use event::Event;
 pub use kind::Kind;

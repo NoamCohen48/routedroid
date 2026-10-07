@@ -40,7 +40,7 @@ impl App {
 
     fn apply_connection(&mut self, serial: String, state: ConnectionState) -> Vec<Command> {
         if let Some(device) = self
-            .devices
+            .attached
             .iter_mut()
             .find(|device| device.serial == serial)
         {
@@ -49,6 +49,12 @@ impl App {
                 _ => Some(state.clone()),
             };
         }
+        let commands = self.fold_connection(serial, state);
+        self.rebuild_rows();
+        commands
+    }
+
+    fn fold_connection(&mut self, serial: String, state: ConnectionState) -> Vec<Command> {
         if let ConnectionState::Ended { outcome } = state {
             self.connections.remove(&serial);
             let end = LastEnd {

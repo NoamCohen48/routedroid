@@ -125,7 +125,7 @@ async fn execute(calls: &Calls, command: Command) -> Result<Incoming> {
         Response::Status { connections } => Incoming::Connections(connections),
         Response::Interfaces { interfaces } => Incoming::Interfaces(interfaces),
         Response::Started { serial, tun } => Incoming::Started { serial, tun },
-        Response::Stopped { serial, outcome } => Incoming::Stopped { serial, outcome },
+        Response::Stopped { .. } => Incoming::Stopped,
         other @ (Response::Version { .. } | Response::Subscribed | Response::Doctor { .. }) => {
             Incoming::Failed {
                 what,
