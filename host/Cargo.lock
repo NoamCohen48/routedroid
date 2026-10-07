@@ -1502,6 +1502,7 @@ dependencies = [
  "clap_complete",
  "clap_mangen",
  "humantime",
+ "libc",
  "routedroid-helper-ipc",
  "routedroid-ipc",
  "rustix",
