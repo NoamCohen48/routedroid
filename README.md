@@ -148,6 +148,12 @@ back up. It waits 2 minutes by default. `--reconnect-wait 10m` waits longer, and
 the connection at once. The app closing the connection, with the phone still attached, ends
 it.
 
+**Notifications.** On a desktop, the daemon shows a notification when a phone joins the LAN,
+goes away, waits to be unlocked, or is disconnected other than by your own `stop`. Each phone
+has one notification, updated as its connection changes. To turn them off, run
+`systemctl --user edit routedroid`, add `Environment=ROUTEDROID_NOTIFY=false` under
+`[Service]`, and restart the daemon.
+
 Every command takes `--json`. `routedroid events` follows state changes as they happen, one
 line each (with `--json`, as JSON lines). Exit codes are listed in `routedroid --help`, so
 scripts can branch on why something failed.
