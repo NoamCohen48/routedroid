@@ -40,12 +40,23 @@ pub fn candidates(interfaces: &[Interface]) -> Vec<&Interface> {
         .collect()
 }
 
-/// The one to offer first: where the default route leaves, else the only one.
+/// The one to offer first, among those the policy allows already if any
+/// (so running setup again keeps what it set up): where the default route
+/// leaves, else the only one.
 pub fn preferred<'a>(candidates: &[&'a Interface]) -> Option<&'a Interface> {
-    candidates
+    let allowed: Vec<&Interface> = candidates
         .iter()
+        .copied()
+        .filter(|link| link.ineligible.is_none())
+        .collect();
+    let pool = if allowed.is_empty() {
+        candidates
+    } else {
+        &allowed
+    };
+    pool.iter()
         .find(|link| link.default_route)
-        .or(match candidates {
+        .or(match pool {
             [only] => Some(only),
             _ => None,
         })

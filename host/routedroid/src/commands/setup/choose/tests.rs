@@ -124,6 +124,17 @@ fn flags_are_checked_against_the_survey() {
 }
 
 #[test]
+fn an_interface_already_allowed_is_kept() {
+    let mut host = host();
+    host[2].ineligible = None;
+    assert_eq!(
+        defaults(&host).unwrap().lan_if,
+        "wlan0",
+        "not eno1, though the default route leaves there"
+    );
+}
+
+#[test]
 fn defaults_need_one_clear_choice() {
     assert_eq!(defaults(&host()).unwrap().lan_if, "eno1");
     let two = [
