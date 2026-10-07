@@ -26,6 +26,7 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-
 toml = { workspace = true, features = ["std", "parse", "display", "serde"] }
 tokio-util = { workspace = true, features = ["codec"] }
 tracing.workspace = true
+zbus = { workspace = true, features = ["tokio"] }
 tracing-subscriber = { workspace = true, features = ["json"] }
 
 [dev-dependencies]
