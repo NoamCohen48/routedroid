@@ -1,6 +1,7 @@
 //! One module per subcommand; `run` dispatches and yields the exit code.
 
 pub mod devices;
+pub mod docs;
 pub mod doctor;
 pub mod events;
 pub mod interfaces;
@@ -18,9 +19,12 @@ use routedroid_ipc::Client;
 use crate::cli::{Cli, Command};
 
 pub async fn run(cli: Cli) -> Result<i32> {
-    if let Command::Version = cli.command {
+    match &cli.command {
         // Our own version needs no daemon, so it shows even without one.
-        return version::run(&cli.socket, cli.json).await;
+        Command::Version => return version::run(&cli.socket, cli.json).await,
+        Command::Completions { shell } => return Ok(docs::completions(*shell)),
+        Command::Manpages { dir } => return docs::manpages(dir),
+        _ => {}
     }
     if let Command::Setup(args) = cli.command {
         // Run as root, so it does not need (or reach) the user's daemon.
@@ -39,7 +43,10 @@ pub async fn run(cli: Cli) -> Result<i32> {
         Command::Status => status::run(&client, json).await,
         Command::Events => events::run(&mut client, json).await,
         Command::Doctor { repair } => doctor::run(&client, repair, json).await,
-        Command::Version | Command::Setup(_) => unreachable!("answered above"),
+        Command::Version
+        | Command::Setup(_)
+        | Command::Completions { .. }
+        | Command::Manpages { .. } => unreachable!("answered above"),
     }
 }
 

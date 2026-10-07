@@ -152,6 +152,10 @@ Every command takes `--json`. `routedroid events` follows state changes as they 
 line each (with `--json`, as JSON lines). Exit codes are listed in `routedroid --help`, so
 scripts can branch on why something failed.
 
+The packages and `install.sh` install shell completions (bash, zsh, fish) and man pages
+(`man routedroid`, `man routedroid-start`, ...). Elsewhere, `routedroid completions SHELL`
+prints the script for your shell.
+
 **Addresses.** Without `--phone-ip` the helper leases an address on the LAN interface. The
 client identifier is `routedroid:<device id>:<PC MAC>`, so the same phone tends to get the same
 address back. The helper renews the lease for as long as the connection lasts and releases
