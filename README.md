@@ -37,8 +37,7 @@ From packages (a [release](https://github.com/NoamCohen48/routedroid/releases), 
 ```sh
 sudo apt install ./routedroid_0.1.0_amd64.deb      # Debian, Ubuntu
 sudo dnf install ./routedroid-0.1.0-1.x86_64.rpm   # Fedora
-sudo usermod -aG routedroid "$USER"                # then log out completely
-systemctl --user enable --now routedroid           # the daemon, as yourself
+sudo routedroid setup                              # see "Set up" below
 ```
 
 On another systemd distribution (glibc 2.35 or newer, with nftables and adb installed), the
@@ -46,8 +45,8 @@ release's tarball holds the same programs and `install.sh`, which installs into 
 
 ```sh
 tar -xzf routedroid-0.1.0-linux-x86_64.tar.gz
-sudo routedroid-0.1.0-linux-x86_64/install.sh     # adds you to group routedroid; log out completely
-systemctl --user enable --now routedroid
+sudo routedroid-0.1.0-linux-x86_64/install.sh
+sudo /usr/local/bin/routedroid setup
 ```
 
 A release's daemon carries the app. When a phone connects without it, or with an older
@@ -57,8 +56,7 @@ once for VPN permission. The release's APK is there too, for installing by hand.
 Or from source, into `/usr/local`:
 
 ```sh
-cd host && cargo build --release && sudo ./install.sh     # adds you to group routedroid; log out completely
-systemctl --user enable --now routedroid
+cd host && cargo build --release && sudo ./install.sh && sudo /usr/local/bin/routedroid setup
 (cd android && ./gradlew :app:assembleDebug)              # release builds: android/README.md
 adb install android/app/build/outputs/apk/debug/app-debug.apk
 ```
@@ -75,8 +73,25 @@ Either way, these get installed:
 - group `routedroid`;
 - a policy that allows nothing.
 
-Next, allow the LAN interface the phones may join. `routedroid interfaces` lists the
-candidates. Then edit `/etc/routedroid/helper.toml`:
+## Set up
+
+`sudo routedroid setup` does what a first connection needs from root, and asks before
+choosing:
+
+- it adds you to group `routedroid`, which may ask the helper for phones;
+- it lets phones join the LAN through one interface, in `/etc/routedroid/helper.toml`. It
+  offers the one with the default route, by DHCP, or a block of addresses you name. The old
+  file is kept as `helper.toml.bak`, and the helper confirms the new one;
+- it enables your daemon (`routedroid.service`, a user unit).
+
+It ends with what is left. Usually that is logging out completely (a new group reaches only
+new sessions), then `routedroid start`. Run it again any time; it changes only what is not
+so already. Without a terminal, choose with flags: `--lan-if eno1` (DHCP by default),
+`--phone-addresses 192.168.1.200/29`, or `--yes` for the defaults.
+
+By hand instead: `sudo usermod -aG routedroid "$USER"` (then log out completely),
+`systemctl --user enable --now routedroid`, and allow an interface from
+`routedroid interfaces` in `/etc/routedroid/helper.toml`:
 
 ```toml
 [[interface]]

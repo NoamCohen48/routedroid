@@ -86,7 +86,7 @@ fi
 install -d -m 0755 "$BINDIR" "$LIBEXECDIR" /etc/routedroid "$SYSTEM_UNITS" "$USER_UNITS"
 if [[ ! -e /etc/routedroid/helper.toml ]]; then
     install -m 0644 "$HERE/routedroid-helper/helper.toml" /etc/routedroid/helper.toml
-    echo "wrote /etc/routedroid/helper.toml (allows nothing yet; add your LAN interface)"
+    echo "wrote /etc/routedroid/helper.toml (allows nothing yet: routedroid setup adds your LAN)"
 fi
 for bin in "${CLIENTS[@]}"; do install -m 0755 "$RELEASE/$bin" "$BINDIR/$bin"; done
 install -m 0755 "$RELEASE/routedroid-helper" "$LIBEXECDIR/routedroid-helper"
@@ -105,7 +105,6 @@ user_managers daemon-reload
 systemd enable --now "$UNIT.socket"
 echo "$UNIT.socket: $(systemd is-active "$UNIT.socket")"
 echo
-echo "installed. Next, as yourself (not root):"
-echo "  systemctl --user enable --now routedroid"
-echo "  routedroid interfaces        # then allow one in /etc/routedroid/helper.toml"
+echo "installed. Next, the interface phones join through and your daemon:"
+echo "  sudo $BINDIR/routedroid setup"
 echo "  routedroid doctor            # adb, the helper, the policy, leftovers"
