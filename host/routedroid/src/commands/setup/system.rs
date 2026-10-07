@@ -105,32 +105,40 @@ pub enum Daemon {
         started: bool,
     },
     AlreadyEnabled,
-    /// Their systemd manager is not running (not logged in): enabled later.
+    /// Could not be enabled now (no manager, and an older systemd): the
+    /// user enables it once logged in.
     NoManager,
     /// Not booted with systemd: nothing to enable.
     NoSystemd,
 }
 
-/// Enable `routedroid.service` in `user`'s manager; `start` it too when
-/// their session already has the group.
-pub fn enable_daemon(user: &str, start: bool) -> Daemon {
+/// Enable `routedroid.service` for `user`. `session`: whether their running
+/// manager has the group, `None` when none of theirs runs. A running one is
+/// asked, and starts the daemon too when its session has the group.
+/// Otherwise the link is written as the user, offline, as `systemctl
+/// enable` would: asking a manager that is not running starts one.
+pub fn enable_daemon(user: &str, session: Option<bool>) -> Daemon {
     if !booted_with_systemd() {
         return Daemon::NoSystemd;
     }
     let machine = format!("{user}@");
-    let user_ctl = |args: &[&str]| {
-        let mut all = vec!["--user", "-M", machine.as_str()];
-        all.extend_from_slice(args);
-        run("systemctl", &all)
+    let offline = [
+        "-u",
+        user,
+        "--",
+        "env",
+        "SYSTEMD_OFFLINE=1",
+        "systemctl",
+        "--user",
+    ];
+    let user_ctl = |args: &[&str]| match session {
+        Some(_) => run("systemctl", &[&["--user", "-M", &machine], args].concat()),
+        None => run("runuser", &[&offline[..], args].concat()),
     };
-    match user_ctl(&["is-enabled", "routedroid"]) {
-        Ok(out) if out.status.success() => return Daemon::AlreadyEnabled,
-        Ok(out) if String::from_utf8_lossy(&out.stdout).trim().is_empty() => {
-            return Daemon::NoManager;
-        }
-        Err(_) => return Daemon::NoManager,
-        Ok(_) => {}
+    if user_ctl(&["is-enabled", "routedroid"]).is_ok_and(|out| out.status.success()) {
+        return Daemon::AlreadyEnabled;
     }
+    let start = session == Some(true);
     let args: &[&str] = if start {
         &["enable", "--now", "routedroid"]
     } else {

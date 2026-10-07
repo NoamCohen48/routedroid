@@ -109,7 +109,7 @@ async fn setup(args: SetupArgs) -> Result<i32> {
         return Ok(1);
     }
 
-    match system::enable_daemon(&user, session == Some(true)) {
+    match system::enable_daemon(&user, session) {
         Daemon::Enabled { started: true } => {
             done.push("enabled and started the daemon (routedroid.service)".into());
         }
