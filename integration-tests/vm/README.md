@@ -138,6 +138,24 @@ pane. Keys go in with `send-keys`, and checks read the screen with `capture-pane
 
 13 checks. `TUI=/path` runs another build, copied into the guest first.
 
+## cli.sh
+
+`PHONE=vendor:product cli.sh SERIAL` uses `routedroid` on the `ubuntu` guest the way a
+person would, and checks what it prints and the exit code it gives. It installs the .deb from
+`host/target/packages` first, if one is there.
+
+- **Mistakes:** no `--lan-if`, an unknown phone, a link or an address outside the policy, a
+  bad duration, or stopping what isn't running. Each is refused at once, says why, and exits 2.
+- **Foreground:** a start in tmux goes active, and Ctrl-C (a real keypress) ends it with
+  exit 0.
+- **Detached:** a second start is refused. Unplugged, the connection is reconnecting; back,
+  it is active. `events` reads as timestamped lines.
+- **Unplugged for good:** it waits the time asked, then exits 10 and says why. Nothing is left
+  behind.
+- **No daemon:** exit 3, with the command that starts it.
+
+29 checks.
+
 ## Results, 2026-10-06 (Samsung SM-J810G, Android 10)
 
 | Check | Result |
@@ -149,6 +167,7 @@ pane. Keys go in with `send-keys`, and checks read the screen with `capture-pane
 | `phone-session.sh` with the release APK (R8, signed with a test key) | 17/17 |
 | `app-install.sh 85e49002` (2026-10-07, the daemon carrying that APK) | 10/10 |
 | `PHONE=04e8:6860 tui.sh 85e49002` (2026-10-07) | 13/13. The TUI before it failed 9 of them: an unplugged phone left the screen, no key hints at 80 columns, raw byte counts |
+| `PHONE=04e8:6860 cli.sh 85e49002` (2026-10-07) | 29/29. Fixed first: policy refusals were accepted and then failed as `helper refused start: Refused: …` (exit 15), `events` was JSON only, a 20 s wait read as 19 s, "1 phone(s)", and the upgrade left user managers with a stale unit |
 | Phone dropped off USB mid-session (gvfs re-grab) | The connection ended ("the phone closed the connection"), the lease was RELEASEd, and no rule or table was left |
 | First .deb upgrade | Found that needrestart restarts a helper instance, which ends its session; the .deb now tells needrestart not to |
 | First install on a fresh guest | Found that a lingering `systemd --user` keeps its old groups; `doctor` now says so (`11a2cb7`) |
