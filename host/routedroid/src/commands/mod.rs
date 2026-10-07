@@ -27,7 +27,7 @@ pub async fn run(cli: Cli) -> Result<i32> {
         Command::Start(args) => start::run(client, args, json).await,
         Command::Stop { serial } => stop::run(&client, &serial, json).await,
         Command::Status => status::run(&client, json).await,
-        Command::Events => events::run(&mut client).await,
+        Command::Events => events::run(&mut client, json).await,
         Command::Doctor { repair } => doctor::run(&client, repair, json).await,
         Command::Version => unreachable!("answered above"),
     }

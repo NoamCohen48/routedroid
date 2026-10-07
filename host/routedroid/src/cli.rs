@@ -40,7 +40,7 @@ pub enum Command {
     },
     /// Show live device connections.
     Status,
-    /// Print every daemon event, forever (JSON lines, with or without --json).
+    /// Follow what the daemon reports (connections, phones), until Ctrl-C.
     Events,
     /// Check adb, the helper, its policy and what Routedroid left behind;
     /// exit 1 if anything fails.

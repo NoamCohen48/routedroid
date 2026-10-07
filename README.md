@@ -119,8 +119,9 @@ back up. It waits 2 minutes by default. `--reconnect-wait 10m` waits longer, and
 the connection at once. The app closing the connection, with the phone still attached, ends
 it.
 
-Every command takes `--json`. `routedroid events` streams state changes as JSON lines. Exit
-codes are listed in `routedroid --help`, so scripts can branch on why something failed.
+Every command takes `--json`. `routedroid events` follows state changes as they happen, one
+line each (with `--json`, as JSON lines). Exit codes are listed in `routedroid --help`, so
+scripts can branch on why something failed.
 
 **Addresses.** Without `--phone-ip` the helper leases an address on the LAN interface. The
 client identifier is `routedroid:<device id>:<PC MAC>`, so the same phone tends to get the same
