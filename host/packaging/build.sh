@@ -4,6 +4,9 @@
 #
 #   host/packaging/build.sh            (cargo build --release first)
 #   NO_BUILD=1 host/packaging/build.sh (package host/target/release as it is)
+#   ROUTEDROID_APK=app-release.apk host/packaging/build.sh
+#                                      (routedroidd carries that signed app and
+#                                      installs it on phones that need it)
 #
 # Paths are the distribution's: clients in /usr/bin, the helper in
 # /usr/libexec/routedroid, units in /usr/lib/systemd. Packages require the
@@ -14,6 +17,12 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 HOST=$(cd "$HERE/.." && pwd)
 BINS=(routedroid routedroidd routedroid-tui routedroid-helper)
+if [[ -n ${ROUTEDROID_APK:-} ]]; then
+    ROUTEDROID_APK=$(realpath "$ROUTEDROID_APK") && export ROUTEDROID_APK
+    echo "routedroidd carries the app: $ROUTEDROID_APK"
+else
+    echo "warning: routedroidd carries no app (ROUTEDROID_APK=signed APK to embed one)" >&2
+fi
 [[ -n ${NO_BUILD:-} ]] || (cd "$HOST" && cargo build --release --locked \
     -p routedroid -p routedroidd -p routedroid-tui -p routedroid-helper)
 
