@@ -10,6 +10,7 @@ pub fn is_failure(state: &ConnectionState) -> bool {
 
 pub fn usable(device: &DeviceInfo) -> String {
     match &device.unusable_reason {
+        None if device.auto => "yes, auto".into(),
         None => "yes".into(),
         Some(reason) if reason.is_empty() => "no".into(),
         Some(reason) => format!("no: {reason}"),

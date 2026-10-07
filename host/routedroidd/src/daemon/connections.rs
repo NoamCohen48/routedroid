@@ -4,26 +4,38 @@
 //! connection needs to run, so starting one takes nothing but the request.
 
 mod admit;
+mod resolve;
+mod start;
 mod traffic;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use routedroid_helper_ipc::{IfName, TUN_PREFIX};
-use routedroid_ipc::{ConnectionInfo, ConnectionState, InterfaceInfo, Outcome, StartRequest};
+use routedroid_helper_ipc::IfName;
+use routedroid_ipc::{ConnectionInfo, ConnectionState, InterfaceInfo, Outcome};
 
 use super::DeviceConnection;
 use super::background::Background;
 use super::devices::AttachedDevices;
 use super::events::EventBus;
-use super::spec::{ConnectionSpec, StartSpec};
+use super::phones::Phones;
 use crate::adb::Adb;
 use crate::app::BundledApp;
 use crate::fault::{Fault, Kind, Result};
 use crate::host_network;
 
 type Table = HashMap<String, DeviceConnection>;
+
+/// A start, accepted: the phone, LAN and TUN it was given.
+#[derive(Debug)]
+pub struct Accepted {
+    pub serial: String,
+    pub lan_if: String,
+    /// `None`: leasing one.
+    pub phone_ip: Option<std::net::Ipv4Addr>,
+    pub tun: IfName,
+}
 
 #[derive(Clone)]
 pub struct DeviceConnections {
@@ -34,6 +46,7 @@ pub struct DeviceConnections {
     /// Installed on phones that need it before they connect, when there is one.
     pub(super) app: Option<BundledApp>,
     pub(super) events: EventBus,
+    pub(super) phones: Phones,
     _traffic: Arc<Background>,
 }
 
@@ -57,8 +70,19 @@ impl DeviceConnections {
             helper_socket: Arc::new(helper_socket),
             app: None,
             events,
+            phones: Phones::default(),
             _traffic: Arc::new(traffic),
         }
+    }
+
+    /// Start remembered phones with what was remembered for them.
+    pub fn with_phones(mut self, phones: Phones) -> Self {
+        self.phones = phones;
+        self
+    }
+
+    pub fn phones(&self) -> &Phones {
+        &self.phones
     }
 
     /// Carry `app` to the phones that need it.
@@ -67,49 +91,11 @@ impl DeviceConnections {
         self
     }
 
-    /// Connect one phone; returns the TUN it was given once its task runs.
-    /// Progress arrives as events. Refuses a bad request, an unattached
-    /// phone, one the helper's policy would refuse, or a serial, address or TUN another connection already uses,
-    /// and picks a free `phoneN` if none was asked for. The checks against
-    /// the table and the insert happen under one lock, so two starts cannot
-    /// race.
-    pub async fn start(&self, request: StartRequest) -> Result<IfName> {
-        let start = StartSpec::parse(request)?;
-        self.check_attached(&start.serial).await?;
-        self.check_policy(&start).await?;
-        let mut live = self.lock();
-        if live.contains_key(&start.serial) {
-            return Err(usage(format!("{} is already connected", start.serial)));
-        }
-        if let Some(ip) = start.phone_ip
-            && let Some(other) = live.values().find(|c| c.phone_ip() == Some(ip))
-        {
-            let serial = &other.spec().serial;
-            return Err(usage(format!("{ip} is already used by {serial}")));
-        }
-        let taken = |name: &IfName| live.values().any(|c| &c.spec().tun == name);
-        let tun = match &start.tun {
-            Some(name) if taken(name) => {
-                return Err(usage(format!(
-                    "TUN {name} is already used by another connection"
-                )));
-            }
-            Some(name) => name.clone(),
-            None => (0..)
-                .filter_map(|number| IfName::new(format!("{TUN_PREFIX}{number}")).ok())
-                .find(|name| !taken(name))
-                .expect("a free phoneN"),
-        };
-        let serial = start.serial.clone();
-        let connection = DeviceConnection::spawn(self, ConnectionSpec::new(start, tun.clone()));
-        live.insert(serial, connection);
-        Ok(tun)
-    }
-
     /// Ask a connection to stop and wait for its outcome. The handle stays in
     /// the table (state `Stopping`) until its task has torn everything down,
     /// so a concurrent `start` on the serial is refused.
     pub async fn stop(&self, serial: &str) -> Result<Outcome> {
+        let serial = &self.phones.serial(serial);
         let stopper = self
             .lock()
             .get(serial)
@@ -136,8 +122,25 @@ impl DeviceConnections {
         host_network::interfaces(&self.helper_socket).await
     }
 
+    /// Every connection, with its phone's remembered name.
     pub fn info(&self) -> Vec<ConnectionInfo> {
-        self.lock().values().map(DeviceConnection::info).collect()
+        let phones = self.phones.all();
+        let named = |mut info: ConnectionInfo| {
+            info.name = phones
+                .iter()
+                .find(|p| p.serial == info.serial)
+                .and_then(|p| p.name.clone());
+            info
+        };
+        self.lock()
+            .values()
+            .map(DeviceConnection::info)
+            .map(named)
+            .collect()
+    }
+
+    pub fn events(&self) -> &EventBus {
+        &self.events
     }
 
     pub fn states(&self) -> HashMap<String, ConnectionState> {

@@ -1,5 +1,6 @@
 //! The device table: one row per attached device, cursor on the selected one.
-//! Long serials are cut with an ellipsis; a phone's last end stays on its row.
+//! A remembered name comes before the serial, and long ones are cut with an
+//! ellipsis; a phone's last end stays on its row.
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Rect};
@@ -15,7 +16,7 @@ const SERIAL: usize = 24;
 const MODEL: usize = 16;
 
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
-    let header = Row::new(["Serial", "Model", "ADB", "Usable", "Connection"])
+    let header = Row::new(["Phone", "Model", "ADB", "Usable", "Connection"])
         .style(Style::new().add_modifier(Modifier::BOLD));
     let rows: Vec<Row> = if app.devices.is_empty() {
         vec![Row::new(["(no devices attached)", "", "", "", ""]).dim()]
@@ -55,7 +56,11 @@ fn row<'a>(app: &App, device: &'a routedroid_ipc::DeviceInfo) -> Row<'a> {
         (None, None) => Text::default(),
     };
     Row::new(vec![
-        fit(&device.serial, SERIAL).into(),
+        fit(
+            &routedroid_ipc::label(&device.serial, device.name.as_deref()),
+            SERIAL,
+        )
+        .into(),
         fit(device.model.as_deref().unwrap_or_default(), MODEL).into(),
         device.state.clone().into(),
         Text::from(describe::usable(device)).fg(usable_color),

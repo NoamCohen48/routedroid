@@ -5,6 +5,8 @@ use super::*;
 fn phone(serial: &str, state: &str) -> DeviceInfo {
     DeviceInfo {
         serial: serial.into(),
+        name: None,
+        auto: false,
         state: state.into(),
         model: None,
         unusable_reason: None,

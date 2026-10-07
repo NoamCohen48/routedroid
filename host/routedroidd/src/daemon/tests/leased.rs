@@ -14,7 +14,7 @@ const OTHER: &str = "R58FAKE02";
 fn leased() -> routedroid_ipc::StartRequest {
     let mut start = request(PHONE, [0; 4]);
     start.phone_ip = None;
-    start.dns = DnsChoice::Auto;
+    start.dns = Some(DnsChoice::Auto);
     start
 }
 

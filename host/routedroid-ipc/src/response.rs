@@ -4,7 +4,7 @@ use std::net::Ipv4Addr;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Check, ConnectionState, Kind, Outcome, Traffic};
+use crate::{Check, ConnectionState, Kind, Outcome, Phone, Traffic};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -19,9 +19,16 @@ pub enum Response {
     Interfaces {
         interfaces: Vec<InterfaceInfo>,
     },
-    /// The connection is running; `tun` is the name it was given.
+    /// The connection is running, on the phone, LAN and TUN it was given
+    /// (any of which the daemon may have picked).
     Started {
         serial: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        lan_if: String,
+        /// `None`: leasing one by DHCP.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        phone_ip: Option<Ipv4Addr>,
         tun: String,
     },
     /// The connection has ended, and how.
@@ -33,6 +40,15 @@ pub enum Response {
         connections: Vec<ConnectionInfo>,
     },
     Subscribed,
+    Phones {
+        phones: Vec<Phone>,
+    },
+    Remembered {
+        phone: Phone,
+    },
+    Forgotten {
+        phone: Phone,
+    },
     Doctor {
         checks: Vec<Check>,
         /// The changes a repair made, in order.
@@ -47,6 +63,12 @@ pub enum Response {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeviceInfo {
     pub serial: String,
+    /// Its remembered name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Remembered to connect when plugged in.
+    #[serde(default)]
+    pub auto: bool,
     /// adb's word: `device`, `unauthorized`, `offline`, ...
     pub state: String,
     pub model: Option<String>,
@@ -82,6 +104,9 @@ pub struct InterfaceInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConnectionInfo {
     pub serial: String,
+    /// Its remembered name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub lan_if: String,
     pub tun: String,
     pub mtu: u32,
