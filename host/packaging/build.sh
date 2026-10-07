@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build the host side's .deb and .rpm into host/target/packages:
+# Build the host side's .deb, .rpm and binary tarball (for any other systemd
+# distribution: unpack, then sudo ./install.sh) into host/target/packages:
 #
 #   host/packaging/build.sh            (cargo build --release first)
 #   NO_BUILD=1 host/packaging/build.sh (package host/target/release as it is)
@@ -51,3 +52,12 @@ nfpm() {
 for format in deb rpm; do
     nfpm package --config nfpm.yaml --packager "$format" --target ../target/packages 2>&1 | sed '/^using/d'
 done
+
+# The tarball: install.sh with what it installs, laid out as in host/.
+TAR=routedroid-$VERSION-linux-$(uname -m)
+mkdir -p "$STAGE/$TAR/routedroid-helper" "$STAGE/$TAR/routedroidd"
+cp -r "$STAGE/bin" "$HOST/install.sh" "$HOST/../README.md" "$STAGE/$TAR/"
+cp -r "$HOST/routedroid-helper/helper.toml" "$HOST/routedroid-helper/systemd" "$STAGE/$TAR/routedroid-helper/"
+cp -r "$HOST/routedroidd/systemd" "$STAGE/$TAR/routedroidd/"
+tar -C "$STAGE" --owner=0 --group=0 --sort=name -czf "$OUT/$TAR.tar.gz" "$TAR"
+echo "created package: ../target/packages/$TAR.tar.gz"
