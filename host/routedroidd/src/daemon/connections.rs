@@ -3,6 +3,7 @@
 //! lock, a plain mutex that no await can sit under, and owns everything a
 //! connection needs to run, so starting one takes nothing but the request.
 
+mod admit;
 mod traffic;
 
 use std::collections::HashMap;
@@ -17,9 +18,8 @@ use super::background::Background;
 use super::devices::AttachedDevices;
 use super::events::EventBus;
 use super::spec::{ConnectionSpec, StartSpec};
-use crate::adb::{Adb, DeviceState};
+use crate::adb::Adb;
 use crate::app::BundledApp;
-use crate::device::unusable;
 use crate::fault::{Fault, Kind, Result};
 use crate::host_network;
 
@@ -37,7 +37,7 @@ pub struct DeviceConnections {
     _traffic: Arc<Background>,
 }
 
-fn usage(message: String) -> Fault {
+pub(super) fn usage(message: String) -> Fault {
     Fault::msg(Kind::Usage, message)
 }
 
@@ -69,13 +69,14 @@ impl DeviceConnections {
 
     /// Connect one phone; returns the TUN it was given once its task runs.
     /// Progress arrives as events. Refuses a bad request, an unattached
-    /// phone, or a serial, address or TUN another connection already uses,
+    /// phone, one the helper's policy would refuse, or a serial, address or TUN another connection already uses,
     /// and picks a free `phoneN` if none was asked for. The checks against
     /// the table and the insert happen under one lock, so two starts cannot
     /// race.
     pub async fn start(&self, request: StartRequest) -> Result<IfName> {
         let start = StartSpec::parse(request)?;
         self.check_attached(&start.serial).await?;
+        self.check_policy(&start).await?;
         let mut live = self.lock();
         if live.contains_key(&start.serial) {
             return Err(usage(format!("{} is already connected", start.serial)));
@@ -154,28 +155,6 @@ impl DeviceConnections {
 
     fn lock(&self) -> MutexGuard<'_, Table> {
         lock(&self.live)
-    }
-
-    /// Refuse a phone adb cannot reach before a helper session is opened. The
-    /// cached list is re-read first: a phone plugged in a moment ago is a
-    /// likely thing to start on.
-    async fn check_attached(&self, serial: &str) -> Result<()> {
-        let mut device = self.devices.get(serial);
-        if device
-            .as_ref()
-            .is_none_or(|d| d.state != DeviceState::Device)
-        {
-            self.devices.refresh().await?;
-            device = self.devices.get(serial);
-        }
-        match device {
-            None => Err(usage(format!("{serial} is not attached"))),
-            Some(device) if device.state == DeviceState::Device => Ok(()),
-            Some(device) => {
-                let reason = unusable(&device.state, serial).unwrap_or("device is not ready");
-                Err(usage(format!("{serial}: {reason}")))
-            }
-        }
     }
 }
 

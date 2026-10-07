@@ -1,19 +1,22 @@
 //! The fake helper's canned answers, which tests compare against.
 
-use routedroid_helper_ipc::{Finding, Interface, Lease};
+use routedroid_helper_ipc::{Finding, Interface, Lease, Net};
 
 pub const LEASED_IP: [u8; 4] = [10, 0, 0, 50];
 pub const LEASE_DNS: [u8; 4] = [10, 0, 0, 53];
 pub const ENDED: &str = "02:00:00:00:00:99 also uses 10.0.0.50";
 
-/// lan0, where phones may lease an address.
+/// lan0, where phones may lease an address or take one in 10.0.0.0/24.
 pub fn interfaces() -> Vec<Interface> {
     vec![Interface {
         name: "lan0".into(),
         up: true,
         addresses: vec![],
         default_route: true,
-        phone_addresses: vec![],
+        phone_addresses: vec![Net {
+            address: [10, 0, 0, 0].into(),
+            prefix: 24,
+        }],
         dhcp: true,
         ineligible: None,
     }]

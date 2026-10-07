@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
-use routedroid_helper_ipc::{DeviceId, IfName, Lease, Reply, Request, SeqPacket};
+use routedroid_helper_ipc::{DeviceId, ErrorCode, IfName, Lease, Reply, Request, SeqPacket};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
@@ -78,9 +78,16 @@ impl HostNetwork {
                     session,
                 })
             }
-            Reply::Error { code, message } => Err(Fault::msg(
+            Reply::Error {
+                code: ErrorCode::Refused,
+                message,
+            } => Err(Fault::msg(
                 Kind::Helper,
-                format!("helper refused start: {code:?}: {message}"),
+                format!("the helper refused: {message}"),
+            )),
+            Reply::Error { message, .. } => Err(Fault::msg(
+                Kind::Helper,
+                format!("the helper could not start the session: {message}"),
             )),
             other => Err(helper::unexpected(&other)),
         }

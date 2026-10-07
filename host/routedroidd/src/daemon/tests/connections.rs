@@ -126,6 +126,25 @@ async fn starts_are_checked_against_the_live_connections() {
 }
 
 #[tokio::test]
+async fn a_start_outside_the_policy_is_refused_before_it_begins() {
+    let lab = Lab::new(&[PHONE]).await;
+    let outside = lab.connections.start(request(PHONE, [10, 9, 9, 9])).await;
+    let error = outside.unwrap_err();
+    assert_eq!(error.kind(), Kind::Usage);
+    assert!(
+        error
+            .to_string()
+            .starts_with("10.9.9.9 is not a phone address"),
+        "{error}"
+    );
+    let mut elsewhere = request(PHONE, [10, 0, 0, 7]);
+    elsewhere.lan_if = "eth9".into();
+    let error = lab.connections.start(elsewhere).await.unwrap_err();
+    assert_eq!(error.to_string(), "eth9: no such interface");
+    assert!(lab.connections.info().is_empty());
+}
+
+#[tokio::test]
 async fn a_refusing_helper_fails_the_connection_and_frees_the_serial() {
     let mut lab = Lab::new(&[PHONE]).await;
     lab.helper
