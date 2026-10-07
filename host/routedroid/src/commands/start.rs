@@ -45,8 +45,8 @@ pub struct StartArgs {
     /// it comes back, e.g. `5m`; `0` ends the connection at once.
     #[arg(long, value_parser = humantime::parse_duration)]
     pub reconnect_wait: Option<Duration>,
-    /// Start over a network ADB serial (host:port or mDNS). Unverified in
-    /// version 1: the VPN default route may cut ADB itself (decision 0001, gate 5).
+    /// Start over a network ADB serial (host:port or mDNS). Untested: once
+    /// the phone's traffic goes through the PC, ADB over the network may cut out.
     #[arg(long)]
     pub allow_network_adb: bool,
     /// Return as soon as the daemon has accepted the request instead of following it.
