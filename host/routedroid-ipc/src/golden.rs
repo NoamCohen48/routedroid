@@ -65,28 +65,30 @@ fn requests() {
     );
 }
 
+mod phones;
+
 #[test]
 fn start_requests() {
     let minimal = StartRequest {
-        serial: "R58M".into(),
-        lan_if: "eno1".into(),
+        serial: Some("R58M".into()),
+        lan_if: Some("eno1".into()),
         phone_ip: None,
         tun: None,
         mtu: None,
-        dns: DnsChoice::Auto,
+        dns: None,
         connect_timeout_secs: None,
         reconnect_secs: None,
         allow_network_adb: false,
     };
     pinned(
         ask(1, Request::Start(minimal.clone())),
-        r#"{"id":1,"type":"start","serial":"R58M","lan_if":"eno1","dns":"auto","allow_network_adb":false}"#,
+        r#"{"id":1,"type":"start","serial":"R58M","lan_if":"eno1","allow_network_adb":false}"#,
     );
     let full = StartRequest {
         phone_ip: Some(IP),
         tun: Some("phone3".into()),
         mtu: Some(1400),
-        dns: DnsChoice::Servers(vec![Ipv4Addr::new(9, 9, 9, 9)]),
+        dns: Some(DnsChoice::Servers(vec![Ipv4Addr::new(9, 9, 9, 9)])),
         connect_timeout_secs: Some(30),
         reconnect_secs: Some(0),
         allow_network_adb: true,
@@ -101,7 +103,7 @@ fn start_requests() {
         ),
     );
     let no_dns = Request::Start(StartRequest {
-        dns: DnsChoice::None,
+        dns: Some(DnsChoice::None),
         ..minimal
     });
     assert!(
@@ -109,12 +111,13 @@ fn start_requests() {
             .unwrap()
             .contains(r#""dns":"none""#)
     );
-    let sparse: ClientMessage =
-        serde_json::from_str(r#"{"id":3,"type":"start","serial":"s","lan_if":"eno1"}"#).unwrap();
+    let sparse: ClientMessage = serde_json::from_str(r#"{"id":3,"type":"start"}"#).unwrap();
     assert!(matches!(
         sparse.request,
         Request::Start(StartRequest {
-            dns: DnsChoice::Auto,
+            serial: None,
+            lan_if: None,
+            dns: None,
             ..
         })
     ));
@@ -136,9 +139,12 @@ fn simple_responses() {
     pinned(
         answer(Response::Started {
             serial: "R58M".into(),
+            name: None,
+            lan_if: "eno1".into(),
+            phone_ip: None,
             tun: "phone0".into(),
         }),
-        r#"{"msg":"response","id":7,"type":"started","serial":"R58M","tun":"phone0"}"#,
+        r#"{"msg":"response","id":7,"type":"started","serial":"R58M","lan_if":"eno1","tun":"phone0"}"#,
     );
     pinned(
         answer(Response::Error {
@@ -196,6 +202,8 @@ fn outcomes() {
 fn lists() {
     let device = DeviceInfo {
         serial: "R58M".into(),
+        name: Some("pixel".into()),
+        auto: true,
         state: "device".into(),
         model: Some("SM_J810G".into()),
         unusable_reason: None,
@@ -206,7 +214,7 @@ fn lists() {
             devices: vec![device],
         }),
         concat!(
-            r#"{"msg":"response","id":7,"type":"devices","devices":[{"serial":"R58M","#,
+            r#"{"msg":"response","id":7,"type":"devices","devices":[{"serial":"R58M","name":"pixel","auto":true,"#,
             r#""state":"device","model":"SM_J810G","unusable_reason":null,"#,
             r#""connection":{"state":"waiting_for_app"}}]}"#
         ),
@@ -242,6 +250,7 @@ fn lists() {
 fn status() {
     let connection = ConnectionInfo {
         serial: "R58M".into(),
+        name: None,
         lan_if: "eno1".into(),
         tun: "phone0".into(),
         mtu: 1400,

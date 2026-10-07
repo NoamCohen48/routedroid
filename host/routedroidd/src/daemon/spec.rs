@@ -42,9 +42,14 @@ fn usage(message: impl std::fmt::Display) -> Fault {
 }
 
 impl StartSpec {
+    /// `request` has its serial and LAN filled in (see `resolve`).
     pub fn parse(request: StartRequest) -> Result<Self> {
-        Transport::check(&request.serial, request.allow_network_adb)?;
-        let lan_if = IfName::new(&request.lan_if).map_err(|e| usage(format!("lan_if: {e}")))?;
+        let serial = request.serial.ok_or_else(|| usage("which phone?"))?;
+        let lan_if = request
+            .lan_if
+            .ok_or_else(|| usage("which LAN interface?"))?;
+        Transport::check(&serial, request.allow_network_adb)?;
+        let lan_if = IfName::new(&lan_if).map_err(|e| usage(format!("lan_if: {e}")))?;
         if lan_if.as_str().starts_with(TUN_PREFIX) {
             return Err(usage(format!(
                 "{lan_if} is a phone's TUN, not a LAN interface"
@@ -72,12 +77,12 @@ impl StartSpec {
                 Duration::from_secs(secs).min(MAX_WAIT)
             });
         Ok(Self {
-            serial: request.serial,
+            serial,
             lan_if,
             phone_ip,
             tun,
             mtu,
-            dns: dns(request.dns)?,
+            dns: dns(request.dns.unwrap_or_default())?,
             connect_timeout,
             reconnect_wait,
         })

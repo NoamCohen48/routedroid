@@ -16,7 +16,7 @@ use self::client::{ClientConnection, Handles};
 use crate::Args;
 use crate::adb::{Adb, DEFAULT_TIMEOUT};
 use crate::app::BundledApp;
-use crate::daemon::Daemon;
+use crate::daemon::{Daemon, Phones};
 
 /// The control socket and the daemon behind it: owns both for the process's
 /// life and takes both down together.
@@ -34,6 +34,7 @@ impl Server {
             Adb::new(&args.adb, DEFAULT_TIMEOUT),
             args.helper_socket.clone(),
             app,
+            Phones::load(args.phones.clone()),
         )
         .await;
         let app = app.map_or_else(|| "none".to_string(), |app| app.version());

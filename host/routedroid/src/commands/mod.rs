@@ -4,6 +4,8 @@ pub mod devices;
 pub mod doctor;
 pub mod events;
 pub mod interfaces;
+mod options;
+pub mod phones;
 pub mod start;
 pub mod status;
 pub mod stop;
@@ -25,7 +27,10 @@ pub async fn run(cli: Cli) -> Result<i32> {
         Command::Devices => devices::run(&client, json).await,
         Command::Interfaces => interfaces::run(&client, json).await,
         Command::Start(args) => start::run(client, args, json).await,
-        Command::Stop { serial } => stop::run(&client, &serial, json).await,
+        Command::Stop { phone, serial } => stop::run(&client, phone.or(serial), json).await,
+        Command::Phones => phones::list(&client, json).await,
+        Command::Remember(args) => phones::run_remember(&client, args, json).await,
+        Command::Forget { phone } => phones::forget(&client, &phone, json).await,
         Command::Status => status::run(&client, json).await,
         Command::Events => events::run(&mut client, json).await,
         Command::Doctor { repair } => doctor::run(&client, repair, json).await,

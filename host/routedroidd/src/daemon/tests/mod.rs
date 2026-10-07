@@ -7,6 +7,7 @@ mod fake_helper;
 mod fake_replies;
 
 mod app;
+mod auto;
 mod connections;
 mod doctor;
 mod leased;
@@ -121,12 +122,12 @@ impl Lab {
 
 fn request(serial: &str, phone_ip: [u8; 4]) -> StartRequest {
     StartRequest {
-        serial: serial.into(),
-        lan_if: "lan0".into(),
+        serial: Some(serial.into()),
+        lan_if: Some("lan0".into()),
         phone_ip: Some(Ipv4Addr::from(phone_ip)),
         tun: None,
         mtu: None,
-        dns: DnsChoice::None,
+        dns: Some(DnsChoice::None),
         connect_timeout_secs: Some(10),
         reconnect_secs: None,
         allow_network_adb: false,

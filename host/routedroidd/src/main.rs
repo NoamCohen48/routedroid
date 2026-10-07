@@ -37,6 +37,9 @@ pub struct Args {
     /// Path to the adb binary.
     #[arg(long, env = "ROUTEDROID_ADB", default_value = "adb")]
     pub adb: String,
+    /// Where remembered phones are kept (`routedroid phones`).
+    #[arg(long, env = "ROUTEDROID_PHONES", default_value_os_t = daemon::default_phones_path())]
+    pub phones: PathBuf,
     /// Privileged helper's socket.
     #[arg(long, default_value = host_network::DEFAULT_SOCKET)]
     pub helper_socket: PathBuf,

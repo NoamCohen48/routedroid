@@ -12,6 +12,8 @@ use crate::messages::{Command, Incoming};
 fn device(serial: &str, connection: Option<ConnectionState>) -> DeviceInfo {
     DeviceInfo {
         serial: serial.into(),
+        name: None,
+        auto: false,
         state: "device".into(),
         model: None,
         unusable_reason: None,
@@ -22,6 +24,7 @@ fn device(serial: &str, connection: Option<ConnectionState>) -> DeviceInfo {
 fn connection(serial: &str) -> ConnectionInfo {
     ConnectionInfo {
         serial: serial.into(),
+        name: None,
         lan_if: "eth0".into(),
         tun: "phone0".into(),
         mtu: 1400,
@@ -78,6 +81,7 @@ fn a_failed_end_stays_on_the_row_until_the_next_start() {
     assert_eq!(app.log.last().unwrap().level, Level::Error);
     app.apply(Incoming::Started {
         serial: "one".into(),
+        lan_if: "eno1".into(),
         tun: "phone0".into(),
     });
     assert!(!app.last_end.contains_key("one"));

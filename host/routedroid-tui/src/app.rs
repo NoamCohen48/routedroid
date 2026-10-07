@@ -107,7 +107,11 @@ impl App {
                 form.offer(&self.interfaces);
                 form
             }
-            None => StartForm::new(serial, &self.interfaces),
+            None => {
+                let known = self.devices.iter().find(|d| d.serial == serial);
+                let (name, auto) = known.map_or((None, false), |d| (d.name.clone(), d.auto));
+                StartForm::new(serial, &self.interfaces).known(name.as_deref(), auto)
+            }
         };
         self.mode = Mode::StartForm(Box::new(form));
         vec![Command::RefreshInterfaces]
@@ -151,10 +155,27 @@ impl App {
                 self.interfaces = interfaces;
                 vec![]
             }
-            Incoming::Started { serial, tun } => {
+            Incoming::Started {
+                serial,
+                lan_if,
+                tun,
+            } => {
                 self.last_end.remove(&serial);
-                self.info(format!("{serial}: start accepted (TUN {tun})"));
+                self.info(format!("{serial}: start accepted on {lan_if} (TUN {tun})"));
                 vec![]
+            }
+            Incoming::Remembered { label, auto } => {
+                let when = if auto {
+                    "whenever it is plugged in"
+                } else {
+                    "when asked"
+                };
+                self.info(format!("remembered {label}: it connects {when}"));
+                vec![Command::RefreshDevices]
+            }
+            Incoming::Forgotten { label } => {
+                self.info(format!("forgot {label}"));
+                vec![Command::RefreshDevices]
             }
             Incoming::Stopped => vec![],
             Incoming::Failed {
