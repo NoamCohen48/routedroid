@@ -109,8 +109,9 @@ fn policy(interfaces: &[InterfaceInfo]) -> Check {
         })
         .collect();
     if allowed.is_empty() {
-        let detail = "no interface may carry phones: allow one in /etc/routedroid/helper.toml \
-                      (`routedroid interfaces` says why each is refused)";
+        let detail = "no interface may carry phones: allow one with `sudo routedroid setup` \
+                      (or in /etc/routedroid/helper.toml; `routedroid interfaces` says why \
+                      each is refused)";
         Check::new("policy", CheckStatus::Fail, detail)
     } else {
         let detail = format!("phones may join through {}", allowed.join(", "));

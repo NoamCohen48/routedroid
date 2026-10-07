@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+use crate::commands::setup::SetupArgs;
 use crate::commands::start::StartArgs;
 
 #[derive(Debug, Parser)]
@@ -51,4 +52,7 @@ pub enum Command {
     },
     /// Print the CLI and daemon versions.
     Version,
+    /// First-time setup, with sudo: the user's group, the interface phones
+    /// join through (in the helper's policy) and the user's daemon.
+    Setup(SetupArgs),
 }
