@@ -68,4 +68,13 @@ pub enum Command {
     /// First-time setup, with sudo: the user's group, the interface phones
     /// join through (in the helper's policy) and the user's daemon.
     Setup(SetupArgs),
+    /// Print a shell completion script, e.g. `routedroid completions bash >
+    /// ~/.local/share/bash-completion/completions/routedroid`.
+    Completions {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+    /// Write the man pages into DIR (for packaging).
+    #[command(hide = true)]
+    Manpages { dir: PathBuf },
 }

@@ -16,6 +16,7 @@ routedroid-ipc.workspace = true
 routedroid-proto.workspace = true
 anyhow.workspace = true
 clap = { workspace = true, features = ["env"] }
+clap_mangen.workspace = true
 futures-util.workspace = true
 hex.workspace = true
 rustix = { workspace = true, features = ["fs", "process"] }
