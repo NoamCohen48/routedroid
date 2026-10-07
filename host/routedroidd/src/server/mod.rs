@@ -15,6 +15,7 @@ use tracing::{info, warn};
 use self::client::{ClientConnection, Handles};
 use crate::Args;
 use crate::adb::{Adb, DEFAULT_TIMEOUT};
+use crate::app::BundledApp;
 use crate::daemon::Daemon;
 
 /// The control socket and the daemon behind it: owns both for the process's
@@ -28,12 +29,15 @@ pub struct Server {
 impl Server {
     pub async fn bind(args: Args) -> Result<Self> {
         let bound = bind::listen(&args.socket)?;
+        let app = BundledApp::embedded();
         let daemon = Daemon::start(
             Adb::new(&args.adb, DEFAULT_TIMEOUT),
             args.helper_socket.clone(),
+            app,
         )
         .await;
-        info!(socket = %args.socket.display(), "routedroidd ready");
+        let app = app.map_or_else(|| "none".to_string(), |app| app.version());
+        info!(socket = %args.socket.display(), %app, "routedroidd ready");
         Ok(Self {
             bound,
             path: args.socket,

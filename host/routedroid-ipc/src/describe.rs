@@ -31,6 +31,10 @@ impl fmt::Display for ConnectionState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Starting => f.write_str("starting"),
+            Self::InstallingApp if f.alternate() => {
+                f.write_str("installing the Routedroid app on the phone")
+            }
+            Self::InstallingApp => f.write_str("installing app"),
             Self::WaitingForApp if f.alternate() => {
                 f.write_str("waiting for the app to connect (is the phone unlocked?)")
             }

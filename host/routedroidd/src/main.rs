@@ -6,6 +6,7 @@
 //! (`routedroid-ipc`).
 
 mod adb;
+mod app;
 mod app_listener;
 mod daemon;
 mod device;
