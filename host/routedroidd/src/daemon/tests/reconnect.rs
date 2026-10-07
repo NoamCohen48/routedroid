@@ -49,7 +49,9 @@ async fn an_unplugged_phone_resumes_on_the_same_host_side() {
     lab.adb.unplug(PHONE);
     drop(app);
     let away = lab.until(PHONE, is_away).await;
-    assert!(matches!(away, ConnectionState::Reconnecting { wait_secs } if wait_secs <= 30));
+    assert!(
+        matches!(away, ConnectionState::Reconnecting { wait_secs } if wait_secs <= 30 && wait_secs > 0)
+    );
     assert_eq!(lab.helper.stops(), 0, "the host side is held");
 
     lab.adb.plug(PHONE);

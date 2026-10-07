@@ -91,7 +91,8 @@ async fn adb(devices: &AttachedDevices) -> Check {
             CheckStatus::Warn,
             "no phone attached: connect one by USB with USB debugging on",
         ),
-        (n, true) => Check::new("adb", CheckStatus::Ok, format!("{n} phone(s) ready")),
+        (1, true) => Check::new("adb", CheckStatus::Ok, "1 phone ready"),
+        (n, true) => Check::new("adb", CheckStatus::Ok, format!("{n} phones ready")),
     }
 }
 

@@ -54,7 +54,8 @@ impl ConnectionRun {
     ) -> Result<bool> {
         let left = until.saturating_duration_since(Instant::now());
         info!(serial = %self.spec.serial, ?left, "the phone went away; holding its address");
-        let wait_secs = left.as_secs();
+        // Whole seconds, rounded up: `--reconnect-wait 20s` reads as 20 s.
+        let wait_secs = left.as_secs() + u64::from(left.subsec_nanos() > 0);
         self.sink.set(ConnectionState::Reconnecting { wait_secs });
         let mut changes = self.devices.changes();
         let mut ended = None;
