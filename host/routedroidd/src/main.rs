@@ -13,6 +13,7 @@ mod device;
 mod fault;
 mod host_network;
 mod logging;
+mod notify;
 mod server;
 mod session;
 
@@ -40,6 +41,10 @@ pub struct Args {
     /// Where remembered phones are kept (`routedroid phones`).
     #[arg(long, env = "ROUTEDROID_PHONES", default_value_os_t = daemon::default_phones_path())]
     pub phones: PathBuf,
+    /// Desktop notifications when a phone joins the LAN, goes away, waits
+    /// to be unlocked or is disconnected (`--notify false`: none).
+    #[arg(long, env = "ROUTEDROID_NOTIFY", default_value_t = true, action = clap::ArgAction::Set)]
+    pub notify: bool,
     /// Privileged helper's socket.
     #[arg(long, default_value = host_network::DEFAULT_SOCKET)]
     pub helper_socket: PathBuf,

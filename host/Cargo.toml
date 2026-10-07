@@ -52,6 +52,7 @@ subtle = "2"
 thiserror = "2"
 tokio = { version = "1", default-features = false }
 tokio-util = "0.7"
+zbus = { version = "5", default-features = false }
 toml = { version = "0.9", default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

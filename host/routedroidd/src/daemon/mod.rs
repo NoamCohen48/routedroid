@@ -38,6 +38,7 @@ pub struct Daemon {
     connections: DeviceConnections,
     events: EventBus,
     _auto: Arc<background::Background>,
+    _notify: Option<Arc<background::Background>>,
 }
 
 impl Daemon {
@@ -46,6 +47,7 @@ impl Daemon {
         helper_socket: PathBuf,
         app: Option<BundledApp>,
         phones: Phones,
+        notify: bool,
     ) -> Self {
         let devices = AttachedDevices::start(adb.clone()).await;
         let events = EventBus::new();
@@ -54,11 +56,16 @@ impl Daemon {
                 .with_app(app)
                 .with_phones(phones);
         let auto = background::Background::spawn(auto::run(connections.clone(), devices.changes()));
+        let notify = notify.then(|| {
+            let phones = connections.phones().clone();
+            background::Background::spawn(crate::notify::run(events.subscribe(), phones))
+        });
         Self {
             devices,
             connections,
             events,
             _auto: Arc::new(auto),
+            _notify: notify.map(Arc::new),
         }
     }
 

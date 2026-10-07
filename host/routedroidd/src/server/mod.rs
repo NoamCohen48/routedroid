@@ -35,6 +35,7 @@ impl Server {
             args.helper_socket.clone(),
             app,
             Phones::load(args.phones.clone()),
+            args.notify,
         )
         .await;
         let app = app.map_or_else(|| "none".to_string(), |app| app.version());

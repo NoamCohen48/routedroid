@@ -5,6 +5,9 @@
 
 pass=0; fail=0
 
+# A daemon a rig starts here must not pop up on the desktop of whoever runs it.
+export ROUTEDROID_NOTIFY=false
+
 # check NAME CMD...: run CMD, count and print the outcome.
 check() {
     local name=$1; shift
