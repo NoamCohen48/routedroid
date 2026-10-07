@@ -51,4 +51,13 @@ pub enum Command {
     },
     /// Print the CLI and daemon versions.
     Version,
+    /// Print a shell completion script, e.g. `routedroid completions bash >
+    /// ~/.local/share/bash-completion/completions/routedroid`.
+    Completions {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+    /// Write the man pages into DIR (for packaging).
+    #[command(hide = true)]
+    Manpages { dir: PathBuf },
 }
