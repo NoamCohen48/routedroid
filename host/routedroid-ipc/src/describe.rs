@@ -55,3 +55,18 @@ impl fmt::Display for ConnectionState {
         }
     }
 }
+
+/// "1.2 MB" for counters a person reads.
+pub fn bytes(count: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "kB", "MB", "GB", "TB"];
+    let mut value = count as f64;
+    let mut unit = 0;
+    while value >= 1000.0 && unit < UNITS.len() - 1 {
+        value /= 1000.0;
+        unit += 1;
+    }
+    match unit {
+        0 => format!("{count} B"),
+        _ => format!("{value:.1} {}", UNITS[unit]),
+    }
+}
