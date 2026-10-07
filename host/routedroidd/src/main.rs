@@ -43,10 +43,18 @@ pub struct Args {
     /// Privileged helper's socket.
     #[arg(long, default_value = host_network::DEFAULT_SOCKET)]
     pub helper_socket: PathBuf,
+    /// Print the man page (for packaging).
+    #[arg(long, hide = true)]
+    pub manpage: bool,
 }
 
 fn main() {
     let args = Args::parse();
+    if args.manpage {
+        use clap::CommandFactory;
+        let page = clap_mangen::Man::new(Args::command()).render(&mut std::io::stdout());
+        std::process::exit(i32::from(page.is_err()));
+    }
     if let Err(e) = logging::init(&args.log) {
         eprintln!("routedroidd: {e}");
         std::process::exit(2);

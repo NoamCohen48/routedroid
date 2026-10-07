@@ -39,11 +39,19 @@ struct Args {
     /// Control socket of routedroidd.
     #[arg(long, env = routedroid_ipc::socket::SOCKET_ENV, default_value_os_t = routedroid_ipc::socket::default_path())]
     socket: PathBuf,
+    /// Print the man page (for packaging).
+    #[arg(long, hide = true)]
+    manpage: bool,
 }
 
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+    if args.manpage {
+        use clap::CommandFactory;
+        let page = clap_mangen::Man::new(Args::command()).render(&mut std::io::stdout());
+        std::process::exit(i32::from(page.is_err()));
+    }
     let client = match Client::connect(&args.socket).await {
         Ok(client) => client,
         Err(error @ ConnectError::Incompatible { .. }) => {

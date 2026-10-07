@@ -38,6 +38,17 @@ for unit in routedroid-helper/systemd/routedroid-helper.socket \
     sed -e 's|@BINDIR@|/usr/bin|g' -e 's|@LIBEXECDIR@|/usr/libexec/routedroid|g' \
         "$HOST/$unit" > "$STAGE/units/${unit##*/}"
 done
+# Completions and man pages, from the binaries' own command-line definitions.
+SHARE=$STAGE/share
+mkdir -p "$SHARE/bash-completion/completions" "$SHARE/zsh/site-functions" \
+    "$SHARE/fish/vendor_completions.d" "$SHARE/man/man1"
+"$STAGE/bin/routedroid" completions bash > "$SHARE/bash-completion/completions/routedroid"
+"$STAGE/bin/routedroid" completions zsh > "$SHARE/zsh/site-functions/_routedroid"
+"$STAGE/bin/routedroid" completions fish > "$SHARE/fish/vendor_completions.d/routedroid.fish"
+"$STAGE/bin/routedroid" manpages "$SHARE/man/man1"
+"$STAGE/bin/routedroid-tui" --manpage > "$SHARE/man/man1/routedroid-tui.1"
+"$STAGE/bin/routedroidd" --manpage > "$SHARE/man/man1/routedroidd.1"
+gzip -9n "$SHARE"/man/man1/*.1
 
 VERSION=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' "$HOST/Cargo.toml")
 GLIBC=$(for bin in "${BINS[@]}"; do objdump -T "$STAGE/bin/$bin"; done \
@@ -65,7 +76,7 @@ done
 # The tarball: install.sh with what it installs, laid out as in host/.
 TAR=routedroid-$VERSION-linux-$(uname -m)
 mkdir -p "$STAGE/$TAR/routedroid-helper" "$STAGE/$TAR/routedroidd"
-cp -r "$STAGE/bin" "$HOST/install.sh" "$HOST/../README.md" "$STAGE/$TAR/"
+cp -r "$STAGE/bin" "$SHARE" "$HOST/install.sh" "$HOST/../README.md" "$STAGE/$TAR/"
 cp -r "$HOST/routedroid-helper/helper.toml" "$HOST/routedroid-helper/systemd" "$STAGE/$TAR/routedroid-helper/"
 cp -r "$HOST/routedroidd/systemd" "$STAGE/$TAR/routedroidd/"
 tar -C "$STAGE" --owner=0 --group=0 --sort=name -czf "$OUT/$TAR.tar.gz" "$TAR"

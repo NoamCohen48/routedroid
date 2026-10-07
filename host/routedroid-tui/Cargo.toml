@@ -15,6 +15,7 @@ routedroid-ipc.workspace = true
 anyhow.workspace = true
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true, features = ["env"] }
+clap_mangen.workspace = true
 crossterm = { workspace = true, features = ["event-stream"] }
 futures-util.workspace = true
 humantime.workspace = true

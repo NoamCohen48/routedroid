@@ -5,6 +5,7 @@
 #   - routedroid-helper                            -> $PREFIX/libexec/routedroid
 #   - the helper's socket-activated template unit  -> /etc/systemd/system
 #   - the daemon's user unit                       -> /etc/systemd/user
+#   - shell completions and man pages              -> $PREFIX/share
 #   - group `routedroid` (owns the helper socket) and a deny-all policy
 #
 #   sudo ./install.sh [--uninstall [--purge]]   (PREFIX defaults to /usr/local)
@@ -27,6 +28,9 @@ UNIT=routedroid-helper
 SYSTEM_UNITS=/etc/systemd/system
 USER_UNITS=/etc/systemd/user
 CLIENTS=(routedroid routedroidd routedroid-tui)
+SHAREDIR=$PREFIX/share
+COMPLETIONS=(bash-completion/completions/routedroid zsh/site-functions/_routedroid
+    fish/vendor_completions.d/routedroid.fish)
 [[ $EUID -eq 0 ]] || { echo "run with sudo"; exit 2; }
 # Not booted with systemd (a container): install the units, start nothing.
 systemd() { [[ ! -d /run/systemd/system ]] || systemctl "$@"; }
@@ -59,6 +63,8 @@ if [[ ${1:-} == --uninstall ]]; then
     systemd daemon-reload
     user_managers daemon-reload
     for bin in "${CLIENTS[@]}"; do rm -f "$BINDIR/$bin"; done
+    for file in "${COMPLETIONS[@]}"; do rm -f "${SHAREDIR:?}/$file"; done
+    rm -f "$SHAREDIR"/man/man1/routedroid.1.gz "$SHAREDIR"/man/man1/routedroid-*.1.gz "$SHAREDIR"/man/man1/routedroidd.1.gz
     rm -rf "$LIBEXECDIR" /run/routedroid
     if [[ $PURGE -eq 1 ]]; then
         rm -rf /etc/routedroid /var/lib/routedroid
@@ -90,6 +96,22 @@ if [[ ! -e /etc/routedroid/helper.toml ]]; then
 fi
 for bin in "${CLIENTS[@]}"; do install -m 0755 "$RELEASE/$bin" "$BINDIR/$bin"; done
 install -m 0755 "$RELEASE/routedroid-helper" "$LIBEXECDIR/routedroid-helper"
+# Completions and man pages: the tarball's share/, or made from the binaries.
+SHARE=$HERE/share
+if [[ ! -d $SHARE ]]; then
+    SHARE=$(mktemp -d) && trap 'rm -rf "$SHARE"' EXIT
+    for file in "${COMPLETIONS[@]}"; do
+        mkdir -p "$SHARE/$(dirname "$file")"
+        "$RELEASE/routedroid" completions "$(cut -d- -f1 <<< "${file%%/*}")" > "$SHARE/$file"
+    done
+    "$RELEASE/routedroid" manpages "$SHARE/man/man1"
+    "$RELEASE/routedroid-tui" --manpage > "$SHARE/man/man1/routedroid-tui.1"
+    "$RELEASE/routedroidd" --manpage > "$SHARE/man/man1/routedroidd.1"
+    gzip -9n "$SHARE"/man/man1/*.1
+fi
+for file in "${COMPLETIONS[@]}"; do install -D -m 0644 "$SHARE/$file" "$SHAREDIR/$file"; done
+install -d -m 0755 "$SHAREDIR/man/man1"
+install -m 0644 "$SHARE"/man/man1/*.1.gz "$SHAREDIR/man/man1/"
 
 unit() { # unit SOURCE DEST: install with the paths filled in
     sed -e "s|@BINDIR@|$BINDIR|g" -e "s|@LIBEXECDIR@|$LIBEXECDIR|g" "$1" | install -m 0644 /dev/stdin "$2"
