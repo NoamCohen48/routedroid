@@ -71,6 +71,22 @@ fn traffic_updates_the_right_connection() {
 }
 
 #[test]
+fn traffic_builds_a_graph_that_ends_with_the_connection() {
+    let mut app = app_with_two_devices();
+    for bytes in [0, 1000] {
+        let traffic = Traffic {
+            bytes_to_phone: bytes,
+            ..Traffic::default()
+        };
+        let serial = "one".into();
+        app.apply(Incoming::Event(Event::Traffic { serial, traffic }));
+    }
+    assert_eq!(app.rates["one"].to_phone.len(), 1);
+    app.apply(ended("one", Outcome::failed(Kind::Vpn, "phone refused")));
+    assert!(app.rates.is_empty());
+}
+
+#[test]
 fn a_failed_end_stays_on_the_row_until_the_next_start() {
     let mut app = app_with_two_devices();
     app.apply(ended("one", Outcome::failed(Kind::Vpn, "phone refused")));

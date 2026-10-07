@@ -10,6 +10,7 @@ mod connection;
 mod devices;
 mod log;
 mod popups;
+mod rates;
 mod status_bar;
 mod text;
 
