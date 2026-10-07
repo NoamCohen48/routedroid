@@ -20,6 +20,7 @@ mod tests;
 use std::path::PathBuf;
 
 use crate::adb::Adb;
+use crate::app::BundledApp;
 pub use connection::DeviceConnection;
 pub use connections::DeviceConnections;
 pub use devices::{AttachedDevices, Snapshot};
@@ -33,11 +34,12 @@ pub struct Daemon {
 }
 
 impl Daemon {
-    pub async fn start(adb: Adb, helper_socket: PathBuf) -> Self {
+    pub async fn start(adb: Adb, helper_socket: PathBuf, app: Option<BundledApp>) -> Self {
         let devices = AttachedDevices::start(adb.clone()).await;
         let events = EventBus::new();
         let connections =
-            DeviceConnections::new(adb, helper_socket, events.clone(), devices.clone());
+            DeviceConnections::new(adb, helper_socket, events.clone(), devices.clone())
+                .with_app(app);
         Self {
             devices,
             connections,

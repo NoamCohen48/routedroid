@@ -6,6 +6,7 @@ mod fake_app;
 mod fake_helper;
 mod fake_replies;
 
+mod app;
 mod connections;
 mod doctor;
 mod leased;
@@ -59,6 +60,11 @@ struct Lab {
 
 impl Lab {
     async fn new(serials: &[&str]) -> Self {
+        Self::carrying(serials, None).await
+    }
+
+    /// A daemon that installs `app` on phones that need it.
+    async fn carrying(serials: &[&str], app: Option<crate::app::BundledApp>) -> Self {
         let scratch = Scratch::new();
         let adb = FakeAdb::new(scratch.path(), serials);
         let helper = FakeHelper::spawn(scratch.path());
@@ -69,7 +75,8 @@ impl Lab {
             helper.socket.clone(),
             events.clone(),
             devices.clone(),
-        );
+        )
+        .with_app(app);
         Self {
             adb,
             devices,

@@ -11,6 +11,9 @@ pub enum ConnectionState {
     /// Helper session and reverse mapping being set up (and, without a
     /// static address, the DHCP lease being acquired).
     Starting,
+    /// The phone lacks the app, or has an older one than the daemon
+    /// carries: it is being installed (before anything else is set up).
+    InstallingApp,
     /// App launched; waiting for it to dial in.
     WaitingForApp,
     /// App connected; the HELLO/AUTH/CONFIGURE handshake is in progress,

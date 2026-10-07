@@ -165,6 +165,10 @@ fn outcomes() {
         ),
     );
     pinned(
+        ConnectionState::InstallingApp,
+        r#"{"state":"installing_app"}"#,
+    );
+    pinned(
         ConnectionState::Reconnecting { wait_secs: 120 },
         r#"{"state":"reconnecting","wait_secs":120}"#,
     );
@@ -344,6 +348,7 @@ fn states_read_the_same_everywhere() {
         "waiting for app"
     );
     assert!(format!("{:#}", ConnectionState::Handshaking).contains("VPN permission"));
+    assert_eq!(ConnectionState::InstallingApp.to_string(), "installing app");
     let away = ConnectionState::Reconnecting { wait_secs: 120 };
     assert_eq!(away.to_string(), "reconnecting");
     assert!(format!("{away:#}").contains("held for up to 120 s"));

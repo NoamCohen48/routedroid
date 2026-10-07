@@ -39,8 +39,20 @@ sudo apt install ./routedroid_0.1.0_amd64.deb      # Debian, Ubuntu
 sudo dnf install ./routedroid-0.1.0-1.x86_64.rpm   # Fedora
 sudo usermod -aG routedroid "$USER"                # then log out completely
 systemctl --user enable --now routedroid           # the daemon, as yourself
-adb install routedroid-0.1.0.apk
 ```
+
+On another systemd distribution (glibc 2.35 or newer, with nftables and adb installed), the
+release's tarball holds the same programs and `install.sh`, which installs into `/usr/local`:
+
+```sh
+tar -xzf routedroid-0.1.0-linux-x86_64.tar.gz
+sudo routedroid-0.1.0-linux-x86_64/install.sh     # adds you to group routedroid; log out completely
+systemctl --user enable --now routedroid
+```
+
+A release's daemon carries the app. When a phone connects without it, or with an older
+version, the daemon installs the app first (state `installing app`). The phone then asks
+once for VPN permission. The release's APK is there too, for installing by hand.
 
 Or from source, into `/usr/local`:
 
@@ -50,6 +62,9 @@ systemctl --user enable --now routedroid
 (cd android && ./gradlew :app:assembleDebug)              # release builds: android/README.md
 adb install android/app/build/outputs/apk/debug/app-debug.apk
 ```
+
+A daemon built from source carries no app unless it is built with `ROUTEDROID_APK` set to a
+signed APK's absolute path (`host/packaging/build.sh` passes it through).
 
 Either way, these get installed:
 
@@ -179,7 +194,11 @@ Routedroid's own table still limits each phone to its address and its LAN.
   `journalctl -u 'routedroid-helper@*'`.
 - **No lease** (`NoLease`): the LAN has no DHCP server or does not answer this client. Use
   `--phone-ip` with an address from `phone_addresses`.
-- **"is the Routedroid app installed?"**: run `adb install` with the APK.
+- **"is the Routedroid app installed?"**: this daemon carries no app (a source build). Run
+  `adb install` with the APK.
+- **"could not install the Routedroid app"**: the phone refused the daemon's app. Its reason
+  follows the message. `INSTALL_FAILED_UPDATE_INCOMPATIBLE` means another build of the app,
+  signed with another key, is installed. Uninstall that one (`adb uninstall dev.routedroid`).
 - **Waiting for the app**: the app was launched but has not connected. Unlock the phone, and
   check that the app is installed. `--connect-timeout` gives more time.
 - **Stuck at handshaking**: the phone is showing the VPN permission dialog. Unlock the phone
