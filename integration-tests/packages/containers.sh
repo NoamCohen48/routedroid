@@ -3,7 +3,8 @@
 # systemd and no phone, so this is the packaging itself. Dependencies
 # resolve, the scripts create the group and skip systemd, the binaries run
 # (glibc), an upgrade keeps an edited policy, and removal leaves no file or
-# directory behind. The real lifecycle, with a phone, is ../vm/package.sh.
+# directory behind. The tarball's install.sh gets the same life (into
+# /usr/local) on each. The real lifecycle, with a phone, is ../vm/package.sh.
 #
 #   host/packaging/build.sh && integration-tests/packages/containers.sh
 set -u -o pipefail
@@ -13,8 +14,11 @@ source "$HERE/../lib.sh"
 PKGS=$(cd "$HERE/../../host/target/packages" && pwd)
 rig_tmp packages
 
-# inside IMAGE SCRIPT: run SCRIPT as root in a fresh IMAGE, the packages in /p.
-inside() { docker run --rm -v "$PKGS:/p:ro" "$1" bash -euc "$2" > "$S/$1.log" 2>&1; }
+# inside IMAGE SCRIPT [LOG]: run SCRIPT as root in a fresh IMAGE, the packages in /p.
+# NET_ADMIN, in the container's own network namespace: removal's doctor --repair reads nft.
+inside() {
+    docker run --rm --cap-add NET_ADMIN -v "$PKGS:/p:ro" "$1" bash -euc "$2" > "$S/${3:-$1}.log" 2>&1
+}
 # The same life on each: install, edit the policy, upgrade, remove.
 life() { # life INSTALL UPGRADE REMOVE OWNED-FILES
     cat <<SH
@@ -34,8 +38,30 @@ deb=$(life 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install
     'dpkg -i /p/*.deb' 'dpkg --purge routedroid' '! test -e /etc/routedroid && ! getent group routedroid')
 rpm=$(life 'dnf install -y -q --setopt=install_weak_deps=False /p/*.rpm' \
     'rpm -Uvh --force /p/*.rpm' 'rpm -e routedroid' 'test -f /etc/routedroid/helper.toml.rpmsave')
+# The tarball brings no dependencies: nftables is the user's to install.
+tarball=$(cat <<'SH'
+tar -C /tmp -xzf /p/routedroid-*-linux-*.tar.gz
+/tmp/routedroid-*/install.sh
+getent group routedroid && test -f /etc/systemd/system/routedroid-helper@.service
+routedroid --version && routedroidd --version && /usr/local/libexec/routedroid/routedroid-helper --version
+echo '# edited' >> /etc/routedroid/helper.toml
+/tmp/routedroid-*/install.sh
+grep -q '# edited' /etc/routedroid/helper.toml
+/tmp/routedroid-*/install.sh --uninstall --purge
+! ls -d /usr/local/bin/routedroid* /usr/local/libexec/routedroid /etc/systemd/system/routedroid-helper* \
+    /etc/systemd/user/routedroid.service /etc/routedroid 2>/dev/null || exit 1
+! getent group routedroid || exit 1
+SH
+)
 for image in debian:trixie ubuntu:24.04; do
     check "$image: install, upgrade, purge" inside "$image" "$deb"
 done
 check "fedora: install, upgrade, erase" inside fedora:latest "$rpm"
+apt='apt-get update -qq && apt-get install -y -qq nftables > /dev/null'
+for image in debian:trixie ubuntu:24.04; do
+    check "$image: the tarball's install.sh, again, --uninstall --purge" \
+        inside "$image" "$apt; $tarball" "$image-tarball"
+done
+check "fedora: the tarball's install.sh, again, --uninstall --purge" \
+    inside fedora:latest "dnf install -y -q nftables; $tarball" fedora-tarball
 rig_end

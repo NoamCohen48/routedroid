@@ -56,6 +56,11 @@ environment; nothing about the key lives in the repository:
 | `routedroid.signing.keyAlias` | `ROUTEDROID_SIGNING_KEY_ALIAS` |
 | `routedroid.signing.keyPassword` | `ROUTEDROID_SIGNING_KEY_PASSWORD` (defaults to the store password) |
 
+The release workflow (`.github/workflows/release.yml`) signs with the same variables, from the
+repository's secrets. `./release-key.sh` makes the key once and sets those secrets with `gh`.
+Back up the keystore and its password file: phones accept an update only when it is signed
+with the same key.
+
 ## How a session starts
 
 The host (`routedroid start`) does all of this; nothing on the phone is started by hand.
