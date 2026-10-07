@@ -23,8 +23,10 @@ Open items against §11 and §12:
   session, with the same address and lease, once adb sees it again. Covered by the daemon's
   harness tests (`daemon/tests/reconnect.rs`) and by `integration-tests/vm/unplug.sh` on the
   Samsung, where qemu pulls the USB device: 20/20.
-- **Reproducible APKs.** The .deb and .rpm (`host/packaging/`) and a release workflow
-  exist. The release APK is verified on hardware. Its build is not checked for reproducibility.
+- **Reproducible APKs.** The .deb, .rpm and tarball (`host/packaging/`) and a release workflow
+  exist. The release APK is verified on hardware, and the daemon carries it: a phone without
+  the app, or with an older one, gets it on connect (`integration-tests/vm/app-install.sh`).
+  The APK's build is not checked for reproducibility.
 
 ## 1. Delivery Strategy
 

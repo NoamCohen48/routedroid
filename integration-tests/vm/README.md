@@ -114,6 +114,17 @@ USB device from the guest and adds it back:
 
 20 checks.
 
+## app-install.sh
+
+`app-install.sh SERIAL` runs on the `ubuntu` guest, with the .deb built with `ROUTEDROID_APK`:
+
+- **A phone without the app:** the connection installs the daemon's app first. The phone
+  asks for VPN permission, which the rig gives through the UI. The connection goes active.
+- **The app is current:** the next connection installs nothing.
+
+10 checks. The phone is left with that app. Put a debug build back by uninstalling it and
+running `adb install`.
+
 ## Results, 2026-10-06 (Samsung SM-J810G, Android 10)
 
 | Check | Result |
@@ -123,6 +134,7 @@ USB device from the guest and adds it back:
 | `package.sh 85e49002` (the .deb) | 11/11 |
 | `PHONE=04e8:6860 unplug.sh 85e49002` | 20/20; back to active about 3 s after the replug |
 | `phone-session.sh` with the release APK (R8, signed with a test key) | 17/17 |
+| `app-install.sh 85e49002` (2026-10-07, the daemon carrying that APK) | 10/10 |
 | Phone dropped off USB mid-session (gvfs re-grab) | The connection ended ("the phone closed the connection"), the lease was RELEASEd, and no rule or table was left |
 | First .deb upgrade | Found that needrestart restarts a helper instance, which ends its session; the .deb now tells needrestart not to |
 | First install on a fresh guest | Found that a lingering `systemd --user` keeps its old groups; `doctor` now says so (`11a2cb7`) |
