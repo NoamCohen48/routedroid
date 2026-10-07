@@ -12,6 +12,7 @@ mod connections;
 mod doctor;
 mod leased;
 mod reconnect;
+mod screen;
 
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
