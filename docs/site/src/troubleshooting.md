@@ -49,10 +49,14 @@ key, is installed. Uninstall it with `adb uninstall dev.routedroid`.
 
 ## Waiting for the app
 
-The app was launched but hasn't connected. Unlock the phone, and check that the app is
-installed. `--connect-timeout` gives it more time.
+The app was launched but hasn't connected. Check that the app is installed.
+`--connect-timeout` gives it more time.
 
-<!-- TODO: the locked-phone hint, once it lands. -->
+## "the phone is locked: unlock it to continue"
+
+The app doesn't start behind the lock screen, and the VPN dialog can't be answered there, so
+the daemon checks the phone's screen while it waits. Unlock the phone, and the connection
+goes on by itself. If the phone's screen is off, wake it first.
 
 ## Stuck at handshaking
 

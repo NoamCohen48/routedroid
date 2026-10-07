@@ -42,4 +42,8 @@ kept, so Esc or a failed start loses nothing.
 A phone already remembered opens with its name and Remember box filled in. See
 [Remembered phones](remembered-phones.md).
 
-<!-- TODO: the throughput graph, once it lands. -->
+## Throughput
+
+The connection pane graphs the last minute of traffic, one bar a second: what the phone
+receives and what it sends, each scaled to its own peak, with the current rate beside it
+(`receives ▂▃▅▇ 120.0 kB/s`). It starts over when the connection does.

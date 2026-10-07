@@ -63,7 +63,11 @@ To build a daemon that carries one, set `ROUTEDROID_APK` to a signed APK's absol
 - group `routedroid`;
 - a [policy](policy.md) that allows nothing yet.
 
-<!-- TODO: shell completions and man pages: where they are installed, and how to load them. -->
+- shell completions for bash, zsh and fish, and man pages (`man routedroid`,
+  `man routedroid-start`, ...), in the usual places under `share/`. A new shell picks the
+  completions up. Without the packages or `install.sh`, `routedroid completions SHELL`
+  prints the script: for example
+  `routedroid completions bash > ~/.local/share/bash-completion/completions/routedroid`.
 
 ## The app
 

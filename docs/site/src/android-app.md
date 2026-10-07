@@ -26,7 +26,10 @@ reinstalled. On Android 13 and newer, the app also asks to show notifications.
 The phone has 2 minutes to answer. Without an answer the connection ends, so if a start
 seems stuck at `handshaking`, look at the phone.
 
-<!-- TODO: the locked-phone hint, once it lands. -->
+While a connection waits on the phone, the daemon watches its screen. If the phone is
+locked, or its screen is off, the start says "the phone is locked: unlock it to continue"
+(or that the screen is off), and so do `routedroid events`, the TUI and a desktop
+notification. Unlock it and the connection goes on by itself.
 
 ## While connected
 

@@ -18,7 +18,9 @@ routedroid version                          # the CLI's and the daemon's version
 
 `routedroid help COMMAND` or `routedroid COMMAND --help` shows every option.
 
-<!-- TODO: shell completions and man pages (`man routedroid`), once they land. -->
+The packages and `install.sh` install shell completions (bash, zsh and fish) and man pages:
+`man routedroid`, and one page per command (`man routedroid-start`, ...). Elsewhere,
+`routedroid completions bash|zsh|fish` prints the script for your shell.
 
 ## start
 
@@ -68,7 +70,10 @@ A start the policy forbids is refused at once, with the reason, and exit code 2.
 | `reconnecting` | the phone went away; its address is held while it comes back |
 | `stopping` | the connection is being torn down |
 
-<!-- TODO: the locked-phone hint ("unlock the phone to continue") during waiting for app. -->
+While waiting for the app or handshaking, the daemon checks the phone's screen every 2
+seconds. A locked phone reads as `waiting for app (locked)`, and a start in the foreground
+prints "the phone is locked: unlock it to continue". A phone whose screen is off reads as
+`(screen off)`. Once it is unlocked, the connection goes on by itself.
 
 ## Unplugging
 
@@ -115,7 +120,15 @@ Ctrl-C:
 
 With `--json`, it prints the events themselves as JSON lines.
 
-<!-- TODO: desktop notifications for these events, once they land. -->
+**Desktop notifications.** On a desktop, the daemon also shows a notification when a phone
+joins the LAN, goes away, waits to be unlocked, or is disconnected other than by your own
+`stop`. Each phone has one notification, updated as its connection changes. To turn them
+off:
+
+```sh
+systemctl --user edit routedroid     # add, under [Service]: Environment=ROUTEDROID_NOTIFY=false
+systemctl --user restart routedroid
+```
 
 ## doctor
 
