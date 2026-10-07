@@ -19,6 +19,7 @@ clap = { workspace = true, features = ["env"] }
 clap_complete.workspace = true
 clap_mangen.workspace = true
 humantime.workspace = true
+libc.workspace = true
 rustix = { workspace = true, features = ["process"] }
 serde.workspace = true
 serde_json.workspace = true
