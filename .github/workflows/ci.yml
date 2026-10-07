@@ -8,6 +8,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call: # the release runs it first
 
 permissions:
   contents: read
@@ -68,7 +69,7 @@ jobs:
       - name: The emulator rig's protocol builders match the fixtures
         run: python3 -c 'import importlib.util as u; s = u.spec_from_file_location("h", "integration-tests/emulator/fake_host.py"); m = u.module_from_spec(s); s.loader.exec_module(m); m.self_test()'
       - name: shellcheck
-        run: shellcheck -x $(git ls-files '*.sh') integration-tests/lib.sh
+        run: git ls-files -z '*.sh' | xargs -0 shellcheck -x
 
   fuzz:
     runs-on: ubuntu-24.04
