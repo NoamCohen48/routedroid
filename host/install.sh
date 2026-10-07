@@ -30,6 +30,14 @@ CLIENTS=(routedroid routedroidd routedroid-tui)
 [[ $EUID -eq 0 ]] || { echo "run with sudo"; exit 2; }
 # Not booted with systemd (a container): install the units, start nothing.
 systemd() { [[ ! -d /run/systemd/system ]] || systemctl "$@"; }
+# user_managers ARGS: systemctl --user ARGS in every logged-in user's manager.
+user_managers() {
+    local unit user
+    for unit in $(systemd list-units 'user@*.service' --state=running --no-legend --plain | cut -d' ' -f1); do
+        user=$(id -nu "$(basename "$unit" .service | cut -d@ -f2)" 2>/dev/null) || continue
+        systemd --user -M "$user@" "$@" 2>/dev/null || true
+    done
+}
 
 if [[ ${1:-} == --uninstall ]]; then
     PURGE=0; [[ ${2:-} == --purge ]] && PURGE=1
@@ -49,6 +57,7 @@ if [[ ${1:-} == --uninstall ]]; then
     rm -f "$SYSTEM_UNITS/$UNIT.socket" "$SYSTEM_UNITS/$UNIT.service" "$SYSTEM_UNITS/$UNIT@.service"
     rm -f "$USER_UNITS/routedroid.service"
     systemd daemon-reload
+    user_managers daemon-reload
     for bin in "${CLIENTS[@]}"; do rm -f "$BINDIR/$bin"; done
     rm -rf "$LIBEXECDIR" /run/routedroid
     if [[ $PURGE -eq 1 ]]; then
@@ -92,6 +101,7 @@ unit "$HERE/routedroid-helper/systemd/$UNIT.socket" "$SYSTEM_UNITS/$UNIT.socket"
 unit "$HERE/routedroid-helper/systemd/$UNIT@.service" "$SYSTEM_UNITS/$UNIT@.service"
 unit "$HERE/routedroidd/systemd/routedroid.service" "$USER_UNITS/routedroid.service"
 systemd daemon-reload
+user_managers daemon-reload
 systemd enable --now "$UNIT.socket"
 echo "$UNIT.socket: $(systemd is-active "$UNIT.socket")"
 echo

@@ -13,6 +13,12 @@ if [ -d /run/systemd/system ]; then
     # restart would end every session): running sessions keep their helper,
     # and the next connection starts this version's.
     [ "$first" = 1 ] && systemctl enable --now routedroid-helper.socket
+    # Each logged-in user's manager reads the new routedroid.service too;
+    # their daemons run on until restarted.
+    for unit in $(systemctl list-units 'user@*.service' --state=running --no-legend --plain | cut -d' ' -f1); do
+        uid=${unit#user@}; uid=${uid%.service}
+        user=$(id -nu "$uid" 2>/dev/null) && systemctl --user -M "$user@" daemon-reload 2>/dev/null || true
+    done
 fi
 if [ "$first" = 1 ]; then
     cat <<'MSG'
