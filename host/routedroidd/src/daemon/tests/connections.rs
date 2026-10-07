@@ -112,8 +112,10 @@ async fn starts_are_checked_against_the_live_connections() {
     assert_eq!(tun.tun.as_str(), "phone1", "the next free TUN");
 
     // Neither app ever connects: a stop now ends before the session began.
-    lab.until(PHONE, |s| *s == ConnectionState::WaitingForApp)
-        .await;
+    lab.until(PHONE, |s| {
+        matches!(s, ConnectionState::WaitingForApp { .. })
+    })
+    .await;
     let outcome = lab.connections.stop(PHONE).await.unwrap();
     assert_eq!(
         outcome,

@@ -3,7 +3,7 @@
 
 use std::fmt;
 
-use crate::{ConnectionState, EndReason, Outcome};
+use crate::{ConnectionState, EndReason, Outcome, Screen};
 
 impl fmt::Display for EndReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -35,15 +35,24 @@ impl fmt::Display for ConnectionState {
                 f.write_str("installing the Routedroid app on the phone")
             }
             Self::InstallingApp => f.write_str("installing app"),
-            Self::WaitingForApp if f.alternate() => {
-                f.write_str("waiting for the app to connect (is the phone unlocked?)")
+            Self::WaitingForApp {
+                screen: Some(screen),
             }
-            Self::WaitingForApp => f.write_str("waiting for app"),
+            | Self::Handshaking {
+                screen: Some(screen),
+            } if f.alternate() => f.write_str(match screen {
+                Screen::Off => "the phone's screen is off: wake it and unlock it to continue",
+                Screen::Locked => "the phone is locked: unlock it to continue",
+            }),
+            Self::WaitingForApp { .. } if f.alternate() => {
+                f.write_str("waiting for the app to connect")
+            }
             // The app asks for VPN permission once it has authenticated the host.
-            Self::Handshaking if f.alternate() => f.write_str(
+            Self::Handshaking { .. } if f.alternate() => f.write_str(
                 "handshaking with the app (if the phone asks for VPN permission, answer it there)",
             ),
-            Self::Handshaking => f.write_str("handshaking"),
+            Self::WaitingForApp { screen } => with_screen(f, "waiting for app", *screen),
+            Self::Handshaking { screen } => with_screen(f, "handshaking", *screen),
             Self::Active => f.write_str("active"),
             Self::Reconnecting { wait_secs } if f.alternate() => write!(
                 f,
@@ -53,6 +62,14 @@ impl fmt::Display for ConnectionState {
             Self::Stopping => f.write_str("stopping"),
             Self::Ended { outcome } => write!(f, "ended: {outcome}"),
         }
+    }
+}
+
+fn with_screen(f: &mut fmt::Formatter<'_>, state: &str, screen: Option<Screen>) -> fmt::Result {
+    match screen {
+        None => f.write_str(state),
+        Some(Screen::Off) => write!(f, "{state} (screen off)"),
+        Some(Screen::Locked) => write!(f, "{state} (locked)"),
     }
 }
 

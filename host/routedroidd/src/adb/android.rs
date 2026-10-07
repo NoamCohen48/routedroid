@@ -1,6 +1,8 @@
 //! Android-side tools reached through `adb shell`, one method per tool, so
 //! callers never build shell command lines themselves.
 
+mod screen;
+
 use super::AdbDevice;
 use crate::fault::{Fault, Kind, Result};
 

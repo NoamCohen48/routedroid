@@ -30,7 +30,7 @@ pub use request::{DnsChoice, Request, StartRequest};
 pub use response::{
     ConnectionInfo, DeviceInfo, InterfaceInfo, Ipv4Net, Lease, NetworkInfo, Response,
 };
-pub use state::{ConnectionState, EndReason, Outcome, Traffic};
+pub use state::{ConnectionState, EndReason, Outcome, Screen, Traffic};
 pub use wire::{ClientMessage, ServerMessage};
 
 /// Bumped on any incompatible change to the messages of this crate.

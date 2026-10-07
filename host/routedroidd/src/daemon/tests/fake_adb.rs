@@ -31,7 +31,12 @@ case "$1 $2" in
 "reverse --remove") grep -v " $3 " "$R" > "$R.new"; mv "$R.new" "$R";;
 "shell content") cat > "$D/record.$S.new" && mv "$D/record.$S.new" "$D/record.$S";;  # whole, for the app's poll
 "shell am") echo "Starting: Intent { cmp=$5 }";;
-"shell dumpsys") echo "Packages:"
+"shell dumpsys") case "$3 $(cat "$D/screen.$S" 2>/dev/null)" in
+                 "power off") echo "  mWakefulness=Asleep"; exit 0;;
+                 "activity locked") echo "    mKeyguardShowing=true"; exit 0;;
+                 power*|activity*) exit 0;;
+                 esac
+                 echo "Packages:"
                  [ -e "$D/app.$S" ] && printf '  Package [%s] (1):\n    versionCode=%s minSdk=26\n' "$4" "$(cat "$D/app.$S")"; exit 0;;
 *) echo "fake adb: unknown $*" >&2; exit 2;;
 esac
@@ -109,6 +114,12 @@ impl FakeAdb {
     pub fn app(&self, serial: &str) -> Option<u64> {
         let text = std::fs::read_to_string(self.dir.join(format!("app.{serial}")));
         text.ok()?.trim().parse().ok()
+    }
+
+    /// The phone's screen: off, locked, or (`None`) on and unlocked.
+    pub fn set_screen(&self, serial: &str, screen: Option<&str>) {
+        let file = self.dir.join(format!("screen.{serial}"));
+        std::fs::write(file, screen.unwrap_or("on")).unwrap();
     }
 
     /// The phone refuses installs (another signing key, say).

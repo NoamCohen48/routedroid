@@ -233,8 +233,11 @@ Routedroid's own table still limits each phone to its address and its LAN.
 - **"could not install the Routedroid app"**: the phone refused the daemon's app. Its reason
   follows the message. `INSTALL_FAILED_UPDATE_INCOMPATIBLE` means another build of the app,
   signed with another key, is installed. Uninstall that one (`adb uninstall dev.routedroid`).
-- **Waiting for the app**: the app was launched but has not connected. Unlock the phone, and
-  check that the app is installed. `--connect-timeout` gives more time.
+- **"the phone is locked: unlock it to continue"**: the daemon checks the phone's screen
+  while it waits on the phone, because the app does not start behind the lock screen and the
+  VPN dialog cannot be answered there. Unlock it and the connection goes on by itself.
+- **Waiting for the app**: the app was launched but has not connected. Check that the app is
+  installed. `--connect-timeout` gives more time.
 - **Stuck at handshaking**: the phone is showing the VPN permission dialog. Unlock the phone
   and answer it. Without an answer within 2 minutes, the connection ends.
 - **Connected, but the phone gets no traffic**: look for a firewall warning in
