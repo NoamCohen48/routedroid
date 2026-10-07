@@ -1,6 +1,7 @@
 //! One device connection's run, from `start` accepted to everything undone.
-//! Order matters for safety: host network first (so a failure leaves nothing
-//! on the phone), then the reverse mapping, then the secret, then the launch.
+//! Order matters for safety: the app first, when the phone needs it (meant
+//! to stay), then the host network (so a failure leaves nothing on the
+//! phone), then the reverse mapping, then the secret, then the launch.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -13,6 +14,7 @@ use tracing::{info, warn};
 
 use super::sink::StateSink;
 use crate::adb::Adb;
+use crate::app::BundledApp;
 use crate::daemon::connections::DeviceConnections;
 use crate::daemon::devices::AttachedDevices;
 use crate::daemon::spec::ConnectionSpec;
@@ -29,6 +31,7 @@ pub(super) struct ConnectionRun {
     pub(super) adb: Adb,
     pub(super) devices: AttachedDevices,
     helper_socket: Arc<PathBuf>,
+    pub(super) app: Option<BundledApp>,
     pub(super) spec: Arc<ConnectionSpec>,
     pub(super) counters: Arc<Counters>,
     pub(super) sink: StateSink,
@@ -45,6 +48,7 @@ impl ConnectionRun {
             adb: owner.adb.clone(),
             devices: owner.devices.clone(),
             helper_socket: owner.helper_socket.clone(),
+            app: owner.app,
             spec,
             counters,
             sink,
@@ -68,6 +72,9 @@ impl ConnectionRun {
     /// both whatever the outcome was.
     async fn connect(&self, mut stop_rx: watch::Receiver<bool>) -> Result<EndReason> {
         let spec = &self.spec;
+        if self.install_app(&mut stop_rx).await? {
+            return Ok(EndReason::StoppedEarly);
+        }
 
         let start = HostNetwork::start(
             &self.helper_socket,

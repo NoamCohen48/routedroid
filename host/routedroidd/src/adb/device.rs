@@ -1,6 +1,7 @@
 //! `adb -s SERIAL <command>`: the per-device half of the binding.
 
 use std::process::Stdio;
+use std::time::Duration;
 
 use anyhow::{Context, bail};
 use tokio::process::Command;
@@ -22,10 +23,19 @@ impl AdbDevice {
         }
     }
 
+    pub fn serial(&self) -> &str {
+        &self.serial
+    }
+
     /// Run `adb -s SERIAL <args>`; stdout on success, or an error carrying
     /// both streams. Never passes secrets: those go through [`Self::shell`]'s stdin.
     pub(super) async fn run(&self, args: &[&str]) -> Result<String> {
         Ok(self.run_with_stdin(args, None).await?.0)
+    }
+
+    /// [`Self::run`] for a command that may take longer than adb's usual timeout.
+    pub(super) async fn run_for(&self, args: &[&str], timeout: Duration) -> Result<String> {
+        Ok(self.exec(args, None, timeout).await?.0)
     }
 
     /// `adb -s SERIAL shell <args>` with optional bytes on stdin. Returns
@@ -44,6 +54,15 @@ impl AdbDevice {
         &self,
         args: &[&str],
         stdin: Option<&[u8]>,
+    ) -> Result<(String, String)> {
+        self.exec(args, stdin, self.adb.timeout).await
+    }
+
+    async fn exec(
+        &self,
+        args: &[&str],
+        stdin: Option<&[u8]>,
+        timeout: Duration,
     ) -> Result<(String, String)> {
         let mut cmd = Command::new(&self.adb.binary);
         cmd.arg("-s")
@@ -84,11 +103,11 @@ impl AdbDevice {
             }
             Ok::<_, anyhow::Error>((stdout, stderr))
         };
-        match tokio::time::timeout(self.adb.timeout, fut).await {
+        match tokio::time::timeout(timeout, fut).await {
             Ok(r) => r.fault(Kind::Adb),
             Err(_) => Err(Fault::msg(
                 Kind::Adb,
-                format!("{desc} timed out after {:?}", self.adb.timeout),
+                format!("{desc} timed out after {timeout:?}"),
             )),
         }
     }

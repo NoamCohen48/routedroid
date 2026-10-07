@@ -6,11 +6,13 @@
 //! handle to one serial, and every per-device command goes through it so
 //! `-s` can never be forgotten when several phones are attached. The adb
 //! command lines stay inside this module: callers get one method per
-//! operation (`reverse_add`, `content_write`, `am_start`, ...).
+//! operation (`reverse_add`, `content_write`, `am_start`,
+//! `install`, ...).
 
 mod android;
 mod device;
 mod devices;
+mod package;
 mod reverse;
 mod track;
 

@@ -18,6 +18,7 @@ use super::devices::AttachedDevices;
 use super::events::EventBus;
 use super::spec::{ConnectionSpec, StartSpec};
 use crate::adb::{Adb, DeviceState};
+use crate::app::BundledApp;
 use crate::device::unusable;
 use crate::fault::{Fault, Kind, Result};
 use crate::host_network;
@@ -30,6 +31,8 @@ pub struct DeviceConnections {
     pub(super) devices: AttachedDevices,
     pub(super) adb: Adb,
     pub(super) helper_socket: Arc<PathBuf>,
+    /// Installed on phones that need it before they connect, when there is one.
+    pub(super) app: Option<BundledApp>,
     pub(super) events: EventBus,
     _traffic: Arc<Background>,
 }
@@ -52,9 +55,16 @@ impl DeviceConnections {
             devices,
             adb,
             helper_socket: Arc::new(helper_socket),
+            app: None,
             events,
             _traffic: Arc::new(traffic),
         }
+    }
+
+    /// Carry `app` to the phones that need it.
+    pub fn with_app(mut self, app: Option<BundledApp>) -> Self {
+        self.app = app;
+        self
     }
 
     /// Connect one phone; returns the TUN it was given once its task runs.
