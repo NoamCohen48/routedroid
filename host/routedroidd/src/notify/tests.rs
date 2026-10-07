@@ -16,6 +16,8 @@ async fn on_this_desktop() {
     };
     let id = show(&bus, 0, &notice("pixel is on the LAN")).await.unwrap();
     assert_ne!(id, 0);
-    let again = show(&bus, id, &notice("pixel is back on the LAN")).await.unwrap();
+    let again = show(&bus, id, &notice("pixel is back on the LAN"))
+        .await
+        .unwrap();
     assert_eq!(again, id, "replaced, not stacked");
 }
