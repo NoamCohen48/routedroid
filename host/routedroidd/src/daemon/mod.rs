@@ -6,18 +6,23 @@
 //! - [`AttachedDevices`]: what adb reports, kept current.
 //! - [`DeviceConnections`]: the phones we have put on the LAN.
 //! - [`EventBus`]: what clients are told about either.
+//!
+//! Remembered phones ([`Phones`]) are connected as they are plugged in.
 
+mod auto;
 mod background;
 mod connection;
 mod connections;
 mod devices;
 pub mod doctor;
 mod events;
+mod phones;
 mod spec;
 #[cfg(test)]
 mod tests;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::adb::Adb;
 use crate::app::BundledApp;
@@ -25,25 +30,35 @@ pub use connection::DeviceConnection;
 pub use connections::DeviceConnections;
 pub use devices::{AttachedDevices, Snapshot};
 pub use events::EventBus;
+pub use phones::{Phones, default_path as default_phones_path};
 
 #[derive(Clone)]
 pub struct Daemon {
     devices: AttachedDevices,
     connections: DeviceConnections,
     events: EventBus,
+    _auto: Arc<background::Background>,
 }
 
 impl Daemon {
-    pub async fn start(adb: Adb, helper_socket: PathBuf, app: Option<BundledApp>) -> Self {
+    pub async fn start(
+        adb: Adb,
+        helper_socket: PathBuf,
+        app: Option<BundledApp>,
+        phones: Phones,
+    ) -> Self {
         let devices = AttachedDevices::start(adb.clone()).await;
         let events = EventBus::new();
         let connections =
             DeviceConnections::new(adb, helper_socket, events.clone(), devices.clone())
-                .with_app(app);
+                .with_app(app)
+                .with_phones(phones);
+        let auto = background::Background::spawn(auto::run(connections.clone(), devices.changes()));
         Self {
             devices,
             connections,
             events,
+            _auto: Arc::new(auto),
         }
     }
 

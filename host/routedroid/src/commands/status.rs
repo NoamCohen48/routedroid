@@ -18,6 +18,7 @@ pub async fn run(client: &Client, json: bool) -> Result<i32> {
     } else {
         let names = [
             "SERIAL",
+            "NAME",
             "PHONE_IP",
             "ADDRESS",
             "LAN_IF",
@@ -46,6 +47,7 @@ fn row(connection: &ConnectionInfo, now: u64) -> Vec<String> {
     });
     vec![
         connection.serial.clone(),
+        connection.name.clone().unwrap_or_else(|| "-".into()),
         phone_ip.unwrap_or_else(|| "-".into()),
         address.unwrap_or_else(|| "-".into()),
         connection.lan_if.clone(),

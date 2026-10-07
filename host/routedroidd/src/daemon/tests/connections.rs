@@ -29,7 +29,7 @@ async fn a_phone_goes_active_carries_packets_and_stops_cleanly() {
         .start(request(PHONE, [10, 0, 0, 7]))
         .await
         .unwrap();
-    assert_eq!(tun.as_str(), "phone0");
+    assert_eq!(tun.tun.as_str(), "phone0");
     let mut app = FakeApp::connect(&lab.adb, PHONE).await;
     assert_eq!(
         app.configure.addresses[0].address,
@@ -109,7 +109,7 @@ async fn starts_are_checked_against_the_live_connections() {
         .start(request(OTHER, [10, 0, 0, 8]))
         .await
         .unwrap();
-    assert_eq!(tun.as_str(), "phone1", "the next free TUN");
+    assert_eq!(tun.tun.as_str(), "phone1", "the next free TUN");
 
     // Neither app ever connects: a stop now ends before the session began.
     lab.until(PHONE, |s| *s == ConnectionState::WaitingForApp)
@@ -138,7 +138,7 @@ async fn a_start_outside_the_policy_is_refused_before_it_begins() {
         "{error}"
     );
     let mut elsewhere = request(PHONE, [10, 0, 0, 7]);
-    elsewhere.lan_if = "eth9".into();
+    elsewhere.lan_if = Some("eth9".into());
     let error = lab.connections.start(elsewhere).await.unwrap_err();
     assert_eq!(error.to_string(), "eth9: no such interface");
     assert!(lab.connections.info().is_empty());

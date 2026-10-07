@@ -37,18 +37,13 @@ impl DeviceConnections {
             }
         }
     }
+}
 
-    /// The helper still has the last word: if it cannot be asked here, the
-    /// start goes ahead and it decides.
-    pub(super) async fn check_policy(&self, start: &StartSpec) -> Result<()> {
-        match self.interfaces().await {
-            Ok(interfaces) => match refusal(&interfaces, start.lan_if.as_str(), start.phone_ip) {
-                Some(refusal) => Err(usage(refusal)),
-                None => Ok(()),
-            },
-            Err(_) => Ok(()),
-        }
-    }
+/// The helper still has the last word: if it could not be asked
+/// (`interfaces` is `None`), the start goes ahead and it decides.
+pub(super) fn check_policy(interfaces: Option<&[InterfaceInfo]>, start: &StartSpec) -> Result<()> {
+    let refused = interfaces.and_then(|i| refusal(i, start.lan_if.as_str(), start.phone_ip));
+    refused.map_or(Ok(()), |refusal| Err(usage(refusal)))
 }
 
 /// Why the helper would refuse a phone on `lan_if` (as `phone_ip`, or by

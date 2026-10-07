@@ -103,6 +103,7 @@ impl DeviceConnection {
         let spec = &self.spec;
         ConnectionInfo {
             serial: spec.serial.clone(),
+            name: None,
             lan_if: spec.lan_if.to_string(),
             tun: spec.tun.to_string(),
             mtu: spec.mtu,

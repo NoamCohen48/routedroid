@@ -2,12 +2,12 @@ use super::*;
 
 fn request() -> StartRequest {
     StartRequest {
-        serial: "R58M".into(),
-        lan_if: "eno1".into(),
+        serial: Some("R58M".into()),
+        lan_if: Some("eno1".into()),
         phone_ip: Some(Ipv4Addr::new(192, 168, 1, 50)),
         tun: None,
         mtu: None,
-        dns: DnsChoice::Auto,
+        dns: Some(DnsChoice::Auto),
         connect_timeout_secs: None,
         reconnect_secs: None,
         allow_network_adb: false,
@@ -37,13 +37,13 @@ fn defaults_are_the_daemons() {
 #[test]
 fn bad_names_are_usage_errors() {
     let long = StartRequest {
-        lan_if: "a-name-longer-than-15".into(),
+        lan_if: Some("a-name-longer-than-15".into()),
         ..request()
     };
     assert_eq!(refused(long, "lan_if"), Kind::Usage);
     refused(
         StartRequest {
-            lan_if: "phone0".into(),
+            lan_if: Some("phone0".into()),
             ..request()
         },
         "not a LAN interface",
@@ -73,11 +73,11 @@ fn addresses_must_be_unicast_hosts() {
         };
         refused(request, "unicast");
     }
-    let dns = DnsChoice::Servers(vec!["224.0.0.251".parse().unwrap()]);
+    let dns = Some(DnsChoice::Servers(vec!["224.0.0.251".parse().unwrap()]));
     refused(StartRequest { dns, ..request() }, "DNS server");
     refused(
         StartRequest {
-            dns: DnsChoice::Servers(vec![]),
+            dns: Some(DnsChoice::Servers(vec![])),
             ..request()
         },
         "empty",
@@ -127,7 +127,7 @@ fn mtu_and_timeout_are_bounded() {
 #[test]
 fn transport_rule_applies_before_anything_else() {
     let network = StartRequest {
-        serial: "10.0.0.2:5555".into(),
+        serial: Some("10.0.0.2:5555".into()),
         ..request()
     };
     assert_eq!(refused(network, "network ADB"), Kind::Transport);

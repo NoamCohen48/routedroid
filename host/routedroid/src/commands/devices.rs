@@ -14,7 +14,7 @@ pub async fn run(client: &Client, json: bool) -> Result<i32> {
     } else if devices.is_empty() {
         println!("no devices attached");
     } else {
-        let mut rows = vec![header(&["SERIAL", "MODEL", "STATUS"])];
+        let mut rows = vec![header(&["SERIAL", "NAME", "MODEL", "STATUS"])];
         rows.extend(devices.iter().map(row));
         print_table(&rows);
     }
@@ -28,5 +28,6 @@ fn row(device: &DeviceInfo) -> Vec<String> {
         (None, Some(reason)) => format!("not usable: {reason}"),
         (None, None) => "usable".into(),
     };
-    vec![device.serial.clone(), model, verdict]
+    let name = device.name.clone().unwrap_or_else(|| "-".into());
+    vec![device.serial.clone(), name, model, verdict]
 }

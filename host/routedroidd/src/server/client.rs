@@ -103,7 +103,8 @@ impl<A: Answer> ClientConnection<A> {
     async fn on_line(&mut self, line: &str) -> Result<(), ()> {
         let (id, request) = match answer::parse(line) {
             Ok(message) => (message.id, message.request),
-            Err((id, response)) => {
+            Err(bad) => {
+                let (id, response) = *bad;
                 warn!(id, "bad request line");
                 return send(&self.out, ServerMessage::Response { id, response }).await;
             }

@@ -35,6 +35,8 @@ impl App {
             .filter(|connection| !rows.iter().any(|row| row.serial == connection.serial))
             .map(|connection| DeviceInfo {
                 serial: connection.serial.clone(),
+                name: connection.name.clone(),
+                auto: false,
                 state: "gone".into(),
                 model: None,
                 // The ADB column says why ("gone"); the narrow usable one just says no.

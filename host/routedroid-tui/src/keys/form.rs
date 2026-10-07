@@ -23,6 +23,7 @@ pub fn handle(app: &mut App, key: KeyEvent, mut form: Box<StartForm>) -> Vec<Com
         KeyCode::Char(' ') if form.focused == Field::NetworkAdb => {
             form.allow_network_adb = !form.allow_network_adb;
         }
+        KeyCode::Char(' ') if form.focused == Field::Remember => form.remember = !form.remember,
         code => {
             if let Some(input) = form.input(form.focused) {
                 match code {
@@ -61,12 +62,12 @@ fn submit(app: &mut App, form: Box<StartForm>) -> Vec<Command> {
                 Some(ip) => ip.to_string(),
                 None => "a DHCP address".into(),
             };
-            app.info(format!(
-                "{}: starting on {} with {address}",
-                request.serial, request.lan_if
-            ));
+            let lan = request.lan_if.as_deref().unwrap_or("the LAN allowed");
+            app.info(format!("{}: starting on {lan} with {address}", form.serial));
+            // The LAN is filled in from the answer: the daemon may pick it.
+            let remember = form.to_phone(&request, lan).map(Box::new);
             app.close_form(form);
-            vec![Command::Start(request)]
+            vec![Command::Start { request, remember }]
         }
         Err(error) => {
             app.error(error.to_string());

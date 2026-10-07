@@ -114,10 +114,12 @@ Check the setup with `routedroid doctor`. It reports:
 
 ```sh
 routedroid devices                          # phones adb sees, and whether they can be used
-routedroid start -s SERIAL --lan-if eno1    # leases an address; Ctrl-C disconnects
-routedroid start -s SERIAL --lan-if eno1 --phone-ip 192.168.1.201   # a chosen address
+routedroid start                            # the one phone, on the one allowed LAN; Ctrl-C disconnects
+routedroid start SERIAL --lan-if eno1       # which phone and LAN, when there are several
+routedroid start SERIAL --phone-ip 192.168.1.201   # a chosen address instead of a lease
+routedroid start SERIAL --name pixel --remember    # and connect it whenever it is plugged in
 routedroid status                           # connections, their address and lease, traffic
-routedroid stop -s SERIAL
+routedroid stop                             # or: routedroid stop pixel
 routedroid-tui                              # the same, interactively
 ```
 
@@ -126,6 +128,18 @@ the phone shows its VPN key icon and a notification with Stop. A connection belo
 daemon, not to the command that started it. `start --detach` returns immediately, and the
 phone stays on the LAN until `routedroid stop`, Stop on the phone, or the daemon stopping.
 Several phones can be connected at once, each with its own address.
+
+**Which phone, which LAN.** With one phone attached, `start` takes it; with several, name
+one (its serial, or `-s`, or `ANDROID_SERIAL`). With one interface allowed in the helper
+policy, `start` uses it; with several, say which with `--lan-if`.
+
+**Remembered phones.** `--remember` keeps the phone, with the options given, in
+`~/.config/routedroid/phones.toml`, and the daemon connects it whenever it is plugged in
+and authorized. `--name pixel` gives it a name that every command takes in place of the
+serial. `routedroid phones` lists them, `routedroid remember PHONE` changes one
+(`--no-auto`: remember the options without connecting on plug-in), and `routedroid forget
+PHONE` drops one. A phone disconnected with `stop` stays disconnected until it is plugged in
+again. In the TUI, the form's Name and Remember fields do the same, and `f` forgets.
 
 **Unplugging.** A phone that goes away while connected (cable out, adb restarted) is held
 for it, as `reconnecting`: its address, lease, TUN and routes stay. When adb sees the phone

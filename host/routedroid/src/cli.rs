@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+use crate::commands::phones::RememberArgs;
 use crate::commands::setup::SetupArgs;
 use crate::commands::start::StartArgs;
 
@@ -31,13 +32,25 @@ pub enum Command {
     Devices,
     /// List the host's network interfaces and whether a phone may join through each.
     Interfaces,
-    /// Connect one phone; stays attached until it ends or Ctrl-C, unless --detach.
+    /// Connect a phone; stays attached until it ends or Ctrl-C, unless --detach.
     Start(StartArgs),
-    /// Disconnect one phone and wait until it is gone.
+    /// Disconnect a phone and wait until it is gone.
     Stop {
-        /// ADB serial of the phone.
-        #[arg(long, short = 's', env = "ANDROID_SERIAL")]
-        serial: String,
+        /// The phone: a serial or remembered name; by default the one connected.
+        phone: Option<String>,
+        /// The phone, as a flag.
+        #[arg(long, short = 's', conflicts_with = "phone")]
+        serial: Option<String>,
+    },
+    /// List the remembered phones.
+    Phones,
+    /// Remember a phone: a name for it, the options it connects with, and
+    /// to connect it whenever it is plugged in.
+    Remember(RememberArgs),
+    /// Forget a remembered phone.
+    Forget {
+        /// A serial or remembered name.
+        phone: String,
     },
     /// Show live device connections.
     Status,
