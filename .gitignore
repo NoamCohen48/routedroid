@@ -6,3 +6,4 @@ local.properties
 .idea/
 __pycache__/
 .claude/worktrees/
+docs/site/book/

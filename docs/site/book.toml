@@ -1,0 +1,17 @@
+[book]
+title = "Routedroid"
+description = "Make an Android phone plugged into a Linux PC a real host on the PC's LAN."
+authors = ["Noam Cohen"]
+language = "en"
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/NoamCohen48/routedroid"
+edit-url-template = "https://github.com/NoamCohen48/routedroid/edit/main/docs/site/{path}"
+site-url = "/routedroid/"
+default-theme = "light"
+preferred-dark-theme = "navy"
+
+[output.html.fold]
+enable = true
+level = 1
