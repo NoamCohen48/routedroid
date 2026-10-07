@@ -44,6 +44,10 @@ impl AdbBridge {
         self.port.device_port
     }
 
+    pub fn adb(&self) -> &AdbDevice {
+        &self.adb
+    }
+
     /// Tell the app about this session (§7.1–7.2), in two adb steps:
     ///
     /// 1. Write the bootstrap record (session id, reverse port, secret) into

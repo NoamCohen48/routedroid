@@ -32,7 +32,10 @@ impl ConnectionRun {
     ) -> Result<Driven> {
         let mtu = self.spec.mtu;
         let secret = bridge.bootstrap().await?;
-        self.sink.set(ConnectionState::WaitingForApp);
+        self.sink
+            .set(ConnectionState::WaitingForApp { screen: None });
+        let screen = super::screen::watch(bridge.adb().clone(), &self.sink);
+        tokio::pin!(screen);
         // The app dials in (over adb reverse, not over the VPN): the phone
         // never listens, so nothing on it can be reached before AUTH.
         let connect_timeout = self.spec.connect_timeout;
@@ -49,13 +52,14 @@ impl ConnectionRun {
                 lost: false,
                 reached_active: false,
             }),
+            never = &mut screen => match never {},
         };
         info!(
             host_port,
             device_port = bridge.device_port(),
             "app connected"
         );
-        self.sink.set(ConnectionState::Handshaking);
+        self.sink.set(ConnectionState::Handshaking { screen: None });
 
         let config = SessionConfig {
             mtu,
@@ -91,6 +95,7 @@ impl ConnectionRun {
                     Ok(()) => {}
                     Err(_) => watch_active = false,
                 },
+                never = &mut screen, if watch_active => match never {},
                 event = shared.events.recv(), if watch_events => match event {
                     Some(event) => self.on_helper(event, shared.placed, &mut ended),
                     None => watch_events = false,

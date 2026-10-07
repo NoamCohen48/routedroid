@@ -15,10 +15,17 @@ pub enum ConnectionState {
     /// carries: it is being installed (before anything else is set up).
     InstallingApp,
     /// App launched; waiting for it to dial in.
-    WaitingForApp,
+    WaitingForApp {
+        /// Set while the phone's screen keeps it from going on.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        screen: Option<Screen>,
+    },
     /// App connected; the HELLO/AUTH/CONFIGURE handshake is in progress,
     /// the VPN consent dialog included.
-    Handshaking,
+    Handshaking {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        screen: Option<Screen>,
+    },
     Active,
     /// The phone went away after being active (unplugged, or adb lost it).
     /// Its host side, address and lease included, is held for up to
@@ -30,6 +37,15 @@ pub enum ConnectionState {
     Ended {
         outcome: Outcome,
     },
+}
+
+/// A phone that needs a person before it can go on: the app does not start
+/// behind the lock screen, and the VPN dialog cannot be answered there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Screen {
+    Off,
+    Locked,
 }
 
 /// How a connection ended: on purpose, or because something failed.

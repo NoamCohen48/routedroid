@@ -16,6 +16,7 @@ mod drive;
 mod end;
 mod resume;
 mod run;
+mod screen;
 mod sink;
 
 use super::connections::DeviceConnections;

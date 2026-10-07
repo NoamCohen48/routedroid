@@ -66,6 +66,7 @@ fn requests() {
 }
 
 mod phones;
+mod screen;
 
 #[test]
 fn start_requests() {
@@ -207,7 +208,7 @@ fn lists() {
         state: "device".into(),
         model: Some("SM_J810G".into()),
         unusable_reason: None,
-        connection: Some(ConnectionState::WaitingForApp),
+        connection: Some(ConnectionState::WaitingForApp { screen: None }),
     };
     pinned(
         answer(Response::Devices {
@@ -285,7 +286,7 @@ fn events() {
     pinned(
         push(Event::Connection {
             serial: serial(),
-            state: ConnectionState::Handshaking,
+            state: ConnectionState::Handshaking { screen: None },
         }),
         r#"{"msg":"event","event":"connection","serial":"R58M","state":{"state":"handshaking"}}"#,
     );
@@ -359,10 +360,12 @@ fn states_read_the_same_everywhere() {
     };
     assert_eq!(clean.to_string(), "ended: stopped");
     assert_eq!(
-        ConnectionState::WaitingForApp.to_string(),
+        ConnectionState::WaitingForApp { screen: None }.to_string(),
         "waiting for app"
     );
-    assert!(format!("{:#}", ConnectionState::Handshaking).contains("VPN permission"));
+    assert!(
+        format!("{:#}", ConnectionState::Handshaking { screen: None }).contains("VPN permission")
+    );
     assert_eq!(ConnectionState::InstallingApp.to_string(), "installing app");
     let away = ConnectionState::Reconnecting { wait_secs: 120 };
     assert_eq!(away.to_string(), "reconnecting");

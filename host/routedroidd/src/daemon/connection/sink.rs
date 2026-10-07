@@ -1,7 +1,7 @@
 //! Where a connection's task says how it is doing: the handle's watches,
 //! for status, and the event bus, for subscribers. Owned by the task.
 
-use routedroid_ipc::{ConnectionState, Event, NetworkInfo};
+use routedroid_ipc::{ConnectionState, Event, NetworkInfo, Screen};
 use tokio::sync::watch;
 
 use crate::daemon::events::EventBus;
@@ -36,6 +36,27 @@ impl StateSink {
         tracing::info!(serial = %self.serial, %state, "connection state");
         let _ = self.state.send(state.clone());
         self.publish_state(state);
+    }
+
+    /// The phone's screen, while the connection waits on the phone; in any
+    /// other state it is ignored, so a late reading never undoes a step.
+    pub fn set_screen(&self, screen: Option<Screen>) {
+        let mut changed = None;
+        self.state.send_if_modified(|state| match state {
+            ConnectionState::WaitingForApp { screen: now }
+            | ConnectionState::Handshaking { screen: now }
+                if *now != screen =>
+            {
+                *now = screen;
+                changed = Some(state.clone());
+                true
+            }
+            _ => false,
+        });
+        if let Some(state) = changed {
+            tracing::info!(serial = %self.serial, %state, "connection state");
+            self.publish_state(state);
+        }
     }
 
     pub fn set_network(&self, network: NetworkInfo) {

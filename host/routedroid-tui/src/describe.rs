@@ -4,6 +4,15 @@
 use routedroid_ipc::{ConnectionState, DeviceInfo, Event};
 
 /// Whether an `Ended` state is a failure worth painting red.
+/// The phone waits on a person: the log says what to do, not just the state.
+fn needs_hands(state: &ConnectionState) -> bool {
+    matches!(
+        state,
+        ConnectionState::WaitingForApp { screen: Some(_) }
+            | ConnectionState::Handshaking { screen: Some(_) }
+    )
+}
+
 pub fn is_failure(state: &ConnectionState) -> bool {
     matches!(state, ConnectionState::Ended { outcome } if !outcome.is_clean())
 }
@@ -32,6 +41,9 @@ pub fn devices(devices: &[DeviceInfo]) -> String {
 /// One log line per event; `None` for events too frequent to log (traffic).
 pub fn event(event: &Event) -> Option<String> {
     match event {
+        Event::Connection { serial, state } if needs_hands(state) => {
+            Some(format!("{serial}: {state:#}"))
+        }
         Event::Connection { serial, state } => Some(format!("{serial}: {state}")),
         Event::Network { serial, network } => {
             Some(format!("{serial}: on the LAN as {}", network.phone_ip))
