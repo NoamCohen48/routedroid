@@ -12,6 +12,8 @@ device, a `/32` route and proxy ARP on the LAN interface make the address answer
 LAN host ── LAN ── eno1 (proxy ARP) ── phone0 (TUN) ── adb ── VpnService ── apps on the phone
 ```
 
+**Documentation:** <https://noamcohen48.github.io/routedroid/> (built from `docs/site/`).
+
 ## Requirements
 
 - **PC:**
@@ -293,6 +295,7 @@ new version.
 | `android/` | The app (`VpnService`), its protocol library and a hostile test app ([README](android/README.md)) |
 | `protocol/` | The wire protocol ([version 1](protocol/version-1.md)) and its golden fixtures |
 | `integration-tests/` | Rootless namespace rigs for the helper (kill matrix, multi-session, DHCP), emulator rigs, and a [KVM lab](integration-tests/vm/README.md) with real root, systemd and a USB phone |
+| `docs/site/` | The [documentation site](https://noamcohen48.github.io/routedroid/), an mdBook (`mdbook serve docs/site`) |
 | `.docs/` | Architecture, decisions, implementation plan, code review |
 
 Tests: run `cargo test --workspace` in `host/`, `./gradlew :protocol:test :app:testDebugUnitTest`
