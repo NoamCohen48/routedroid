@@ -10,9 +10,11 @@ use crate::messages::{Command, Incoming};
 
 mod events;
 mod log;
+mod rates;
 mod rows;
 
 pub use log::{Level, Log};
+pub use rates::Rates;
 
 #[cfg(test)]
 mod tests;
@@ -49,6 +51,8 @@ pub struct App {
     pub connections: BTreeMap<String, ConnectionInfo>,
     pub interfaces: Vec<InterfaceInfo>,
     pub last_end: HashMap<String, LastEnd>,
+    /// Each live connection's throughput over the last minute.
+    pub rates: HashMap<String, Rates>,
     /// The form as each phone's user last left it.
     drafts: HashMap<String, StartForm>,
     pub cursor: usize,
@@ -68,6 +72,7 @@ impl App {
             connections: BTreeMap::new(),
             interfaces: Vec::new(),
             last_end: HashMap::new(),
+            rates: HashMap::new(),
             drafts: HashMap::new(),
             cursor: 0,
             log: Log::default(),
@@ -153,6 +158,7 @@ impl App {
             }
             Incoming::Started { serial, tun } => {
                 self.last_end.remove(&serial);
+                self.rates.remove(&serial);
                 self.info(format!("{serial}: start accepted (TUN {tun})"));
                 vec![]
             }
