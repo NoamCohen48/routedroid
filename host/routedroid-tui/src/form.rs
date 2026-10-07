@@ -20,17 +20,19 @@ pub enum Field {
     Mtu,
     Tun,
     Timeout,
+    ReconnectWait,
     NetworkAdb,
 }
 
 impl Field {
-    pub const ALL: [Field; 7] = [
+    pub const ALL: [Field; 8] = [
         Field::LanIf,
         Field::PhoneIp,
         Field::Dns,
         Field::Mtu,
         Field::Tun,
         Field::Timeout,
+        Field::ReconnectWait,
         Field::NetworkAdb,
     ];
 
@@ -42,6 +44,7 @@ impl Field {
             Field::Mtu => "MTU (empty: default)",
             Field::Tun => "TUN name (empty: next phoneN)",
             Field::Timeout => "App connect timeout (e.g. 90s, 2m)",
+            Field::ReconnectWait => "Wait for an unplugged phone (e.g. 5m)",
             Field::NetworkAdb => "Allow network ADB (Space toggles)",
         }
     }
@@ -65,6 +68,7 @@ pub struct StartForm {
     pub mtu: LineInput,
     pub tun: LineInput,
     pub timeout: LineInput,
+    pub reconnect_wait: LineInput,
     pub allow_network_adb: bool,
     pub focused: Field,
 }
@@ -80,6 +84,7 @@ impl StartForm {
             mtu: LineInput::default(),
             tun: LineInput::default(),
             timeout: LineInput::default(),
+            reconnect_wait: LineInput::default(),
             allow_network_adb: false,
             focused: Field::LanIf,
         };
@@ -155,6 +160,7 @@ impl StartForm {
             Field::Mtu => &self.mtu,
             Field::Tun => &self.tun,
             Field::Timeout => &self.timeout,
+            Field::ReconnectWait => &self.reconnect_wait,
         })
     }
 
@@ -167,6 +173,7 @@ impl StartForm {
             Field::Mtu => &mut self.mtu,
             Field::Tun => &mut self.tun,
             Field::Timeout => &mut self.timeout,
+            Field::ReconnectWait => &mut self.reconnect_wait,
         })
     }
 
@@ -179,6 +186,7 @@ impl StartForm {
             Field::Mtu => self.mtu.value().to_string(),
             Field::Tun => self.tun.value().to_string(),
             Field::Timeout => self.timeout.value().to_string(),
+            Field::ReconnectWait => self.reconnect_wait.value().to_string(),
             Field::NetworkAdb => if self.allow_network_adb { "[x]" } else { "[ ]" }.into(),
         }
     }

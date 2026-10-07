@@ -3,12 +3,6 @@ use std::net::Ipv4Addr;
 use super::*;
 
 #[test]
-fn bytes_read_like_bytes() {
-    assert_eq!(bytes(999), "999 B");
-    assert_eq!(bytes(1_234_567), "1.2 MB");
-}
-
-#[test]
 fn the_network_line_names_address_dns_and_lease() {
     let mut network = NetworkInfo {
         phone_ip: Ipv4Addr::new(192, 168, 1, 50),

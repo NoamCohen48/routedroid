@@ -30,11 +30,8 @@ impl StartForm {
                     .with_context(|| format!("MTU {mtu:?} is not a number"))
             })
             .transpose()?;
-        let timeout = optional(self.timeout.value())
-            .map(|text| {
-                humantime::parse_duration(text).with_context(|| format!("timeout {text:?}"))
-            })
-            .transpose()?;
+        let timeout = seconds(self.timeout.value(), "timeout")?;
+        let reconnect = seconds(self.reconnect_wait.value(), "reconnect wait")?;
         Ok(StartRequest {
             serial: self.serial.clone(),
             lan_if: lan_if.to_string(),
@@ -42,11 +39,21 @@ impl StartForm {
             tun: optional(self.tun.value()).map(str::to_string),
             mtu,
             dns: dns(self.dns.value())?,
-            connect_timeout_secs: timeout.map(|d| d.as_secs() + u64::from(d.subsec_nanos() > 0)),
-            reconnect_secs: None,
+            connect_timeout_secs: timeout,
+            reconnect_secs: reconnect,
             allow_network_adb: self.allow_network_adb,
         })
     }
+}
+
+/// A duration like `90s` or `2m`, in whole seconds (rounded up).
+fn seconds(text: &str, what: &str) -> Result<Option<u64>> {
+    optional(text)
+        .map(|text| {
+            let d = humantime::parse_duration(text).with_context(|| format!("{what} {text:?}"))?;
+            Ok(d.as_secs() + u64::from(d.subsec_nanos() > 0))
+        })
+        .transpose()
 }
 
 fn dns(text: &str) -> Result<DnsChoice> {
