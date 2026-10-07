@@ -48,13 +48,22 @@ fi
 pc "routedroid stop -s $SERIAL >/dev/null 2>&1; tmux kill-server 2>/dev/null; true"
 check "no reload warning after an upgrade"   eval "! grep -q 'changed on disk' '$S/install' 2>/dev/null"
 
+echo "== setup, on a PC set up already"
+setup() {
+    if pc "sudo routedroid setup --yes" > "$S/setup" 2>&1 && grep -qF -- "$1" "$S/setup"; then return 0; fi
+    cat "$S/setup"; return 1
+}
+check "setup --yes changes nothing"          setup "already set up for"
+check "mgmt0 stays out of the policy"        eval "pc routedroid interfaces | grep -q '^mgmt0 .*not in the helper policy'"
+check "completions are installed"            pc test -s /usr/share/bash-completion/completions/routedroid
+check "and the man pages"                    pc man -w routedroid-start
+
 echo "== asking"
 check "doctor: one phone"                    says 0 "adb: 1 phone ready" -- doctor
 check "devices lists it"                     says 0 "$SERIAL" -- devices
 check "help speaks plainly"                  eval "! pc routedroid start --help | grep -qi 'decision [0-9]\|gate [0-9]'"
 
 echo "== mistakes, refused at once (exit 2)"
-check "no --lan-if"                          says 2 "--lan-if" -- start -s "$SERIAL"
 check "an unknown phone"                     says 2 "nosuch is not attached" -- start -s nosuch --lan-if lan0
 check "a link outside the policy"            says 2 "mgmt0: not in the helper policy (allow it in /etc/routedroid/helper.toml)" -- start -s "$SERIAL" --lan-if mgmt0
 check "an address outside it"                says 2 "10.9.9.9 is not a phone address the policy allows on lan0 (it allows DHCP only)" -- start -s "$SERIAL" --lan-if lan0 --phone-ip 10.9.9.9
@@ -93,6 +102,44 @@ check "saying why"                           shows "was not back within 10 s"
 plug plug
 check "nothing left behind"                  slowly says 0 "leftovers: nothing left behind" -- doctor
 pc "tmux kill-server 2>/dev/null; true"
+
+echo "== without saying which"
+check "the phone is back"                    slowly says 0 "adb: 1 phone ready" -- doctor
+check "start takes the one phone and LAN"    says 0 "started $SERIAL on lan0" -- start --detach
+check "it goes active"                       slowly status " active "
+check "stop takes the one connection"        says 0 "$SERIAL: stopped" -- stop
+
+echo "== a phone that waits on its screen"
+key() { pc "adb -s $SERIAL shell input keyevent $1"; }
+key KEYCODE_SLEEP
+foreground ""
+check "off: wake it and unlock it"           shows "the phone's screen is off: wake it and unlock it"
+key KEYCODE_WAKEUP
+pc "adb -s $SERIAL shell wm dismiss-keyguard"
+check "woken and unlocked, it goes on"       shows "active"
+pc tmux send-keys -t cli C-c
+check "Ctrl-C stops it"                      shows "EXIT=0"
+key KEYCODE_SLEEP
+sleep 1
+key KEYCODE_WAKEUP
+foreground ""
+check "at the lock screen: unlock it"        shows "the phone is locked: unlock it to continue"
+pc "adb -s $SERIAL shell wm dismiss-keyguard"
+check "unlocked, it goes on"                 shows "active"
+pc tmux send-keys -t cli C-c
+check "Ctrl-C stops it again"                shows "EXIT=0"
+pc "tmux kill-server 2>/dev/null; true"
+
+echo "== remembered, by name"
+check "remember it"                          says 0 "remembered lab ($SERIAL): it connects whenever it is plugged in" -- remember "$SERIAL" --name lab
+check "phones lists it"                      says 0 "lab" -- phones
+plug unplug
+plug plug
+check "plugged in: it connects by itself"    slowly status " active "
+check "status names it"                      eval "pc routedroid status | grep -q ' lab '"
+check "stop by name"                         says 0 "lab: stopped" -- stop lab
+check "forget it"                            says 0 "forgot lab ($SERIAL)" -- forget lab
+check "nothing is remembered"                eval "! pc routedroid phones | grep -q lab"
 
 echo "== without the daemon"
 pc 'systemctl --user stop routedroid'
