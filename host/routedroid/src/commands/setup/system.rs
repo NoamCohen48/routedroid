@@ -26,6 +26,11 @@ pub fn target_user(flag: Option<String>, sudo_user: Option<String>) -> Result<St
         })
 }
 
+/// Not so in a container: there are units to install but no managers.
+fn booted_with_systemd() -> bool {
+    std::path::Path::new("/run/systemd/system").exists()
+}
+
 fn run(program: &str, args: &[&str]) -> Result<Output> {
     Command::new(program)
         .args(args)
@@ -47,6 +52,39 @@ pub fn in_group(user: &str) -> Result<bool> {
     Ok(String::from_utf8_lossy(&out.stdout)
         .split_whitespace()
         .any(|g| g == GROUP))
+}
+
+/// Whether `user`'s session has the group: their systemd manager's groups
+/// were fixed when it started, and so are those of the daemon it runs.
+/// `None` when no manager of theirs is running.
+pub fn session_has_group(user: &str) -> Result<Option<bool>> {
+    if !booted_with_systemd() {
+        return Ok(None);
+    }
+    let text = |out: Output| String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let uid = text(run("id", &["-u", user])?);
+    let unit = format!("user@{uid}.service");
+    let pid = text(run(
+        "systemctl",
+        &["show", "-p", "MainPID", "--value", &unit],
+    )?);
+    if pid.is_empty() || pid == "0" {
+        return Ok(None);
+    }
+    let entry = text(run("getent", &["group", GROUP])?);
+    let Some(gid) = entry.split(':').nth(2).filter(|gid| !gid.is_empty()) else {
+        return Ok(None);
+    };
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).unwrap_or_default();
+    Ok(Some(has_gid(&status, gid)))
+}
+
+/// `Groups:` in a /proc/PID/status names `gid`.
+pub fn has_gid(status: &str, gid: &str) -> bool {
+    status
+        .lines()
+        .find_map(|line| line.strip_prefix("Groups:"))
+        .is_some_and(|groups| groups.split_whitespace().any(|g| g == gid))
 }
 
 pub fn add_to_group(user: &str) -> Result<()> {
@@ -76,7 +114,7 @@ pub enum Daemon {
 /// Enable `routedroid.service` in `user`'s manager; `start` it too when
 /// their session already has the group.
 pub fn enable_daemon(user: &str, start: bool) -> Daemon {
-    if !std::path::Path::new("/run/systemd/system").exists() {
+    if !booted_with_systemd() {
         return Daemon::NoSystemd;
     }
     let machine = format!("{user}@");

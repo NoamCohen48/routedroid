@@ -71,6 +71,10 @@ async fn setup(args: SetupArgs) -> Result<i32> {
     if joined {
         system::add_to_group(&user)?;
         done.push(format!("added {user} to group {GROUP}"));
+    }
+    // Some(false) also when they joined earlier but have not logged out since.
+    let session = system::session_has_group(&user)?;
+    if joined || session == Some(false) {
         left.push(format!(
             "log out completely and back in (or reboot), so {user}'s session has group {GROUP}"
         ));
@@ -105,7 +109,7 @@ async fn setup(args: SetupArgs) -> Result<i32> {
         return Ok(1);
     }
 
-    match system::enable_daemon(&user, !joined) {
+    match system::enable_daemon(&user, session == Some(true)) {
         Daemon::Enabled { started: true } => {
             done.push("enabled and started the daemon (routedroid.service)".into());
         }
