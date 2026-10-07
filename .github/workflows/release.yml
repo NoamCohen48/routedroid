@@ -126,8 +126,9 @@ jobs:
           | Fedora | \`sudo dnf install ./$rpm\` |
           | Other systemd distributions (glibc 2.35+, with nftables and adb) | \`tar -xzf $tarball && sudo ./${tarball%.tar.gz}/install.sh\` |
 
-          Then \`sudo usermod -aG routedroid "\$USER"\`, log out completely, and
-          \`systemctl --user enable --now routedroid\`. The README has the rest.
+          Then \`sudo routedroid setup\` (from the tarball: \`sudo /usr/local/bin/routedroid setup\`).
+          It asks which interface phones join through and says what is left, usually
+          logging out once. The README has the rest.
 
           The APK is here too, for installing the app by hand (\`adb install routedroid-$VERSION.apk\`).
           Check downloads with \`sha256sum -c SHA256SUMS --ignore-missing\`.

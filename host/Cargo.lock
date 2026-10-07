@@ -1334,10 +1334,13 @@ dependencies = [
  "chrono",
  "clap",
  "humantime",
+ "routedroid-helper-ipc",
  "routedroid-ipc",
+ "rustix",
  "serde",
  "serde_json",
  "tokio",
+ "toml",
 ]
 
 [[package]]

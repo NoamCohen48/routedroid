@@ -24,6 +24,20 @@ fn name(s: &str) -> IfName {
 }
 
 #[test]
+fn what_routedroid_setup_writes_is_a_policy() {
+    // The CLI's tests check that setup renders exactly this file.
+    let policy: Policy =
+        include_str!("../../../routedroid/src/commands/setup/policy/rendered.toml")
+            .parse()
+            .unwrap();
+    assert!(policy.dhcp("eno1"));
+    assert!(!policy.dhcp("wlan0"));
+    policy
+        .check(&name("wlan0"), "10.1.0.203".parse().unwrap())
+        .unwrap();
+}
+
+#[test]
 fn allows_only_listed_interfaces_and_addresses() {
     let policy: Policy = TEXT.parse().unwrap();
     policy

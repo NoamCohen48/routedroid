@@ -25,11 +25,9 @@ fi
 if [ "$first" = 1 ]; then
     cat <<'MSG'
 Routedroid is installed. Phones are attached by members of group routedroid,
-on the interfaces /etc/routedroid/helper.toml allows (none yet):
+on the interfaces /etc/routedroid/helper.toml allows (none yet). To set it up
+for yourself (your group, the interface phones join through, your daemon):
 
-  sudo usermod -aG routedroid "$USER"     then log out completely (or reboot)
-  routedroid interfaces                   then allow one in /etc/routedroid/helper.toml
-  systemctl --user enable --now routedroid
-  routedroid doctor
+  sudo routedroid setup
 MSG
 fi
