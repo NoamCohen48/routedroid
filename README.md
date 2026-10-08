@@ -88,7 +88,8 @@ choosing:
 
 It ends with what is left. Usually that is logging out completely (a new group reaches only
 new sessions), then `routedroid start`. Run it again any time; it changes only what is not
-so already. Without a terminal, choose with flags: `--lan-if eno1` (DHCP by default),
+so already. You can also skip it: a first `routedroid start` at a terminal sees what is
+missing and offers to run it, then goes on with the start. Without a terminal, choose with flags: `--lan-if eno1` (DHCP by default),
 `--phone-addresses 192.168.1.200/29`, or `--yes` for the defaults.
 
 By hand instead: `sudo usermod -aG routedroid "$USER"` (then log out completely),

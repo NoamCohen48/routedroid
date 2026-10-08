@@ -22,6 +22,18 @@ reaches only new sessions, and then `routedroid start`.
 
 Run it again any time. It changes only what isn't set up already.
 
+You can also skip this step. At a terminal, a `routedroid start` on a PC that isn't set up
+says what is missing (your group, the daemon, or an interface phones may use) and asks:
+
+```text
+Routedroid is not set up yet: no interface may carry phones yet.
+Set it up now (sudo routedroid setup)? [Y/n]
+```
+
+Answer yes and type your password. Setup runs, and the start then goes on by itself. If setup
+just added you to the group, log out and back in first, as it says. Scripts and `--json` are
+never asked; they get the error, which names the command.
+
 ## Without a terminal
 
 Choose with flags instead of answering questions:

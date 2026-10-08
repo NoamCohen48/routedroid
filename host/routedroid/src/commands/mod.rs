@@ -30,12 +30,14 @@ pub async fn run(cli: Cli) -> Result<i32> {
         // Run as root, so it does not need (or reach) the user's daemon.
         return setup::run(args).await;
     }
+    if let Command::Start(args) = cli.command {
+        return start_first(&cli.socket, args, cli.json).await;
+    }
     let mut client = Client::connect(&cli.socket).await?;
     let json = cli.json;
     match cli.command {
         Command::Devices => devices::run(&client, json).await,
         Command::Interfaces => interfaces::run(&client, json).await,
-        Command::Start(args) => start::run(client, args, json).await,
         Command::Stop { phone, serial } => stop::run(&client, phone.or(serial), json).await,
         Command::Phones => phones::list(&client, json).await,
         Command::Remember(args) => phones::run_remember(&client, args, json).await,
@@ -45,8 +47,30 @@ pub async fn run(cli: Cli) -> Result<i32> {
         Command::Doctor { repair } => doctor::run(&client, repair, json).await,
         Command::Version
         | Command::Setup(_)
+        | Command::Start(_)
         | Command::Completions { .. }
         | Command::Manpages { .. } => unreachable!("answered above"),
+    }
+}
+
+/// `start`, offering setup first on a PC that is not set up.
+async fn start_first(socket: &std::path::Path, args: start::StartArgs, json: bool) -> Result<i32> {
+    use start::first_time::{self, After};
+    let client = match Client::connect(socket).await {
+        Ok(client) => Some(client),
+        Err(routedroid_ipc::ConnectError::Unreachable { .. }) => None,
+        Err(error) => return Err(error.into()),
+    };
+    match first_time::offer(client.as_ref(), json).await? {
+        After::Exit(code) => Ok(code),
+        after => {
+            let client = match client {
+                Some(client) => client,
+                None if after == After::SetUp => first_time::reconnect(socket).await?,
+                None => Client::connect(socket).await?,
+            };
+            start::run(client, args, json).await
+        }
     }
 }
 
