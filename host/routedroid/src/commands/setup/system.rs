@@ -42,8 +42,9 @@ pub fn group_exists() -> Result<bool> {
     Ok(run("getent", &["group", GROUP])?.status.success())
 }
 
-/// Whether `user` is in the group (by /etc/group; a session started before
-/// they joined does not have it yet).
+/// Whether `user` is in the group, by the group database. The helper asks
+/// the same database on each connection, so a session started before they
+/// joined needs no new login.
 pub fn in_group(user: &str) -> Result<bool> {
     let out = run("id", &["-nG", user])?;
     if !out.status.success() {
@@ -54,12 +55,10 @@ pub fn in_group(user: &str) -> Result<bool> {
         .any(|g| g == GROUP))
 }
 
-/// Whether `user`'s session has the group: their systemd manager's groups
-/// were fixed when it started, and so are those of the daemon it runs.
-/// `None` when no manager of theirs is running.
-pub fn session_has_group(user: &str) -> Result<Option<bool>> {
+/// Whether a systemd manager of `user`'s is running.
+pub fn manager_running(user: &str) -> Result<bool> {
     if !booted_with_systemd() {
-        return Ok(None);
+        return Ok(false);
     }
     let text = |out: Output| String::from_utf8_lossy(&out.stdout).trim().to_string();
     let uid = text(run("id", &["-u", user])?);
@@ -68,23 +67,7 @@ pub fn session_has_group(user: &str) -> Result<Option<bool>> {
         "systemctl",
         &["show", "-p", "MainPID", "--value", &unit],
     )?);
-    if pid.is_empty() || pid == "0" {
-        return Ok(None);
-    }
-    let entry = text(run("getent", &["group", GROUP])?);
-    let Some(gid) = entry.split(':').nth(2).filter(|gid| !gid.is_empty()) else {
-        return Ok(None);
-    };
-    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).unwrap_or_default();
-    Ok(Some(has_gid(&status, gid)))
-}
-
-/// `Groups:` in a /proc/PID/status names `gid`.
-pub fn has_gid(status: &str, gid: &str) -> bool {
-    status
-        .lines()
-        .find_map(|line| line.strip_prefix("Groups:"))
-        .is_some_and(|groups| groups.split_whitespace().any(|g| g == gid))
+    Ok(!pid.is_empty() && pid != "0")
 }
 
 pub fn add_to_group(user: &str) -> Result<()> {
@@ -112,12 +95,10 @@ pub enum Daemon {
     NoSystemd,
 }
 
-/// Enable `routedroid.service` for `user`. `session`: whether their running
-/// manager has the group, `None` when none of theirs runs. A running one is
-/// asked, and starts the daemon too when its session has the group.
-/// Otherwise the link is written as the user, offline, as `systemctl
+/// Enable `routedroid.service` for `user`. A running manager of theirs
+/// (`running`) is asked, and starts the daemon too. Otherwise the link is written as the user, offline, as `systemctl
 /// enable` would: asking a manager that is not running starts one.
-pub fn enable_daemon(user: &str, session: Option<bool>) -> Daemon {
+pub fn enable_daemon(user: &str, running: bool) -> Daemon {
     if !booted_with_systemd() {
         return Daemon::NoSystemd;
     }
@@ -131,14 +112,14 @@ pub fn enable_daemon(user: &str, session: Option<bool>) -> Daemon {
         "systemctl",
         "--user",
     ];
-    let user_ctl = |args: &[&str]| match session {
-        Some(_) => run("systemctl", &[&["--user", "-M", &machine], args].concat()),
-        None => run("runuser", &[&offline[..], args].concat()),
+    let user_ctl = |args: &[&str]| match running {
+        true => run("systemctl", &[&["--user", "-M", &machine], args].concat()),
+        false => run("runuser", &[&offline[..], args].concat()),
     };
     if user_ctl(&["is-enabled", "routedroid"]).is_ok_and(|out| out.status.success()) {
         return Daemon::AlreadyEnabled;
     }
-    let start = session == Some(true);
+    let start = running;
     let args: &[&str] = if start {
         &["enable", "--now", "routedroid"]
     } else {

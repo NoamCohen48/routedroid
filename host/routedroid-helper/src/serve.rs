@@ -9,13 +9,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
-use routedroid_helper_ipc::{Activated, Activation, Listener, SeqPacket};
+use anyhow::{Context, Result};
+use routedroid_helper_ipc::{Activated, Activation, Listener};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
 use tokio::task::{JoinSet, spawn_blocking};
 use tracing::{info, warn};
 
+use crate::admit::{Gate, admit};
 use crate::connection;
 use crate::env::Env;
 use crate::kernel::System;
@@ -25,7 +26,7 @@ const ACCEPT_BACKOFF: Duration = Duration::from_millis(200);
 
 pub struct Options {
     pub socket: Option<PathBuf>,
-    pub allow_uid: Option<u32>,
+    pub gate: Gate,
     /// Exit after the first session (what an `Accept=yes` instance does anyway).
     pub once: bool,
 }
@@ -47,7 +48,7 @@ pub async fn serve(
     let listener = match activation.map(Activation::register).transpose()? {
         Some(Activated::Connection(conn)) => {
             info!("serving one connection from systemd (Accept=yes)");
-            return connection::serve(env, admit(&options, conn)?, shutdown).await;
+            return connection::serve(env, admit(&options.gate, conn).await?, shutdown).await;
         }
         Some(Activated::Listener(listener)) => listener,
         None => {
@@ -74,14 +75,17 @@ pub async fn serve(
                 continue;
             }
         };
-        let Ok(conn) = admit(&options, conn) else {
-            continue;
-        };
         if options.once {
+            let Ok(conn) = admit(&options.gate, conn).await else {
+                continue;
+            };
             return connection::serve(env, conn, shutdown).await;
         }
-        let (env, shutdown) = (Arc::clone(&env), shutdown.clone());
+        let (env, shutdown, gate) = (Arc::clone(&env), shutdown.clone(), options.gate.clone());
         sessions.spawn(async move {
+            let Ok(conn) = admit(&gate, conn).await else {
+                return;
+            };
             if let Err(error) = connection::serve(env, conn, shutdown).await {
                 warn!(error = %format!("{error:#}"), "session failed");
             }
@@ -113,17 +117,4 @@ fn shutdown_signal() -> Result<watch::Receiver<bool>> {
         let _ = tx.send(true);
     });
     Ok(rx)
-}
-
-/// The uid gate; socket permissions are the primary one.
-fn admit(options: &Options, conn: SeqPacket) -> Result<SeqPacket> {
-    let uid = conn.peer_uid()?;
-    if let Some(want) = options.allow_uid
-        && uid != want
-    {
-        warn!(uid, "rejecting controller: uid not allowed");
-        bail!("controller uid {uid} not allowed");
-    }
-    info!(uid, "controller connected");
-    Ok(conn)
 }

@@ -10,10 +10,12 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use routedroid_helper_ipc::Activation;
 
+use crate::admit::Gate;
 use crate::env::{DEFAULT_STATE_DIR, Env};
 use crate::fault::CrashHook;
 use crate::kernel::System;
 
+mod admit;
 mod claims;
 mod connection;
 mod doctor;
@@ -59,9 +61,13 @@ enum Cmd {
         /// Exit after the first session ends (systemd `Accept=yes` instances always do).
         #[arg(long)]
         once: bool,
-        /// Only accept a controller with this uid (socket permissions are the primary gate).
+        /// Only accept a controller with this uid.
         #[arg(long)]
         allow_uid: Option<u32>,
+        /// Only accept root and this group's members, as the group database
+        /// has them when the controller connects.
+        #[arg(long)]
+        allow_group: Option<String>,
     },
     /// Exit 1 while any orphaned or unreadable journal exists.
     Check,
@@ -113,13 +119,17 @@ fn main() -> Result<()> {
             socket,
             once,
             allow_uid,
+            allow_group,
         } => {
             // SAFETY: the runtime has not started yet, and nothing before
             // it spawns a thread.
             let activation = unsafe { Activation::take() }.context("socket activation")?;
             let options = serve::Options {
                 socket: socket.clone(),
-                allow_uid: *allow_uid,
+                gate: Gate {
+                    uid: *allow_uid,
+                    group: allow_group.clone(),
+                },
                 once: *once,
             };
             tokio::runtime::Runtime::new()?.block_on(serve::serve(env()?, options, activation))
