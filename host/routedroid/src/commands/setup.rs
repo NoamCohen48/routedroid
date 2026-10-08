@@ -20,7 +20,8 @@ use clap::Args;
 
 use self::block::Block;
 pub use self::report::Usage;
-use self::system::{Daemon, GROUP};
+use self::system::Daemon;
+pub use self::system::{GROUP, in_group};
 
 #[derive(Debug, Args)]
 pub struct SetupArgs {
@@ -40,6 +41,9 @@ pub struct SetupArgs {
     /// Take the default answers instead of asking.
     #[arg(long, short = 'y')]
     pub yes: bool,
+    /// Run by `routedroid start`, which goes on by itself afterwards.
+    #[arg(long, hide = true)]
+    pub then_start: bool,
     #[arg(long, hide = true, default_value = routedroid_helper_ipc::DEFAULT_SOCKET)]
     pub helper_socket: PathBuf,
     #[arg(long, hide = true, default_value = policy::PATH)]
@@ -67,7 +71,7 @@ async fn setup(args: SetupArgs) -> Result<i32> {
     let mut done = Vec::new();
     let mut left = Vec::new();
 
-    let joined = !system::in_group(&user)?;
+    let joined = !in_group(&user)?;
     if joined {
         system::add_to_group(&user)?;
         done.push(format!("added {user} to group {GROUP}"));
@@ -121,7 +125,9 @@ async fn setup(args: SetupArgs) -> Result<i32> {
         )),
         Daemon::AlreadyEnabled | Daemon::NoSystemd => {}
     }
-    left.push("plug in a phone with USB debugging on, and run: routedroid start".into());
+    if !args.then_start {
+        left.push("plug in a phone with USB debugging on, and run: routedroid start".into());
+    }
     report::summary(&user, &done, &left);
     Ok(0)
 }

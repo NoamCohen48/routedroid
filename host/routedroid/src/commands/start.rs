@@ -3,6 +3,7 @@
 //! MTU, timeout, TUN name, DNS) is the daemon's: an option left out is
 //! simply not sent.
 
+pub mod first_time;
 mod follow;
 
 use std::time::Duration;

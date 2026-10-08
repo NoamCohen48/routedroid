@@ -34,6 +34,9 @@ pub fn summary(user: &str, done: &[String], left: &[String]) {
         println!("\nRoutedroid is set up for {user}:");
         done.iter().for_each(|line| println!("  - {line}"));
     }
+    if left.is_empty() {
+        return;
+    }
     println!("Next:");
     for (n, line) in left.iter().enumerate() {
         println!("  {}. {line}", n + 1);
