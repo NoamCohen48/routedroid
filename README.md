@@ -86,13 +86,14 @@ choosing:
   file is kept as `helper.toml.bak`, and the helper confirms the new one;
 - it enables your daemon (`routedroid.service`, a user unit).
 
-It ends with what is left. Usually that is logging out completely (a new group reaches only
-new sessions), then `routedroid start`. Run it again any time; it changes only what is not
-so already. You can also skip it: a first `routedroid start` at a terminal sees what is
-missing and offers to run it, then goes on with the start. Without a terminal, choose with flags: `--lan-if eno1` (DHCP by default),
+It ends with what is left, usually just `routedroid start`. No logout is needed: the helper
+looks the group up each time the daemon connects, so a group joined just now counts. Run it
+again any time; it changes only what is not so already. You can also skip it: a first
+`routedroid start` at a terminal sees what is missing and offers to run it, then goes on with
+the start. Without a terminal, choose with flags: `--lan-if eno1` (DHCP by default),
 `--phone-addresses 192.168.1.200/29`, or `--yes` for the defaults.
 
-By hand instead: `sudo usermod -aG routedroid "$USER"` (then log out completely),
+By hand instead: `sudo usermod -aG routedroid "$USER"`,
 `systemctl --user enable --now routedroid`, and allow an interface from
 `routedroid interfaces` in `/etc/routedroid/helper.toml`:
 
@@ -231,10 +232,8 @@ Routedroid's own table still limits each phone to its address and its LAN.
 - **The daemon is unreachable** (exit 3): `systemctl --user start routedroid`, and check
   `journalctl --user -u routedroid`.
 - **Helper refused or unreachable**: check that `routedroid-helper.socket` is active and that
-  the daemon has group `routedroid`. `doctor` tells the two cases apart. A `systemd --user`
-  that started before you joined the group keeps running without it until you log out
-  completely, or until `sudo systemctl restart user@$(id -u)`. The helper logs to
-  `journalctl -u 'routedroid-helper@*'`.
+  you are in group `routedroid` (`sudo routedroid setup` adds you). `doctor` tells the two
+  cases apart. The helper logs to `journalctl -u 'routedroid-helper@*'`.
 - **No lease** (`NoLease`): the LAN has no DHCP server or does not answer this client. Use
   `--phone-ip` with an address from `phone_addresses`.
 - **"is the Routedroid app installed?"**: this daemon carries no app (a source build). Run

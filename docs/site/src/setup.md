@@ -17,8 +17,9 @@ It does what a first connection needs from root, and asks before it chooses anyt
   The old file is kept as `helper.toml.bak`, and the helper confirms the new one.
 - **Your daemon.** It enables `routedroid.service`, a user unit.
 
-It ends with what is left to do. Usually that is logging out completely, since a new group
-reaches only new sessions, and then `routedroid start`.
+It ends with what is left to do, usually just `routedroid start`. You don't need to log out:
+the helper checks the group database each time your daemon connects, so a group you joined a
+moment ago already counts.
 
 Run it again any time. It changes only what isn't set up already.
 
@@ -30,9 +31,8 @@ Routedroid is not set up yet: no interface may carry phones yet.
 Set it up now (sudo routedroid setup)? [Y/n]
 ```
 
-Answer yes and type your password. Setup runs, and the start then goes on by itself. If setup
-just added you to the group, log out and back in first, as it says. Scripts and `--json` are
-never asked; they get the error, which names the command.
+Answer yes and type your password. Setup runs, and the start then goes on by itself. Scripts
+and `--json` are never asked; they get the error, which names the command.
 
 ## Without a terminal
 
@@ -57,7 +57,7 @@ sudo routedroid setup --lan-if eno1 --phone-addresses 192.168.1.200/29 --yes
 The same steps, without `setup`:
 
 ```sh
-sudo usermod -aG routedroid "$USER"          # then log out completely
+sudo usermod -aG routedroid "$USER"
 systemctl --user enable --now routedroid
 routedroid interfaces                        # which interfaces exist, and what the policy allows
 sudoedit /etc/routedroid/helper.toml         # allow one; see "The helper policy"

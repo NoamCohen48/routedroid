@@ -1,0 +1,19 @@
+#cloud-config
+# The PC as Fedora ships it, with SELinux enforcing: where the .rpm is
+# installed, upgraded and removed (package.sh with GUEST=fedora).
+hostname: fedora
+users:
+  - name: dev
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys: [@KEY@]
+package_update: true
+packages: [android-tools, nftables, tcpdump, curl, iperf3, nmap-ncat, rsync, tmux]
+write_files:
+  # Fedora has no plugdev; adb over ssh has no seat to get uaccess from.
+  - path: /etc/udev/rules.d/51-lab-adb.rules
+    content: |
+      SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", MODE="0666"
+runcmd:
+  - udevadm control --reload && udevadm trigger --subsystem-match=usb
+  - loginctl enable-linger dev

@@ -18,11 +18,17 @@ journalctl --user -u routedroid
 
 ## The helper refused, or is unreachable
 
-Check that `routedroid-helper.socket` is active, and that the daemon has group `routedroid`.
-`doctor` tells the two cases apart.
+Check that `routedroid-helper.socket` is active, and that you are in group `routedroid`
+(`sudo routedroid setup` adds you). `doctor` tells the two cases apart.
 
-A `systemd --user` that started before you joined the group keeps running without it until
-you log out completely, or until `sudo systemctl restart user@$(id -u)`.
+The helper admits root and the group's members, as the group database has them when your
+daemon connects, so no logout is needed after joining. A helper socket from an older version
+refuses with "Permission denied" until it restarts:
+`sudo systemctl restart routedroid-helper.socket`.
+
+If your account comes from a directory (LDAP, Active Directory), the helper finds your groups
+only through a local service such as SSSD or nslcd. Its sandbox may not reach the network,
+so an NSS module that does that itself refuses everyone it knows.
 
 The helper logs to `journalctl -u 'routedroid-helper@*'`.
 

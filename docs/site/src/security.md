@@ -7,8 +7,17 @@
 | `routedroidd` | you (`systemctl --user`) | adb, the packet relay, the control socket in `$XDG_RUNTIME_DIR` |
 | `routedroid-helper` | root, one instance per connection (socket activation) | only what `/etc/routedroid/helper.toml` allows, for members of group `routedroid` |
 
-Only the helper runs as root, and only while a connection lasts. Its socket is open to group
-`routedroid` alone.
+Only the helper runs as root, and only while a connection lasts. Anyone on the PC may connect to
+its socket, but before it reads a request the helper takes the caller's uid from the kernel
+(`SO_PEERCRED`) and turns away anyone but root and the members of group `routedroid`. It asks
+the group database each time rather than the caller's login groups, so a refusal says why and
+a member who joined a moment ago is admitted. A lookup that fails or takes over 5 seconds
+refuses.
+
+The lookup runs inside the helper's sandbox, which may open no IP socket. Local files work,
+and so do directories reached through a local service: SSSD, nslcd, winbind, systemd-userdbd.
+An NSS module that calls a directory server over the network itself, such as the old
+`libnss-ldap`, cannot, so its users are refused. Use SSSD or nslcd instead.
 
 ## The helper
 

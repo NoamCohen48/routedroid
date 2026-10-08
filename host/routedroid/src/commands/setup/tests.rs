@@ -61,14 +61,6 @@ fn it_is_for_whoever_ran_sudo_unless_told() {
     );
 }
 
-#[test]
-fn a_session_has_the_group_only_if_its_manager_does() {
-    let status = "Name:\tsystemd\nUid:\t1000\t1000\t1000\t1000\nGroups:\t4 27 968 1000 \n";
-    assert!(system::has_gid(status, "968"));
-    assert!(!system::has_gid(status, "96"), "whole numbers only");
-    assert!(!system::has_gid("Name:\tsystemd\n", "968"));
-}
-
 #[tokio::test]
 async fn without_root_it_changes_nothing_and_says_how() {
     if system::is_root() {
