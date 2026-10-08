@@ -78,6 +78,7 @@ fn message(
             gateway: None,
             oif: None,
             protocol: ROUTE_PROTOCOL,
+            metric: 0,
         },
     );
     message.header.scope = RouteScope::Universe;
