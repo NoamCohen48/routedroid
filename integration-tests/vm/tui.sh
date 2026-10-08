@@ -38,6 +38,7 @@ check "with the reconnect wait"            shows "Wait for an unplugged phone"
 key Enter
 check "Enter connects it"                  shows "state: active"
 check "traffic in readable units"          eval "shows ' kB' || shows ' MB'"
+check "the last minute, graphed"           eval "shows 'receives:' && { shows ' B/s' || shows 'kB/s'; }"
 echo "== unplugged and back"
 PHONE=$PHONE "$HERE/lab.sh" unplug ubuntu > /dev/null
 check "the phone stays on screen, gone"    shows "gone         no      reconnecting"
