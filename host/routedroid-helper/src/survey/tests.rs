@@ -2,8 +2,8 @@ use anyhow::anyhow;
 use routedroid_helper_ipc::Net;
 
 use super::*;
-use crate::kernel::Route;
 use crate::kernel::fake::Fake;
+use crate::kernel::{MAIN_TABLE, Route};
 
 const POLICY: &str = r#"
 [[interface]]
@@ -50,6 +50,7 @@ fn kernel() -> Fake {
         gateway: Some("10.0.0.1".parse().unwrap()),
         oif: Some(lan),
         protocol: 4,
+        metric: 0,
     });
     drop(s);
     kernel
@@ -104,4 +105,36 @@ fn an_unreadable_policy_is_the_reason_not_a_failure() {
         lan.1.as_deref(),
         Some("the helper policy cannot be read: policy /x: not found")
     );
+}
+
+#[test]
+fn the_default_route_is_the_one_in_use() {
+    let kernel = kernel();
+    let default_via = |table, oif, metric| Route {
+        table,
+        dst: "0.0.0.0".parse().unwrap(),
+        prefix: 0,
+        gateway: Some("10.2.0.1".parse().unwrap()),
+        oif: Some(oif),
+        protocol: 4,
+        metric,
+    };
+    {
+        let mut s = kernel.lock();
+        let br0 = s.links["br0"].index;
+        // A second uplink, there in case the first goes, and a phone's table.
+        s.routes.push(default_via(MAIN_TABLE, br0, 600));
+        s.routes.push(default_via(0x0a00_00c8, br0, 0));
+    }
+    let lan_is_default = |kernel: &Fake| {
+        let all = survey(kernel, &Ok(POLICY.parse().unwrap())).unwrap();
+        (all[0].default_route, all[2].default_route)
+    };
+    assert_eq!(lan_is_default(&kernel), (true, false));
+    {
+        let mut s = kernel.lock();
+        let lan = s.links["lan0"].index;
+        s.routes.retain(|r| r.oif != Some(lan) || r.prefix != 0);
+    }
+    assert_eq!(lan_is_default(&kernel), (false, true), "the uplink left");
 }

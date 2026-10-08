@@ -36,6 +36,7 @@ fn entries(message: &RouteMessage) -> Vec<Route> {
         gateway: None,
         oif: None,
         protocol: message.header.protocol.into(),
+        metric: 0,
     };
     let mut hops = Vec::new();
     for attribute in &message.attributes {
@@ -43,6 +44,7 @@ fn entries(message: &RouteMessage) -> Vec<Route> {
             RouteAttribute::Destination(RouteAddress::Inet(dst)) => route.dst = *dst,
             RouteAttribute::Gateway(RouteAddress::Inet(gateway)) => route.gateway = Some(*gateway),
             RouteAttribute::Oif(oif) => route.oif = Some(*oif),
+            RouteAttribute::Priority(metric) => route.metric = *metric,
             // Tables past 255 only fit the attribute.
             RouteAttribute::Table(table) => route.table = *table,
             RouteAttribute::MultiPath(next_hops) => {

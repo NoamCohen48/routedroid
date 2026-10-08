@@ -37,6 +37,7 @@ fn facts() -> Facts {
         gateway: gateway.map(ip),
         oif: Some(2),
         protocol: 4,
+        metric: 0,
     };
     Facts {
         lan: Some(Link {

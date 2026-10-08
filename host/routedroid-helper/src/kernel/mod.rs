@@ -69,6 +69,8 @@ pub struct Route {
     pub gateway: Option<Ipv4Addr>,
     pub oif: Option<u32>,
     pub protocol: u8,
+    /// The route's priority (`metric`): of two routes alike, the lower wins.
+    pub metric: u32,
 }
 
 /// The kernel's main routing table (`RT_TABLE_MAIN`).

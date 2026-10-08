@@ -23,6 +23,7 @@ fn default_via(gateway: &str, oif: u32) -> Route {
         gateway: Some(ip(gateway)),
         oif: Some(oif),
         protocol: 4,
+        metric: 0,
     }
 }
 
