@@ -94,10 +94,10 @@ pub async fn offer(client: Option<&Client>, json: bool) -> Result<After> {
             return Ok(After::Exit(2));
         }
     };
+    // The helper admits by the group database, so a group joined just now
+    // already counts.
     match status.code() {
-        Some(0) if joined => Ok(After::SetUp),
-        // A group joined just now reaches this session only at the next login.
-        Some(0) => Ok(After::Exit(0)),
+        Some(0) => Ok(After::SetUp),
         code => Ok(After::Exit(code.unwrap_or(1))),
     }
 }

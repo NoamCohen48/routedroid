@@ -138,6 +138,14 @@ pane. Keys go in with `send-keys`, and checks read the screen with `capture-pane
 
 The connection pane graphs the last minute of traffic. 14 checks. `TUI=/path` runs another build, copied into the guest first.
 
+## group.sh
+
+`group.sh` checks that joining group `routedroid` needs no new login. It needs no phone. A new
+user, `fresh`, starts a daemon, and the helper refuses it, saying why, as doctor does too.
+`usermod` then adds them to the group, and the same daemon is let in at once, though its own
+groups still lack the group. It upgrades from the .deb in `host/target/packages` first, if
+one is there, so the socket is checked to be open to everyone after an upgrade.
+
 ## cli.sh
 
 `PHONE=vendor:product cli.sh SERIAL` uses `routedroid` on the `ubuntu` guest the way a
@@ -182,6 +190,8 @@ person would, and checks what it prints and the exit code it gives. It installs 
 | `PHONE=04e8:6860 cli.sh 85e49002` (2026-10-07, remembered phones, screen, setup) | 49/49. Fixed first: `setup --yes` on a set-up PC added mgmt0 to the policy, `setup` for a logged-out user left a user manager running, and `routedroid … \| head` panicked |
 | `PHONE=04e8:6860 tui.sh 85e49002` (2026-10-07, with the graph) | 14/14 |
 | `PHONE=04e8:6860 cli.sh 85e49002` (2026-10-08, start offers setup) | 54/54. Fixed first: both NICs read "default route", so setup offered mgmt0 |
+| `group.sh` (2026-10-08) | 10/10, as an upgrade from a 0660 socket |
+| `PHONE=04e8:6860 cli.sh 85e49002` (2026-10-08, the helper checks the group) | 54/54 |
 | Phone dropped off USB mid-session (gvfs re-grab) | The connection ended ("the phone closed the connection"), the lease was RELEASEd, and no rule or table was left |
 | First .deb upgrade | Found that needrestart restarts a helper instance, which ends its session; the .deb now tells needrestart not to |
 | First install on a fresh guest | Found that a lingering `systemd --user` keeps its old groups; `doctor` now says so (`11a2cb7`) |

@@ -6,7 +6,7 @@
 #   - the helper's socket-activated template unit  -> /etc/systemd/system
 #   - the daemon's user unit                       -> /etc/systemd/user
 #   - shell completions and man pages              -> $PREFIX/share
-#   - group `routedroid` (owns the helper socket) and a deny-all policy
+#   - group `routedroid` (who may use the helper) and a deny-all policy
 #
 #   sudo ./install.sh [--uninstall [--purge]]   (PREFIX defaults to /usr/local)
 #

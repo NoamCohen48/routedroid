@@ -7,8 +7,12 @@
 | `routedroidd` | you (`systemctl --user`) | adb, the packet relay, the control socket in `$XDG_RUNTIME_DIR` |
 | `routedroid-helper` | root, one instance per connection (socket activation) | only what `/etc/routedroid/helper.toml` allows, for members of group `routedroid` |
 
-Only the helper runs as root, and only while a connection lasts. Its socket is open to group
-`routedroid` alone.
+Only the helper runs as root, and only while a connection lasts. Anyone on the PC may connect to
+its socket, but before it reads a request the helper takes the caller's uid from the kernel
+(`SO_PEERCRED`) and turns away anyone but root and the members of group `routedroid`. It asks
+the group database each time rather than the caller's login groups, so a refusal says why and
+a member who joined a moment ago is admitted. A lookup that fails or takes over 5 seconds
+refuses.
 
 ## The helper
 

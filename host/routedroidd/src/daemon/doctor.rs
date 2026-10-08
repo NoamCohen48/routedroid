@@ -23,11 +23,7 @@ pub async fn run(
         checks.push(Check::new(
             "helper",
             CheckStatus::Fail,
-            // Refused (EACCES) is about groups; anything else is the socket unit.
-            match fault.to_string().contains("Permission denied") {
-                true => format!("{fault}; {}", groups::hint()),
-                false => format!("{fault}; is routedroid-helper.socket enabled (host/install.sh)?"),
-            },
+            explain(&fault.to_string()),
         ));
         return (checks, Vec::new());
     }
@@ -116,5 +112,18 @@ fn policy(interfaces: &[InterfaceInfo]) -> Check {
     } else {
         let detail = format!("phones may join through {}", allowed.join(", "));
         Check::new("policy", CheckStatus::Ok, detail)
+    }
+}
+
+/// What to do about failing to reach the helper. Its own refusal says what
+/// to do; an old socket's refusal (EACCES) is about groups; anything else is
+/// the socket unit.
+fn explain(fault: &str) -> String {
+    if fault.contains("is not in group") {
+        fault.to_string()
+    } else if fault.contains("Permission denied") {
+        format!("{fault}; {}", groups::hint())
+    } else {
+        format!("{fault}; is routedroid-helper.socket enabled (host/install.sh)?")
     }
 }

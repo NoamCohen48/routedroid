@@ -71,19 +71,10 @@ async fn setup(args: SetupArgs) -> Result<i32> {
     let mut done = Vec::new();
     let mut left = Vec::new();
 
-    let joined = !in_group(&user)?;
-    if joined {
+    if !in_group(&user)? {
         system::add_to_group(&user)?;
         done.push(format!("added {user} to group {GROUP}"));
     }
-    // Some(false) also when they joined earlier but have not logged out since.
-    let session = system::session_has_group(&user)?;
-    if joined || session == Some(false) {
-        left.push(format!(
-            "log out completely and back in (or reboot), so {user}'s session has group {GROUP}"
-        ));
-    }
-
     let interfaces = helper::interfaces(&args.helper_socket).await?;
     let choice = if let Some(lan_if) = &args.lan_if {
         choose::from_flags(&interfaces, lan_if, args.dhcp, &args.phone_addresses)?
@@ -113,7 +104,7 @@ async fn setup(args: SetupArgs) -> Result<i32> {
         return Ok(1);
     }
 
-    match system::enable_daemon(&user, session) {
+    match system::enable_daemon(&user, system::manager_running(&user)?) {
         Daemon::Enabled { started: true } => {
             done.push("enabled and started the daemon (routedroid.service)".into());
         }
