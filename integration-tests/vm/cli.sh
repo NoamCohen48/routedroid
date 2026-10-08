@@ -141,6 +141,21 @@ check "stop by name"                         says 0 "lab: stopped" -- stop lab
 check "forget it"                            says 0 "forgot lab ($SERIAL)" -- forget lab
 check "nothing is remembered"                eval "! pc routedroid phones | grep -q lab"
 
+echo "== a PC not set up: start offers setup"
+pc 'printf "" | sudo tee /etc/routedroid/helper.toml > /dev/null'
+foreground ""
+check "start offers setup"                   shows "Set it up now (sudo routedroid setup)? [Y/n]"
+pc tmux send-keys -t cli Enter
+check "setup offers the LAN in use"          shows "Let phones join the LAN through lan0? [Y/n]"
+pc tmux send-keys -t cli Enter
+sleep 1
+pc tmux send-keys -t cli Enter
+check "then the start goes on"               shows "active"
+check "with no step left over"               eval "! grep -q 'run: routedroid start' '$S/screen'"
+pc tmux send-keys -t cli C-c
+check "Ctrl-C stops it"                      shows "EXIT=0"
+pc "tmux kill-server 2>/dev/null; true"
+
 echo "== without the daemon"
 pc 'systemctl --user stop routedroid'
 check "exit 3, with what to do"              says 3 "systemctl --user start routedroid" -- status

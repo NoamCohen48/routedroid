@@ -161,9 +161,11 @@ person would, and checks what it prints and the exit code it gives. It installs 
   active.
 - **Remembered:** `remember SERIAL --name lab`. Unplugged and plugged in, it connects by
   itself. Then `stop lab` and `forget lab`.
+- **Not set up:** with the policy emptied, `start` offers setup, setup offers lan0 (the
+  default route in use, not mgmt0's metric-1000 one), and the start then goes active.
 - **No daemon:** exit 3, with the command that starts it.
 
-49 checks.
+54 checks.
 
 ## Results, 2026-10-06 (Samsung SM-J810G, Android 10)
 
@@ -179,6 +181,7 @@ person would, and checks what it prints and the exit code it gives. It installs 
 | `PHONE=04e8:6860 cli.sh 85e49002` (2026-10-07) | 29/29. Fixed first: policy refusals were accepted and then failed as `helper refused start: Refused: …` (exit 15), `events` was JSON only, a 20 s wait read as 19 s, "1 phone(s)", and the upgrade left user managers with a stale unit |
 | `PHONE=04e8:6860 cli.sh 85e49002` (2026-10-07, remembered phones, screen, setup) | 49/49. Fixed first: `setup --yes` on a set-up PC added mgmt0 to the policy, `setup` for a logged-out user left a user manager running, and `routedroid … \| head` panicked |
 | `PHONE=04e8:6860 tui.sh 85e49002` (2026-10-07, with the graph) | 14/14 |
+| `PHONE=04e8:6860 cli.sh 85e49002` (2026-10-08, start offers setup) | 54/54. Fixed first: both NICs read "default route", so setup offered mgmt0 |
 | Phone dropped off USB mid-session (gvfs re-grab) | The connection ended ("the phone closed the connection"), the lease was RELEASEd, and no rule or table was left |
 | First .deb upgrade | Found that needrestart restarts a helper instance, which ends its session; the .deb now tells needrestart not to |
 | First install on a fresh guest | Found that a lingering `systemd --user` keeps its old groups; `doctor` now says so (`11a2cb7`) |
