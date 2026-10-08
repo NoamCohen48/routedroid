@@ -24,6 +24,7 @@ impl State {
             gateway: None,
             oif: Some(route.oif),
             protocol: ROUTE_PROTOCOL,
+            metric: 0,
         };
         self.routes.push(entry);
         Ok(())
@@ -50,6 +51,7 @@ impl State {
             gateway,
             oif,
             protocol: ROUTE_PROTOCOL,
+            metric: 0,
         };
         let any = Ipv4Addr::UNSPECIFIED;
         self.routes
