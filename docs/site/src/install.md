@@ -16,10 +16,28 @@
   - for DHCP, a server that leases one more address to the PC's MAC under another client
     identifier. Most home and office routers do.
 
+## From the apt repository (Debian, Ubuntu)
+
+Add the repository once. `apt upgrade` then brings new releases like any other package:
+
+```sh
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://noamcohen48.github.io/routedroid/apt/routedroid.gpg \
+    | sudo tee /etc/apt/keyrings/routedroid.gpg > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/routedroid.gpg] https://noamcohen48.github.io/routedroid/apt stable main" \
+    | sudo tee /etc/apt/sources.list.d/routedroid.list
+sudo apt update && sudo apt install routedroid
+sudo routedroid setup
+```
+
+The key signs only this repository; `signed-by` keeps apt from trusting it for any other.
+
 ## From packages
 
+
 Download a package from the
-[releases](https://github.com/NoamCohen48/routedroid/releases), or build them with
+[releases](https://github.com/NoamCohen48/routedroid/releases) or
+[this site's downloads](https://noamcohen48.github.io/routedroid/download/), or build them with
 `host/packaging/build.sh`, which writes them to `host/target/packages`.
 
 ```sh
