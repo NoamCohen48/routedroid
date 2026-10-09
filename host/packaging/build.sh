@@ -76,7 +76,8 @@ done
 # The tarball: install.sh with what it installs, laid out as in host/.
 TAR=routedroid-$VERSION-linux-$(uname -m)
 mkdir -p "$STAGE/$TAR/routedroid-helper" "$STAGE/$TAR/routedroidd"
-cp -r "$STAGE/bin" "$SHARE" "$HOST/install.sh" "$HOST/../README.md" "$STAGE/$TAR/"
+cp -r "$STAGE/bin" "$SHARE" "$HOST/install.sh" "$HOST/../README.md" \
+    "$HOST/../LICENSE-MIT" "$HOST/../LICENSE-APACHE" "$STAGE/$TAR/"
 cp -r "$HOST/routedroid-helper/helper.toml" "$HOST/routedroid-helper/systemd" "$STAGE/$TAR/routedroid-helper/"
 cp -r "$HOST/routedroidd/systemd" "$STAGE/$TAR/routedroidd/"
 tar -C "$STAGE" --owner=0 --group=0 --sort=name -czf "$OUT/$TAR.tar.gz" "$TAR"
