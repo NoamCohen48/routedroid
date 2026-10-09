@@ -303,3 +303,10 @@ in `android/`, and the rigs in `integration-tests/helper/`, which need no root. 
 all, and builds the packages and installs, upgrades and removes them in Debian, Ubuntu and
 Fedora containers (`.github/workflows/ci.yml`). A `vX.Y.Z` tag drafts a release with the
 packages and the APK (`.github/workflows/release.yml`).
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT), at your option. Unless you explicitly state otherwise, any
+contribution intentionally submitted for inclusion in Routedroid, as defined in the Apache-2.0
+license, shall be dual licensed as above, without any additional terms or conditions.
