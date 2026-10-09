@@ -1,7 +1,12 @@
 # The documentation site (docs/site, an mdBook), published to GitHub Pages on
-# every push to main that changes it. Pull requests only build it, so a broken
-# book fails before it is merged. Pages must be set to deploy from GitHub
-# Actions (Settings, Pages, Source).
+# every push to main that changes it, and after each release (release.yml
+# runs it). Pull requests only build it, so a broken book fails before it is
+# merged. Pages must be set to deploy from GitHub Actions (Settings, Pages,
+# Source).
+#
+# Beside the book it carries apt/, an apt repository of every release's
+# .deb signed with the APT_SIGNING_KEY secret (host/packaging/apt-key.sh
+# makes it), and download/, the latest release's files.
 name: docs
 
 on:
@@ -36,6 +41,28 @@ jobs:
           curl -fsSL "$url" | tar -xz -C "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - run: mdbook build docs/site
+      - name: The apt repository and the downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          tags=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases \
+            --json tagName --jq '.[].tagName')
+          if [ -z "$tags" ]; then echo "no release yet: no apt repository or downloads"; exit 0; fi
+          latest=$(echo "$tags" | head -1)
+          book=docs/site/book
+          gh release download "$latest" --repo "$GITHUB_REPOSITORY" -D "$book/download"
+          {
+            echo "<!doctype html><meta charset=utf-8><title>Routedroid $latest downloads</title>"
+            echo "<h1>Routedroid $latest</h1><ul>"
+            for f in "$book"/download/*; do n=$(basename "$f"); echo "<li><a href=\"$n\">$n</a></li>"; done
+            echo "</ul>"
+          } > "$book/download/index.html"
+          if [ -z "$APT_SIGNING_KEY" ]; then
+            echo "::warning::no APT_SIGNING_KEY secret (host/packaging/apt-key.sh): no apt repository"; exit 0
+          fi
+          for tag in $tags; do gh release download "$tag" --repo "$GITHUB_REPOSITORY" -p '*.deb' -D "$RUNNER_TEMP/debs"; done
+          host/packaging/apt-repo.sh "$book/apt" "$RUNNER_TEMP"/debs/*.deb
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs/site/book

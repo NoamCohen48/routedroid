@@ -42,6 +42,10 @@ sudo dnf install ./routedroid-0.1.0-1.x86_64.rpm   # Fedora
 sudo routedroid setup                              # see "Set up" below
 ```
 
+Debian and Ubuntu can instead take it, and every update after, from the signed apt
+repository on the docs site; [Install](https://noamcohen48.github.io/routedroid/install.html)
+has the three lines that add it.
+
 On another systemd distribution (glibc 2.35 or newer, with nftables and adb installed), the
 release's tarball holds the same programs and `install.sh`, which installs into `/usr/local`:
 
