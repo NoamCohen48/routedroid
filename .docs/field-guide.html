@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Routedroid Field Guide</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Serif+4:opsz,ital,wght@8..60,0,400;8..60,0,600;8..60,1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --bg:#f5f7fa; --paper:#ffffff; --ink:#1b2331; --ink-2:#4a5568; --ink-3:#7b8798;
+  --line:#d9dfe8; --line-2:#c3cbd7;
+  --accent:#2a56b8; --accent-soft:#e6edfb;
+  --pass:#0f7a6b; --pass-soft:#dff4ef;
+  --warn:#b26a0a; --warn-soft:#fbeed6;
+  --drop:#b13a30; --drop-soft:#fbe3e0;
+  --code-bg:#eef1f6;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#111721; --paper:#182030; --ink:#e7ecf3; --ink-2:#b4bfcf; --ink-3:#7f8ba0;
+    --line:#2a3445; --line-2:#3a465a;
+    --accent:#7ea2f0; --accent-soft:#213052;
+    --pass:#5fd0b8; --pass-soft:#153a34;
+    --warn:#f0b35a; --warn-soft:#3f2e12;
+    --drop:#f28b80; --drop-soft:#43201c;
+    --code-bg:#1f2938;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#111721; --paper:#182030; --ink:#e7ecf3; --ink-2:#b4bfcf; --ink-3:#7f8ba0;
+  --line:#2a3445; --line-2:#3a465a;
+  --accent:#7ea2f0; --accent-soft:#213052;
+  --pass:#5fd0b8; --pass-soft:#153a34;
+  --warn:#f0b35a; --warn-soft:#3f2e12;
+  --drop:#f28b80; --drop-soft:#43201c;
+  --code-bg:#1f2938;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:"Source Serif 4",Georgia,"Times New Roman",serif;font-size:17px;line-height:1.6;margin:0}
+.wrap{max-width:760px;margin:0 auto;padding-inline:20px;padding-block:40px 80px}
+h1,h2,h3{font-family:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif;line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:clamp(34px,6vw,50px);font-weight:700;letter-spacing:-.01em}
+h2{font-size:26px;font-weight:700;margin-top:64px;padding-top:18px;border-top:2px solid var(--ink)}
+h3{font-size:19px;font-weight:700;margin-top:28px}
+p{margin:14px 0}
+.lede{font-size:20px;color:var(--ink-2);margin-top:14px;max-width:60ch}
+.eyebrow{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px}
+code,.mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,monospace;font-size:.85em}
+code{background:var(--code-bg);padding:1px 5px;border-radius:4px}
+a{color:var(--accent)}
+.diagram{margin:28px 0 8px;overflow-x:auto}
+.diagram svg{display:block;width:100%;max-width:720px;height:auto}
+.caption{font-size:14px;color:var(--ink-3);margin-top:6px}
+.plain{background:var(--accent-soft);border-left:4px solid var(--accent);padding:14px 18px;margin:22px 0;border-radius:0 6px 6px 0}
+.plain p{margin:6px 0}
+.term{display:grid;grid-template-columns:150px 1fr;gap:10px 18px;margin:18px 0}
+.term dt{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:16px}
+.term dd{margin:0;color:var(--ink-2)}
+@media (max-width:520px){.term{grid-template-columns:1fr}.term dd{margin-bottom:8px}}
+.gates{list-style:none;padding:0;margin:20px 0;display:grid;gap:12px}
+.gate{display:grid;grid-template-columns:96px 1fr;gap:14px;padding:14px 16px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}
+@media (max-width:520px){.gate{grid-template-columns:1fr}}
+.badge{display:inline-block;font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:600;letter-spacing:.06em;padding:3px 9px;border-radius:999px;align-self:start;white-space:nowrap}
+.b-pass{background:var(--pass-soft);color:var(--pass)}
+.b-warn{background:var(--warn-soft);color:var(--warn)}
+.b-drop{background:var(--drop-soft);color:var(--drop)}
+.gate b{font-family:"Bricolage Grotesque",sans-serif;font-size:17px}
+.gate p{margin:4px 0 0;color:var(--ink-2);font-size:16px}
+.have{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:20px 0}
+.have div{padding:14px 16px;border-top:3px solid var(--accent);background:var(--paper);border:1px solid var(--line);border-top-width:3px;border-top-color:var(--accent);border-radius:6px}
+.have b{font-family:"Bricolage Grotesque",sans-serif;display:block;margin-bottom:4px}
+.have p{margin:0;font-size:15px;color:var(--ink-2)}
+.road{list-style:none;padding:0;margin:24px 0;position:relative}
+.road::before{content:"";position:absolute;left:11px;top:8px;bottom:8px;width:2px;background:var(--line-2)}
+.road li{position:relative;padding-left:40px;margin:0 0 22px}
+.road li::before{content:"";position:absolute;left:4px;top:7px;width:16px;height:16px;border-radius:50%;background:var(--paper);border:3px solid var(--line-2)}
+.road li.done::before{background:var(--pass);border-color:var(--pass)}
+.road li.now::before{background:var(--accent);border-color:var(--accent);box-shadow:0 0 0 5px var(--accent-soft)}
+.road .ph{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.road b{font-family:"Bricolage Grotesque",sans-serif;font-size:18px;display:block}
+.road p{margin:4px 0 0;color:var(--ink-2);font-size:16px}
+.road .now b{color:var(--accent)}
+.steps{counter-reset:s;list-style:none;padding:0;margin:18px 0}
+.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.steps li::before{content:counter(s);font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:20px;color:var(--accent);line-height:1.2}
+.steps b{font-family:"Bricolage Grotesque",sans-serif}
+.steps p{margin:2px 0 0;color:var(--ink-2);font-size:16px}
+.foot{margin-top:56px;font-size:14px;color:var(--ink-3);border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="eyebrow">Status as of 21 Sep 2026</div>
+  <h1>Routedroid Field Guide</h1>
+  <p class="lede">What the project does, what has been proven so far, what was deliberately left out, and where the work goes next. Written for someone who has never opened the repository.</p>
+
+  <h2>The idea in one sentence</h2>
+  <p>Plug an ordinary Android phone into a Linux PC with a USB cable, and the phone appears on your home network as if it had its own Ethernet cable: it gets its own IP address, other machines can reach it, and it can reach them. No rooting, no special firmware.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 720 210" role="img" aria-label="Packet path: LAN to PC to phone over USB">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--accent)"/></marker>
+      </defs>
+      <!-- LAN -->
+      <rect x="8" y="60" width="120" height="90" rx="8" fill="var(--paper)" stroke="var(--line-2)"/>
+      <text x="68" y="88" text-anchor="middle" font-family="Bricolage Grotesque,sans-serif" font-weight="700" font-size="15" fill="var(--ink)">Home LAN</text>
+      <text x="68" y="110" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="var(--ink-3)">router, laptop,</text>
+      <text x="68" y="126" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="var(--ink-3)">Internet</text>
+      <!-- PC -->
+      <rect x="196" y="30" width="270" height="150" rx="8" fill="var(--paper)" stroke="var(--line-2)"/>
+      <text x="331" y="54" text-anchor="middle" font-family="Bricolage Grotesque,sans-serif" font-weight="700" font-size="15" fill="var(--ink)">Linux PC</text>
+      <rect x="212" y="70" width="110" height="46" rx="6" fill="var(--accent-soft)" stroke="var(--accent)"/>
+      <text x="267" y="89" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="var(--ink)">eno1</text>
+      <text x="267" y="105" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="var(--ink-3)">answers ARP for phone</text>
+      <rect x="340" y="70" width="110" height="46" rx="6" fill="var(--accent-soft)" stroke="var(--accent)"/>
+      <text x="395" y="89" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="var(--ink)">phone0 (TUN)</text>
+      <text x="395" y="105" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="var(--ink-3)">virtual cable end</text>
+      <line x1="322" y1="93" x2="340" y2="93" stroke="var(--accent)" stroke-width="2"/>
+      <text x="331" y="146" text-anchor="middle" font-family="Source Serif 4,serif" font-size="12" fill="var(--ink-2)">kernel routes packets between the two — no NAT</text>
+      <text x="331" y="164" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="var(--ink-3)">privileged helper owns phone0 + a journal of every change</text>
+      <!-- Phone -->
+      <rect x="534" y="40" width="178" height="130" rx="14" fill="var(--paper)" stroke="var(--line-2)"/>
+      <rect x="548" y="58" width="150" height="96" rx="6" fill="var(--bg)" stroke="var(--line)"/>
+      <text x="623" y="82" text-anchor="middle" font-family="Bricolage Grotesque,sans-serif" font-weight="700" font-size="15" fill="var(--ink)">Android phone</text>
+      <text x="623" y="104" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="var(--ink-3)">VpnService app</text>
+      <text x="623" y="122" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="var(--ink-3)">IP 10.100.102.222</text>
+      <text x="623" y="140" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="var(--ink-3)">unrooted</text>
+      <!-- links -->
+      <line x1="128" y1="93" x2="212" y2="93" stroke="var(--accent)" stroke-width="2.5" marker-start="url(#ar)" marker-end="url(#ar)"/>
+      <line x1="450" y1="93" x2="534" y2="93" stroke="var(--accent)" stroke-width="2.5" marker-start="url(#ar)" marker-end="url(#ar)"/>
+      <text x="492" y="82" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="var(--accent)">USB / ADB</text>
+      <text x="170" y="82" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="var(--accent)">Ethernet</text>
+    </svg>
+    <p class="caption">Whole IP packets travel unchanged from the LAN, through the PC's kernel, over the USB debug connection, into the phone's VPN interface — and back.</p>
+  </div>
+
+  <h3>Four words you'll see everywhere</h3>
+  <dl class="term">
+    <dt>ADB</dt><dd>Android's USB debugging channel. It already carries a byte stream between PC and phone; we use it as a virtual network cable.</dd>
+    <dt>VpnService</dt><dd>The one Android API that lets a normal app receive and send raw IP packets. We don't run a real VPN; we use it as the phone's end of the cable.</dd>
+    <dt>TUN</dt><dd>The Linux equivalent: a virtual network interface (<code>phone0</code>) whose packets a program reads and writes. It is the PC's end of the cable.</dd>
+    <dt>Proxy ARP</dt><dd>The PC answering "who has the phone's IP?" on the LAN with its own hardware address, so the router sends the phone's traffic to the PC, which forwards it down the cable.</dd>
+  </dl>
+
+  <div class="plain">
+    <p><strong>Why not just forward a few ports?</strong> Port forwarding turns the phone into a service behind the PC. Routedroid gives the phone a real address, so anything that works with a normal LAN host — pings, SSH into a terminal app, a web server on the phone, a game's LAN discovery — works without per-port setup.</p>
+  </div>
+
+  <h2>Phase 0: proving it can work at all</h2>
+  <p>Before writing the real product we listed every assumption that could sink it and tested each one on real hardware. The rule was strict: an assumption that fails is removed from the product, not papered over. Here is how each one came out.</p>
+
+  <ul class="gates">
+    <li class="gate"><span class="badge b-pass">PASS</span><div><b>Packets survive the trip</b><p>10 MB files copied both directions over USB with bit-exact checksums; ping, TCP and UDP all work; nothing leaks when the cable is yanked.</p></div></li>
+    <li class="gate"><span class="badge b-pass">PASS</span><div><b>Other machines can reach the phone</b><p>A laptop on the router's Wi-Fi found the phone's address (via proxy ARP on the PC) and talked to it. The phone reached the router, the laptop, DNS and the Internet.</p></div></li>
+    <li class="gate"><span class="badge b-pass">PASS</span><div><b>The router will lend us a second address</b><p>Over Ethernet the home router handed the PC a second DHCP lease for the phone, renewed it, and released it on exit — without disturbing the PC's own address.</p></div></li>
+    <li class="gate"><span class="badge b-pass">PASS</span><div><b>USB debugging keeps working while the VPN owns the phone's routes</b><p>~25 000 packets with <code>adb shell</code>, install and logcat unaffected.</p></div></li>
+    <li class="gate"><span class="badge b-pass">PASS</span><div><b>The secret handshake can't be spied on or faked</b><p>The one-time secret reaches the phone through a protected channel (never on a command line), a hostile app on the same phone is denied at the OS level, wrong / replayed / expired secrets are refused, and the secret never appears in any log. Verified on Android 10 and 14.</p></div></li>
+    <li class="gate"><span class="badge b-pass">PASS</span><div><b>A crash never leaves the PC's network broken</b><p>A small privileged helper applies every change (interface, firewall, sysctls, route) through a write-ahead journal. It was force-killed at all 37 possible points, on both a sandbox and real systemd; cleanup restored the PC to baseline every single time.</p></div></li>
+    <li class="gate"><span class="badge b-drop">DROPPED</span><div><b>One phone, several addresses at once</b><p>Failed on every Android version: the phone always sends from its first address. So version 1 gives each phone <em>one</em> address on <em>one</em> chosen network. The architecture was simplified accordingly.</p></div></li>
+    <li class="gate"><span class="badge b-warn">DEFERRED</span><div><b>PC connected over Wi-Fi instead of Ethernet</b><p>Not tested (no hardware at hand). Automatic address mode is therefore promised for Ethernet-attached PCs only; on Wi-Fi it's experimental and a <code>doctor</code> check tells you up front whether your access point cooperates. Manual static address always works.</p></div></li>
+    <li class="gate"><span class="badge b-warn">DEFERRED</span><div><b>Wireless (Wi-Fi) ADB instead of the USB cable</b><p>Not tested (needs an Android 11+ phone). Version 1 is USB only; the tool refuses a network-attached phone with a clear message rather than risk cutting its own connection.</p></div></li>
+  </ul>
+
+  <h2>What exists today</h2>
+  <p>Everything below is working code, but it is <em>spike</em> code: written to answer the questions above quickly, not to be shipped as-is.</p>
+  <div class="have">
+    <div><b>Host tunnel (Rust)</b><p><code>phase0-tunnel</code>: talks to the phone over ADB, does the authenticated handshake, moves packets between ADB and the TUN interface.</p></div>
+    <div><b>Privileged helper (Rust)</b><p><code>phase0-helper</code>: the only part that runs as root. Journaled network changes, systemd-supervised cleanup, packet relay over a Unix socket.</p></div>
+    <div><b>Android app (Kotlin)</b><p>VpnService, protected bootstrap provider, mutual-HMAC handshake, packet pumps. Plus a deliberately hostile test app that tries to steal the secret (and fails).</p></div>
+    <div><b>Test rigs</b><p>Linux network-namespace labs that run without root, real-phone scripts (Samsung Android 10, emulator Android 14), the 37-point kill matrix, and a documented decision record for every gate.</p></div>
+  </div>
+
+  <h2>The road ahead</h2>
+  <p>The plan is six phases. Each turns one proven idea into a dependable feature. Phase 1 and the daemon split are built and verified on an emulator and a real phone; Phase 2 is next.</p>
+  <ul class="road">
+    <li class="done"><span class="ph">Phase 0 · done</span><b>Feasibility gates</b><p>Every risky assumption tested on hardware; two deferred with reduced scope.</p></li>
+    <li class="done"><span class="ph">Phase 1 · done</span><b>Repository and protocol foundation</b><p>Rebuild the spikes as real components: a proper CLI, a written wire-protocol spec with shared test fixtures for both Rust and Kotlin, session state machine, secure handshake, and an Android app with a basic status screen. Goal: one phone with a manually chosen address works end to end, cleanly.</p></li>
+    <li class="done"><span class="ph">Phase 1.5 · done</span><b>Daemon and clients</b><p>The host controller became a background service (<code>routedroidd</code>) that owns every phone's connection; the command line and a terminal UI are thin clients talking to it over a private socket — the same shape as Docker. This is what lets several phones, a status view and a stop command exist at all.</p></li>
+    <li class="now"><span class="ph">Phase 2 · next</span><b>Safe host network configuration</b><p>Move firewall, route and interface setup into the privileged helper for good, including coexistence with Docker and firewalld (both found on the real PC during Phase 0).</p></li>
+    <li><span class="ph">Phase 3</span><b>Automatic DHCP</b><p>The PC asks the router for the phone's address itself, renews it, and gives it back — transactionally, so a failure never leaves a half-configured network.</p></li>
+    <li><span class="ph">Phase 4</span><b>Interface selection and egress policy</b><p>Pick which PC network the phone joins; decide what happens when the PC's Internet route is elsewhere; handle cable unplug and reconnect.</p></li>
+    <li><span class="ph">Phase 5</span><b>Helper hardening and recovery</b><p>Lock down the root helper to a tiny typed API, reconcile state after crashes, and prove it under the full hardware matrix.</p></li>
+    <li><span class="ph">Phase 6</span><b>User experience and packaging</b><p>A <code>doctor</code> command that explains what's wrong, a phone UI that explains why it needs VPN permission, distro packages, reproducible APK, clean uninstall.</p></li>
+  </ul>
+
+  <h3>Milestones, in plain terms</h3>
+  <dl class="term">
+    <dt>M0 — done</dt><dd>It can work.</dd>
+    <dt>M1</dt><dd>A developer can use it daily with a hand-picked address. (Phases 1–2)</dd>
+    <dt>M2</dt><dd>It picks the address itself; basic UI on both sides. (Phase 3)</dd>
+    <dt>M3</dt><dd>Works on PCs with several networks; survives cable/link changes. (Phase 4)</dd>
+    <dt>M4</dt><dd>Hardened, packaged, documented version 1. (Phases 5–6)</dd>
+  </dl>
+
+  <h2>Phase 1, broken down</h2>
+  <p>Phase 1 is where "it works on my desk" becomes "it works the same way every time". In the order we'll take it:</p>
+  <ol class="steps">
+    <li><div><b>Write the protocol down</b><p><code>protocol/version-1.md</code>: exact frame format, message types, size limits, and which messages are allowed in which state. Golden test files that both the Rust and Kotlin sides must pass.</p></div></li>
+    <li><div><b>Host daemon and CLI</b><p><code>routedroidd</code> owns the device connections (structured logs, a clear error vocabulary, an ADB wrapper that adds the serial to every command); <code>routedroid</code> and <code>routedroid-tui</code> are clients of its control socket.</p></div></li>
+    <li><div><b>Session state machine and handshake</b><p>Port the Phase 0 state machine and mutual-HMAC handshake into the product, with tests for every illegal transition.</p></div></li>
+    <li><div><b>Helper-owned TUN sessions</b><p>The CLI never touches the network itself; it asks the helper over the sequenced-packet socket, exactly as the Phase 0 kill matrix proved safe.</p></div></li>
+    <li><div><b>Android app foundation</b><p>Foreground VPN service, permission flow, bootstrap provider, packet pumps, and a minimal status/stop screen.</p></div></li>
+    <li><div><b>Acceptance</b><p>One statically configured phone address end to end; both sides pass the same protocol fixtures; malformed input can't hang or bloat either side; stopping the VPN always closes the packet path.</p></div></li>
+  </ol>
+
+  <p class="foot">Source of truth: <span class="mono">.docs/architecture.md</span>, <span class="mono">.docs/implementation-plan.md</span>, and <span class="mono">.docs/decisions/0001-feasibility-results.md</span> in the repository.</p>
+</div>
+</body>
+</html>
