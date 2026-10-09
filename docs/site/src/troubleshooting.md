@@ -26,6 +26,10 @@ daemon connects, so no logout is needed after joining. A helper socket from an o
 refuses with "Permission denied" until it restarts:
 `sudo systemctl restart routedroid-helper.socket`.
 
+If your account comes from a directory (LDAP, Active Directory), the helper finds your groups
+only through a local service such as SSSD or nslcd. Its sandbox may not reach the network,
+so an NSS module that does that itself refuses everyone it knows.
+
 The helper logs to `journalctl -u 'routedroid-helper@*'`.
 
 ## "not in the helper policy"

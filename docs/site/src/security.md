@@ -14,6 +14,11 @@ the group database each time rather than the caller's login groups, so a refusal
 a member who joined a moment ago is admitted. A lookup that fails or takes over 5 seconds
 refuses.
 
+The lookup runs inside the helper's sandbox, which may open no IP socket. Local files work,
+and so do directories reached through a local service: SSSD, nslcd, winbind, systemd-userdbd.
+An NSS module that calls a directory server over the network itself, such as the old
+`libnss-ldap`, cannot, so its users are refused. Use SSSD or nslcd instead.
+
 ## The helper
 
 - **Typed requests only.** A start names a LAN interface, a TUN name (`phoneN`) and
