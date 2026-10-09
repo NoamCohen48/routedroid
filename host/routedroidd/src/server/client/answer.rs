@@ -10,6 +10,7 @@ use tokio::sync::watch;
 use super::super::view;
 use crate::daemon::{AttachedDevices, DeviceConnections, Snapshot, doctor};
 use crate::fault::{Fault, Kind};
+use crate::notify::Setting;
 
 /// What a client connection may ask of the daemon.
 pub trait Answer: Clone + Send + Sync + 'static {
@@ -19,11 +20,12 @@ pub trait Answer: Clone + Send + Sync + 'static {
     fn device_changes(&self) -> watch::Receiver<Snapshot>;
 }
 
-/// The two components a client may reach, and nothing else.
+/// The two components a client may reach, and the notifications setting.
 #[derive(Clone)]
 pub struct Handles {
     pub devices: AttachedDevices,
     pub connections: DeviceConnections,
+    pub notifications: Setting,
 }
 
 impl Answer for Handles {
@@ -82,6 +84,14 @@ impl Answer for Handles {
                 let socket = self.connections.helper_socket();
                 let (checks, done) = doctor::run(&self.devices, socket, repair).await;
                 Response::Doctor { checks, done }
+            }
+            Request::Notifications { on } => {
+                match on.map_or(Ok(()), |on| self.notifications.set(on)) {
+                    Ok(()) => Response::Notifications {
+                        on: self.notifications.on(),
+                    },
+                    Err(fault) => error(fault),
+                }
             }
             Request::Subscribe => Response::Subscribed,
         }
