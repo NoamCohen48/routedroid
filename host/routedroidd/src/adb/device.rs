@@ -50,6 +50,27 @@ impl AdbDevice {
         self.run_with_stdin(&full, stdin).await
     }
 
+    /// [`Self::shell`] for a command that may take longer than adb's usual timeout.
+    pub(super) async fn shell_for(
+        &self,
+        args: &[&str],
+        timeout: Duration,
+    ) -> Result<(String, String)> {
+        self.shell_with(args, None, timeout).await
+    }
+
+    /// [`Self::shell`] with bytes on stdin and its own timeout.
+    pub(super) async fn shell_with(
+        &self,
+        args: &[&str],
+        stdin: Option<&[u8]>,
+        timeout: Duration,
+    ) -> Result<(String, String)> {
+        let mut full = vec!["shell"];
+        full.extend_from_slice(args);
+        self.exec(&full, stdin, timeout).await
+    }
+
     async fn run_with_stdin(
         &self,
         args: &[&str],
