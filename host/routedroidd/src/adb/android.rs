@@ -3,15 +3,27 @@
 
 mod screen;
 
+use std::time::Duration;
+
 use super::AdbDevice;
 use crate::fault::{Fault, Kind, Result};
+
+/// How long each step that wakes the app may take (the record write starts
+/// its process, the launch its activity). A phone just booted or just
+/// updated can take over adb's usual 15 s for either. The app keeps the
+/// record for 60 s, so both together stay inside that.
+const APP_TIMEOUT: Duration = Duration::from_secs(25);
 
 impl AdbDevice {
     /// `content write --uri URI` with `bytes` on stdin: the only way to hand
     /// a payload to a content provider without it appearing in a command line.
     pub async fn content_write(&self, uri: &str, bytes: &[u8]) -> Result<()> {
         let (stdout, stderr) = self
-            .shell(&["content", "write", "--uri", uri], Some(bytes))
+            .shell_with(
+                &["content", "write", "--uri", uri],
+                Some(bytes),
+                APP_TIMEOUT,
+            )
             .await?;
         // `content` exits 0 even on provider errors; it prints them (to either stream) instead.
         match content_failure(uri, &format!("{stdout}{stderr}")) {
@@ -26,7 +38,7 @@ impl AdbDevice {
         for (key, value) in extras {
             args.extend(["--es", key, value]);
         }
-        let (out, err) = self.shell(&args, None).await?;
+        let (out, err) = self.shell_for(&args, APP_TIMEOUT).await?;
         // `am start` exits 0 even when the component is missing; it prints
         // `Error: ...` or `Error type N` lines instead. Warnings (an intent
         // delivered to the running activity) are success.
