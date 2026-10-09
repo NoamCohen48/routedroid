@@ -1,0 +1,64 @@
+# The emulator rigs (integration-tests/emulator/all.sh) on a GitHub-hosted
+# runner: an Android 14 emulator under KVM, cold-booted, with the real
+# routedroidd, CLI and helper (in a user namespace) driving the real app.
+name: e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 3 * * *" # nightly, to catch an emulator image that changed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  emulator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: KVM, user namespaces, socat
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+          # Ubuntu confines unprivileged user namespaces; the helper runs in one.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo apt-get update -q && sudo apt-get install -yq socat
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host
+      - name: Release binaries
+        working-directory: host
+        run: cargo build --release --locked -p routedroid -p routedroidd -p routedroid-helper
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Debug app
+        working-directory: android
+        run: ./gradlew --no-daemon :app:assembleDebug
+      - name: Emulator rigs
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: KEEP_TMP=1 integration-tests/emulator/all.sh emulator-5554
+      - name: Rig artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rig-artifacts
+          path: /tmp/rd-*
+          if-no-files-found: ignore

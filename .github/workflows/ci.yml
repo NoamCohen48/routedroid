@@ -1,7 +1,7 @@
 # fmt, lints, tests and the no-root namespace rigs for the host; the .deb and
 # .rpm in containers; unit tests, lint and a debug build for the app. The
-# emulator rigs and the VM lab need a device and run by hand
-# (integration-tests/emulator/README.md, integration-tests/vm/README.md).
+# emulator rigs run in e2e.yml; the VM lab needs a real phone and runs by
+# hand (integration-tests/vm/README.md).
 name: ci
 
 on:
