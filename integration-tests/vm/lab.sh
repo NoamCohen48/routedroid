@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # A LAN of KVM guests, run unprivileged, where Routedroid gets real root and
 # real systemd: `router` (DHCP, DNS, NAT, and a LAN peer), and the PC as
-# `host` (Debian 13, plain nftables) or `ubuntu` (Ubuntu 24.04, ufw on).
+# `host` (Debian 13, plain nftables), `ubuntu` (Ubuntu 24.04, ufw on) or
+# `fedora` (Fedora 44, SELinux enforcing; the .rpm's guest).
 #
 #   ./lab.sh up [router|host|ubuntu...]  create on first use, boot, wait for cloud-init
 #   PHONE=04e8:6860 ./lab.sh up host     pass that USB device (the phone) to a PC guest
@@ -19,9 +20,11 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 LAB=${LAB_DIR:-$HOME/.cache/routedroid-vm}
 DEBIAN=debian-13-generic-amd64.qcow2
 KEY=$LAB/id_lab
-declare -A INDEX=([router]=1 [host]=2 [ubuntu]=3) MEM=([router]=384 [host]=1024 [ubuntu]=1024)
-declare -A BASE=([router]=$DEBIAN [host]=$DEBIAN [ubuntu]=noble-server-cloudimg-amd64.img)
-GUESTS=(router host ubuntu)
+declare -A INDEX=([router]=1 [host]=2 [ubuntu]=3 [fedora]=4)
+declare -A MEM=([router]=384 [host]=1024 [ubuntu]=1024 [fedora]=1536)
+declare -A BASE=([router]=$DEBIAN [host]=$DEBIAN [ubuntu]=noble-server-cloudimg-amd64.img
+    [fedora]=Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2)
+GUESTS=(router host ubuntu fedora)
 SSH_OPTS=(-i "$KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=3)
 
 die() { echo "lab: $*" >&2; exit 1; }
@@ -125,7 +128,7 @@ down() {
 cmd=${1:-status}; shift || true
 case $cmd in
     up) if (($#)); then up "$@"; else up router host; fi ;;
-    down) if (($#)); then down "$@"; else down ubuntu host router; fi ;;
+    down) if (($#)); then down "$@"; else down fedora ubuntu host router; fi ;;
     ssh) known "$1"; vssh "$@" ;;
     push) "$HERE/push.sh" "${1:-host}" ;;
     unplug) known "$1"; plug "$1" off ;;

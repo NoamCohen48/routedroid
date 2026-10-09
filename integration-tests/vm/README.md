@@ -28,6 +28,7 @@ The guests are Debian 13 and Ubuntu 24.04 cloud images with cloud-init (`router.
   mkdir -p ~/.cache/routedroid-vm && cd ~/.cache/routedroid-vm
   curl -fLO https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2
   curl -fLO https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+  curl -fLO https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2   # for fedora only
   ```
 - for a phone: write access to its USB node (the adb udev rules give it), and its adb key in
   the guest (below).
@@ -140,11 +141,13 @@ The connection pane graphs the last minute of traffic. 14 checks. `TUI=/path` ru
 
 ## group.sh
 
-`group.sh` checks that joining group `routedroid` needs no new login. It needs no phone. A new
-user, `fresh`, starts a daemon, and the helper refuses it, saying why, as doctor does too.
-`usermod` then adds them to the group, and the same daemon is let in at once, though its own
-groups still lack the group. It upgrades from the .deb in `host/target/packages` first, if
-one is there, so the socket is checked to be open to everyone after an upgrade.
+`[GUEST=fedora] group.sh` checks that joining group `routedroid` needs no new login. It needs
+no phone. A new user, `fresh`, starts a daemon, and the helper refuses it, saying why, as
+doctor does too. `usermod` then adds them, and the same daemon is let in at once, though its
+own groups still lack the group. Taken out again (`gpasswd -d`), it is refused again. Then a
+`routedroid start` at a terminal offers setup, which adds them, and the start goes on to the
+phone without asking for a logout. It upgrades from the guest's package in
+`host/target/packages` first, if one is there, and checks the socket is open to everyone.
 
 ## cli.sh
 
@@ -191,6 +194,7 @@ person would, and checks what it prints and the exit code it gives. It installs 
 | `PHONE=04e8:6860 tui.sh 85e49002` (2026-10-07, with the graph) | 14/14 |
 | `PHONE=04e8:6860 cli.sh 85e49002` (2026-10-08, start offers setup) | 54/54. Fixed first: both NICs read "default route", so setup offered mgmt0 |
 | `group.sh` (2026-10-08) | 10/10, as an upgrade from a 0660 socket |
+| `group.sh`, `GUEST=fedora group.sh` (2026-10-09, with the start offering setup) | 18/18 on each; Fedora 44 with SELinux enforcing |
 | `PHONE=04e8:6860 cli.sh 85e49002` (2026-10-08, the helper checks the group) | 54/54 |
 | Phone dropped off USB mid-session (gvfs re-grab) | The connection ended ("the phone closed the connection"), the lease was RELEASEd, and no rule or table was left |
 | First .deb upgrade | Found that needrestart restarts a helper instance, which ends its session; the .deb now tells needrestart not to |
