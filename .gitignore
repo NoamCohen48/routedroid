@@ -7,3 +7,12 @@ local.properties
 __pycache__/
 .claude/worktrees/
 docs/site/book/
+*.pyc
+.claude/settings.local.json
+# Signing keys and their passwords live in ~/.config/routedroid, never here.
+*.jks
+*.keystore
+*.p12
+*.password
+*.asc
+.env
