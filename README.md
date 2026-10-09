@@ -158,9 +158,8 @@ it.
 
 **Notifications.** On a desktop, the daemon shows a notification when a phone joins the LAN,
 goes away, waits to be unlocked, or is disconnected other than by your own `stop`. Each phone
-has one notification, updated as its connection changes. To turn them off, run
-`systemctl --user edit routedroid`, add `Environment=ROUTEDROID_NOTIFY=false` under
-`[Service]`, and restart the daemon.
+has one notification, updated as its connection changes. `routedroid notifications off`
+turns them off, and `on` turns them back on; the daemon keeps the choice.
 
 Every command takes `--json`. `routedroid events` follows state changes as they happen, one
 line each (with `--json`, as JSON lines). Exit codes are listed in `routedroid --help`, so

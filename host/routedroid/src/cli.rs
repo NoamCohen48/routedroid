@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+use crate::commands::notifications;
 use crate::commands::phones::RememberArgs;
 use crate::commands::setup::SetupArgs;
 use crate::commands::start::StartArgs;
@@ -56,6 +57,12 @@ pub enum Command {
     Status,
     /// Follow what the daemon reports (connections, phones), until Ctrl-C.
     Events,
+    /// Show whether the daemon shows desktop notifications, or turn them
+    /// on or off (kept across restarts).
+    Notifications {
+        #[arg(value_enum)]
+        set: Option<notifications::Switch>,
+    },
     /// Check adb, the helper, its policy and what Routedroid left behind;
     /// exit 1 if anything fails.
     Doctor {

@@ -5,6 +5,7 @@ pub mod docs;
 pub mod doctor;
 pub mod events;
 pub mod interfaces;
+pub mod notifications;
 mod options;
 pub mod phones;
 pub mod setup;
@@ -44,6 +45,7 @@ pub async fn run(cli: Cli) -> Result<i32> {
         Command::Forget { phone } => phones::forget(&client, &phone, json).await,
         Command::Status => status::run(&client, json).await,
         Command::Events => events::run(&mut client, json).await,
+        Command::Notifications { set } => notifications::run(&client, set, json).await,
         Command::Doctor { repair } => doctor::run(&client, repair, json).await,
         Command::Version
         | Command::Setup(_)

@@ -17,6 +17,7 @@ use crate::Args;
 use crate::adb::{Adb, DEFAULT_TIMEOUT};
 use crate::app::BundledApp;
 use crate::daemon::{Daemon, Phones};
+use crate::notify::Setting;
 
 /// The control socket and the daemon behind it: owns both for the process's
 /// life and takes both down together.
@@ -35,7 +36,7 @@ impl Server {
             args.helper_socket.clone(),
             app,
             Phones::load(args.phones.clone()),
-            args.notify,
+            Setting::load(args.phones.with_file_name("settings.toml"), args.notify),
         )
         .await;
         let app = app.map_or_else(|| "none".to_string(), |app| app.version());
@@ -84,6 +85,7 @@ impl Server {
         let handles = Handles {
             devices: self.daemon.devices(),
             connections: self.daemon.connections(),
+            notifications: self.daemon.notifications(),
         };
         let client = ClientConnection::new(handles, self.daemon.events(), stream);
         tokio::spawn(client.run());

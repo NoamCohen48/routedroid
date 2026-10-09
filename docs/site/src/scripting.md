@@ -71,6 +71,7 @@ A failed request is answered with `"type":"error"`, a `kind` and a `message`.
 | `stop` (`serial`: a serial or name) | `stopped`, once the connection has ended, with its outcome |
 | `status` | every live connection |
 | `phones`, `remember`, `forget` | the [remembered phones](remembered-phones.md) |
+| `notifications` (`on`: true or false, optional) | `notifications`, with `on`: whether desktop notifications are shown |
 | `subscribe` | `subscribed`, then events |
 | `doctor` (`repair`: true or false) | the checks |
 

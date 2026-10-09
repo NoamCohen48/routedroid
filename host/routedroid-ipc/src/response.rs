@@ -49,6 +49,9 @@ pub enum Response {
     Forgotten {
         phone: Phone,
     },
+    Notifications {
+        on: bool,
+    },
     Doctor {
         checks: Vec<Check>,
         /// The changes a repair made, in order.

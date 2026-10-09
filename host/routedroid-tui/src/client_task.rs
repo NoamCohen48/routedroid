@@ -171,7 +171,8 @@ async fn call(
         other @ (Response::Version { .. }
         | Response::Subscribed
         | Response::Doctor { .. }
-        | Response::Phones { .. }) => Incoming::Failed {
+        | Response::Phones { .. }
+        | Response::Notifications { .. }) => Incoming::Failed {
             what,
             serial,
             message: format!("unexpected answer {other:?}"),

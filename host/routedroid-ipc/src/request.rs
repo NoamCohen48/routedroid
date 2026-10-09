@@ -34,6 +34,12 @@ pub enum Request {
     Status,
     /// Receive `Event`s on this connection from now on; answered `subscribed`.
     Subscribe,
+    /// Whether the daemon shows desktop notifications; with `on`, turn them
+    /// on or off first (kept across restarts). Answered `notifications`.
+    Notifications {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        on: Option<bool>,
+    },
     /// Check adb, the helper, its policy and what Routedroid left behind;
     /// with `repair`, also make the changes the checks name.
     Doctor {

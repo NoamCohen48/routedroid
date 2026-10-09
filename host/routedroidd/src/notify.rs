@@ -1,9 +1,11 @@
 //! Desktop notifications, over the user's session bus (freedesktop
 //! Notifications), for the moments [`notice`] picks. Each phone has one
 //! notification, replaced as its connection changes. Without a session bus
-//! (a server, no desktop) there are none, and nothing else changes.
+//! (a server, no desktop) there are none, and nothing else changes; nor
+//! while [`Setting`] has them off.
 
 mod notice;
+mod setting;
 
 use std::collections::HashMap;
 
@@ -14,11 +16,12 @@ use zbus::zvariant::Value;
 
 use crate::daemon::Phones;
 use notice::{Notice, Notices};
+pub use setting::Setting;
 
 const SERVICE: &str = "org.freedesktop.Notifications";
 const PATH: &str = "/org/freedesktop/Notifications";
 
-pub async fn run(mut events: broadcast::Receiver<Event>, phones: Phones) {
+pub async fn run(mut events: broadcast::Receiver<Event>, phones: Phones, setting: Setting) {
     let bus = match zbus::Connection::session().await {
         Ok(bus) => bus,
         Err(error) => {
@@ -38,9 +41,13 @@ pub async fn run(mut events: broadcast::Receiver<Event>, phones: Phones) {
             Err(RecvError::Lagged(_)) => continue,
             Err(RecvError::Closed) => return,
         };
+        // Followed even while off, so turning them on shows the next change.
         let Some(notice) = notices.on(&event, phone) else {
             continue;
         };
+        if !setting.on() {
+            continue;
+        }
         let replaces = shown.get(&notice.serial).copied().unwrap_or(0);
         match show(&bus, replaces, &notice).await {
             Ok(id) => drop(shown.insert(notice.serial, id)),
