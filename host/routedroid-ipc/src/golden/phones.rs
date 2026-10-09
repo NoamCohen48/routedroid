@@ -44,3 +44,17 @@ fn a_named_phone_reads_as_name_and_serial() {
     assert_eq!(pixel().label(), "pixel (R58M)");
     assert_eq!(label("R58M", None), "R58M");
 }
+
+#[test]
+fn notifications() {
+    let ask_on = |id, on| ask(id, Request::Notifications { on });
+    pinned(ask_on(1, None), r#"{"id":1,"type":"notifications"}"#);
+    pinned(
+        ask_on(2, Some(false)),
+        r#"{"id":2,"type":"notifications","on":false}"#,
+    );
+    pinned(
+        answer(Response::Notifications { on: true }),
+        r#"{"msg":"response","id":7,"type":"notifications","on":true}"#,
+    );
+}

@@ -38,11 +38,13 @@ pub struct Args {
     /// Path to the adb binary.
     #[arg(long, env = "ROUTEDROID_ADB", default_value = "adb")]
     pub adb: String,
-    /// Where remembered phones are kept (`routedroid phones`).
+    /// Where remembered phones are kept (`routedroid phones`); settings
+    /// (`routedroid notifications`) go in `settings.toml` beside it.
     #[arg(long, env = "ROUTEDROID_PHONES", default_value_os_t = daemon::default_phones_path())]
     pub phones: PathBuf,
     /// Desktop notifications when a phone joins the LAN, goes away, waits
-    /// to be unlocked or is disconnected (`--notify false`: none).
+    /// to be unlocked or is disconnected (`--notify false`: none, whatever
+    /// `routedroid notifications` says).
     #[arg(long, env = "ROUTEDROID_NOTIFY", default_value_t = true, action = clap::ArgAction::Set)]
     pub notify: bool,
     /// Privileged helper's socket.

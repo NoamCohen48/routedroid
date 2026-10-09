@@ -13,6 +13,7 @@ routedroid status                           # connections, their address and lea
 routedroid stop                             # or: routedroid stop SERIAL
 routedroid events                           # follow what happens, one line each
 routedroid doctor                           # check everything; --repair cleans up after a crash
+routedroid notifications off                # no desktop notifications; `on` brings them back
 routedroid version                          # the CLI's and the daemon's versions
 ```
 
@@ -123,12 +124,16 @@ With `--json`, it prints the events themselves as JSON lines.
 **Desktop notifications.** On a desktop, the daemon also shows a notification when a phone
 joins the LAN, goes away, waits to be unlocked, or is disconnected other than by your own
 `stop`. Each phone has one notification, updated as its connection changes. To turn them
-off:
+off, or back on:
 
 ```sh
-systemctl --user edit routedroid     # add, under [Service]: Environment=ROUTEDROID_NOTIFY=false
-systemctl --user restart routedroid
+routedroid notifications off         # at once, and kept across restarts
+routedroid notifications on
+routedroid notifications             # which it is
 ```
+
+A daemon started with `routedroidd --notify false` (or `ROUTEDROID_NOTIFY=false`) shows none,
+whatever `routedroid notifications` says.
 
 ## doctor
 
