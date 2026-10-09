@@ -25,12 +25,14 @@ integration-tests/helper/kill-matrix.sh       # and the other rigs there; no roo
 - **Namespace rigs** (`integration-tests/helper/`) run the real helper in user namespaces,
   without root: crashes at every stage, several sessions at once, and DHCP leases.
 - **Emulator rigs** (`integration-tests/emulator/`) connect an Android emulator.
+  `integration-tests/emulator/all.sh` runs them all.
 - **The VM lab** (`integration-tests/vm/`) runs KVM guests with real root, systemd and a USB
   phone passed through: install, ufw, packages, unplugging, the app install, the TUI and the
   CLI. Its README lists the latest results.
 
 CI runs the unit tests, the namespace rigs, and the packages' install, upgrade and removal
-in Debian, Ubuntu and Fedora containers. A `vX.Y.Z` tag drafts a release.
+in Debian, Ubuntu and Fedora containers. Its `e2e` workflow runs the emulator rigs on an
+Android 14 emulator, on every pull request and nightly. A `vX.Y.Z` tag drafts a release.
 
 ## This site
 
