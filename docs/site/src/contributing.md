@@ -40,4 +40,9 @@ The site is built with [mdBook](https://rust-lang.github.io/mdBook/) from `docs/
 mdbook serve docs/site      # http://localhost:3000, rebuilt on save
 ```
 
-A push to `main` that changes `docs/site/` publishes it to GitHub Pages.
+A push to `main` that changes `docs/site/` publishes it to GitHub Pages. Each release publishes it again,
+with `apt/`, an apt repository of every release's `.deb`, and `download/`, the latest
+release's files. The repository is signed with the `APT_SIGNING_KEY` secret, which
+`host/packaging/apt-key.sh` makes once; without it the site has no `apt/`.
+`integration-tests/packages/apt-repo.sh` builds one from `host/target/packages` and installs
+from it in Debian and Ubuntu containers, as CI does.
