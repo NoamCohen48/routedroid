@@ -20,7 +20,9 @@ if [ -d /run/systemd/system ]; then
     # their daemons run on until restarted.
     for unit in $(systemctl list-units 'user@*.service' --state=running --no-legend --plain | cut -d' ' -f1); do
         uid=${unit#user@}; uid=${uid%.service}
-        user=$(id -nu "$uid" 2>/dev/null) && systemctl --user -M "$user@" daemon-reload 2>/dev/null || true
+        if user=$(id -nu "$uid" 2>/dev/null); then
+            systemctl --user -M "$user@" daemon-reload 2>/dev/null || true
+        fi
     done
 fi
 if [ "$first" = 1 ]; then
