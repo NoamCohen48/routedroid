@@ -1,5 +1,15 @@
 # Emulator end-to-end rigs
 
+`all.sh [SERIAL]` installs the debug app and runs every rig below, one after another, then
+names the rigs that failed. CI's `e2e` workflow runs it on a cold-booted Android 14 emulator
+(`google_apis`, x86_64) on every pull request, on `main`, and nightly. Run it by hand before
+a change goes up:
+
+```sh
+~/Android/Sdk/emulator/emulator -avd NAME -no-window -no-snapshot &   # or any running emulator
+integration-tests/emulator/all.sh emulator-5554
+```
+
 All rigs run without root against the installed app over the real adb server. Each one first
 runs `prepare-device.sh SERIAL`, which:
 
@@ -41,6 +51,12 @@ Prerequisites:
   in `host/`;
 - the app installed: `android/app/build/outputs/apk/debug/app-debug.apk`;
 - `socat`, `unshare` and `nsenter`.
+
+## CI, 2026-10-09
+
+The `e2e` workflow's first run: a cold-booted API 34 `google_apis` emulator on a
+GitHub-hosted runner, which settled 9 s after boot. `userns.sh` sigint 15/15, app 16/16,
+early 10/10; `SQUAT=3` 16/16; `fake_host.py all` 14/14; `hostile.sh` passed. 7 minutes in all.
 
 ## Results, 2026-10-02 (protocol v1 with the port in the record; rebuilt app)
 

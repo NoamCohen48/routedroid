@@ -1,45 +1,56 @@
 use std::net::Ipv4Addr;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
-use routedroid_helper_ipc::{Datagram, IfName, MAX_DATAGRAM, Reply, Request, SeqPacket};
+use routedroid_helper_ipc::{DeviceId, ErrorCode, IfName, Lease, Reply, Request, SeqPacket};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use super::helper::{self, request};
+use super::relay::Downlink;
 use crate::fault::{Fault, FaultExt, Kind, Result};
-use crate::session::{Inject, PacketEndpoints, QUEUE_DEPTH};
 
 const STOP_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// The host side of the data path, held for the session by the privileged
-/// helper process: the TUN device, the phone's /32 route, proxy ARP and the
-/// session firewall. Created by `start`, torn down by `stop`.
+/// helper process: the TUN device, the phone's /32 route, proxy ARP, the
+/// session firewall and, without a requested address, the phone's DHCP
+/// lease. Created by `start`, torn down by `stop`.
 pub struct HostNetwork {
-    conn: Arc<SeqPacket>,
-    /// Control replies seen by the relay's receive task (it owns the socket
-    /// once `relay()` ran, so `stop()` must read the ack from here).
-    control_rx: Option<mpsc::Receiver<Reply>>,
+    pub(super) conn: Arc<SeqPacket>,
+    /// Control replies seen by the receive task (it owns the socket once
+    /// `listen()` ran, so `stop()` must read the ack from here).
+    pub(super) control_rx: Option<mpsc::Receiver<Reply>>,
+    /// Where packets from the TUN go: the current protocol session's
+    /// downlink, or nowhere between sessions.
+    pub(super) downlink: Arc<Mutex<Downlink>>,
+    /// The helper ended the session itself: there is nothing left to stop.
+    ended: bool,
     pub tun: IfName,
+    /// The requested address, or the leased one.
+    pub phone_ip: Ipv4Addr,
     pub host_ip: Ipv4Addr,
     pub lan_prefix: u8,
+    pub lease: Option<Lease>,
     pub session: String,
 }
 
 impl HostNetwork {
     /// Connect, agree on the IPC version and issue `Start`; the helper
-    /// picks host address and prefix.
+    /// picks host address and prefix, and leases `phone_ip` if it is `None`.
     pub async fn start(
         socket: &Path,
         lan_if: &IfName,
-        phone_ip: Ipv4Addr,
+        phone_ip: Option<Ipv4Addr>,
+        device: DeviceId,
         tun: &IfName,
         mtu: u32,
     ) -> Result<Self> {
         let start = Request::Start {
             lan_if: lan_if.clone(),
             phone_ip,
+            device,
             tun: tun.clone(),
             mtu,
         };
@@ -48,72 +59,52 @@ impl HostNetwork {
             Reply::Started {
                 session,
                 tun,
+                phone_ip,
                 host_ip,
                 lan_prefix,
+                lease,
             } => {
-                info!(%session, %tun, %host_ip, lan_prefix, "helper session started");
+                info!(%session, %tun, %phone_ip, %host_ip, lan_prefix, leased = lease.is_some(), "helper session started");
                 Ok(Self {
                     conn: Arc::new(conn),
                     control_rx: None,
+                    downlink: Arc::default(),
+                    ended: false,
                     tun,
+                    phone_ip,
                     host_ip,
                     lan_prefix,
+                    lease,
                     session,
                 })
             }
-            Reply::Error { code, message } => Err(Fault::msg(
+            Reply::Error {
+                code: ErrorCode::Refused,
+                message,
+            } => Err(Fault::msg(
                 Kind::Helper,
-                format!("helper refused start: {code:?}: {message}"),
+                format!("the helper refused: {message}"),
             )),
-            other => Err(Fault::msg(
+            Reply::Error { message, .. } => Err(Fault::msg(
                 Kind::Helper,
-                format!("unexpected helper reply {other:?}"),
+                format!("the helper could not start the session: {message}"),
             )),
+            other => Err(helper::unexpected(&other)),
         }
     }
 
-    /// Hand back the session's packet endpoints: injection straight into
-    /// the socket (never waiting; a full helper queue drops), and a receive
-    /// task for packets from the TUN and control replies. The task ends when
-    /// the helper closes, or once both the session and `stop` are done with it.
-    pub fn relay(&mut self) -> PacketEndpoints {
-        let (from_tx, from_helper) = mpsc::channel::<Vec<u8>>(QUEUE_DEPTH);
-        let (control_tx, control_rx) = mpsc::channel::<Reply>(4);
-        self.control_rx = Some(control_rx);
-        let conn = self.conn.clone();
-        let inject: Inject = Arc::new(move |packet: &[u8]| conn.try_send_packet(packet));
-        let conn = self.conn.clone();
-        tokio::spawn(async move {
-            let mut buf = vec![0u8; MAX_DATAGRAM];
-            while let Ok(Some(datagram)) = conn.recv(&mut buf).await {
-                match Datagram::<Reply>::decode(datagram) {
-                    // Never wait on the session: a full queue drops, as the helper
-                    // does; after the session ended the packet has nowhere to go,
-                    // but reading goes on so the Stop ack still gets through.
-                    Ok(Datagram::Packet(packet)) => {
-                        let _ = from_tx.try_send(packet.to_vec());
-                    }
-                    Ok(Datagram::Control(reply)) => {
-                        let _ = control_tx.try_send(reply);
-                    }
-                    Err(e) => warn!(error = %e, "undecodable datagram from helper"),
-                }
-                // Nobody left to deliver to (session over, Stop acked or given
-                // up): drop our clone so the helper sees its socket close.
-                if from_tx.is_closed() && control_tx.is_closed() {
-                    break;
-                }
-            }
-        });
-        PacketEndpoints {
-            inject,
-            from_helper,
-        }
+    /// The helper said it ended the session (and undid it), so `stop` has
+    /// nothing to ask for.
+    pub fn ended_by_helper(&mut self) {
+        self.ended = true;
     }
 
     /// Ask the helper to undo everything. Errors are logged, not fatal: the
     /// helper's own `ExecStopPost` cleanup is the backstop.
     pub async fn stop(mut self) {
+        if self.ended {
+            return;
+        }
         let reply = async {
             match self.control_rx.take() {
                 Some(mut rx) => {

@@ -4,6 +4,9 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+use crate::commands::notifications;
+use crate::commands::phones::RememberArgs;
+use crate::commands::setup::SetupArgs;
 use crate::commands::start::StartArgs;
 
 #[derive(Debug, Parser)]
@@ -30,18 +33,55 @@ pub enum Command {
     Devices,
     /// List the host's network interfaces and whether a phone may join through each.
     Interfaces,
-    /// Connect one phone; stays attached until it ends or Ctrl-C, unless --detach.
+    /// Connect a phone; stays attached until it ends or Ctrl-C, unless --detach.
     Start(StartArgs),
-    /// Disconnect one phone and wait until it is gone.
+    /// Disconnect a phone and wait until it is gone.
     Stop {
-        /// ADB serial of the phone.
-        #[arg(long, short = 's', env = "ANDROID_SERIAL")]
-        serial: String,
+        /// The phone: a serial or remembered name; by default the one connected.
+        phone: Option<String>,
+        /// The phone, as a flag.
+        #[arg(long, short = 's', conflicts_with = "phone")]
+        serial: Option<String>,
+    },
+    /// List the remembered phones.
+    Phones,
+    /// Remember a phone: a name for it, the options it connects with, and
+    /// to connect it whenever it is plugged in.
+    Remember(RememberArgs),
+    /// Forget a remembered phone.
+    Forget {
+        /// A serial or remembered name.
+        phone: String,
     },
     /// Show live device connections.
     Status,
-    /// Print every daemon event, forever (JSON lines, with or without --json).
+    /// Follow what the daemon reports (connections, phones), until Ctrl-C.
     Events,
+    /// Show whether the daemon shows desktop notifications, or turn them
+    /// on or off (kept across restarts).
+    Notifications {
+        #[arg(value_enum)]
+        set: Option<notifications::Switch>,
+    },
+    /// Check adb, the helper, its policy and what Routedroid left behind;
+    /// exit 1 if anything fails.
+    Doctor {
+        /// Make the changes the checks name (by default only lists them).
+        #[arg(long)]
+        repair: bool,
+    },
     /// Print the CLI and daemon versions.
     Version,
+    /// First-time setup, with sudo: the user's group, the interface phones
+    /// join through (in the helper's policy) and the user's daemon.
+    Setup(SetupArgs),
+    /// Print a shell completion script, e.g. `routedroid completions bash >
+    /// ~/.local/share/bash-completion/completions/routedroid`.
+    Completions {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+    /// Write the man pages into DIR (for packaging).
+    #[command(hide = true)]
+    Manpages { dir: PathBuf },
 }

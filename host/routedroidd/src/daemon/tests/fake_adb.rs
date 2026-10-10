@@ -17,6 +17,12 @@ track-devices) exit 1;;
 -s) S=$2; shift 2;;
 *) exit 2;;
 esac
+grep -qx "$S" "$D/serials" || { echo "error: device '$S' not found" >&2; exit 1; }
+# The app: app.$S holds its versionCode, and a fake APK is just a versionCode too.
+if [ "$1" = install ]; then
+    [ -e "$D/refuse.$S" ] && { echo "adb: failed to install $3: Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE]" >&2; exit 1; }
+    cp "$3" "$D/app.$S"; echo "Performing Streamed Install"; echo Success; exit 0
+fi
 R="$D/reverse.$S"; touch "$R"
 case "$1 $2" in
 "reverse --list") cat "$R";;
@@ -25,6 +31,13 @@ case "$1 $2" in
 "reverse --remove") grep -v " $3 " "$R" > "$R.new"; mv "$R.new" "$R";;
 "shell content") cat > "$D/record.$S.new" && mv "$D/record.$S.new" "$D/record.$S";;  # whole, for the app's poll
 "shell am") echo "Starting: Intent { cmp=$5 }";;
+"shell dumpsys") case "$3 $(cat "$D/screen.$S" 2>/dev/null)" in
+                 "power off") echo "  mWakefulness=Asleep"; exit 0;;
+                 "activity locked") echo "    mKeyguardShowing=true"; exit 0;;
+                 power*|activity*) exit 0;;
+                 esac
+                 echo "Packages:"
+                 [ -e "$D/app.$S" ] && printf '  Package [%s] (1):\n    versionCode=%s minSdk=26\n' "$4" "$(cat "$D/app.$S")"; exit 0;;
 *) echo "fake adb: unknown $*" >&2; exit 2;;
 esac
 "#;
@@ -61,6 +74,57 @@ impl FakeAdb {
             self.dir.join("adb").to_str().unwrap(),
             Duration::from_secs(5),
         )
+    }
+
+    /// Pull the cable: adb forgets the phone, and with its transport the
+    /// reverse mappings and (as far as the daemon can tell) the record.
+    pub fn unplug(&self, serial: &str) {
+        let serials = self.dir.join("serials");
+        let list = std::fs::read_to_string(&serials).unwrap();
+        let kept: String = list
+            .lines()
+            .filter(|s| *s != serial)
+            .map(|s| format!("{s}\n"))
+            .collect();
+        std::fs::write(serials, kept).unwrap();
+        for file in [format!("record.{serial}"), format!("reverse.{serial}")] {
+            let _ = std::fs::remove_file(self.dir.join(file));
+        }
+    }
+
+    pub fn plug(&self, serial: &str) {
+        use std::io::Write;
+        let serials = self.dir.join("serials");
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(serials)
+            .unwrap();
+        writeln!(file, "{serial}").unwrap();
+    }
+
+    /// The app's installed versionCode, `None` to uninstall it.
+    pub fn set_app(&self, serial: &str, version_code: Option<u64>) {
+        let file = self.dir.join(format!("app.{serial}"));
+        match version_code {
+            Some(code) => std::fs::write(file, code.to_string()).unwrap(),
+            None => drop(std::fs::remove_file(file)),
+        }
+    }
+
+    pub fn app(&self, serial: &str) -> Option<u64> {
+        let text = std::fs::read_to_string(self.dir.join(format!("app.{serial}")));
+        text.ok()?.trim().parse().ok()
+    }
+
+    /// The phone's screen: off, locked, or (`None`) on and unlocked.
+    pub fn set_screen(&self, serial: &str, screen: Option<&str>) {
+        let file = self.dir.join(format!("screen.{serial}"));
+        std::fs::write(file, screen.unwrap_or("on")).unwrap();
+    }
+
+    /// The phone refuses installs (another signing key, say).
+    pub fn refuse_installs(&self, serial: &str) {
+        std::fs::write(self.dir.join(format!("refuse.{serial}")), "").unwrap();
     }
 
     /// The bootstrap record the daemon wrote to the app's provider.

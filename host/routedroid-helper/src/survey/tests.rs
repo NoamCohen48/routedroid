@@ -2,13 +2,17 @@ use anyhow::anyhow;
 use routedroid_helper_ipc::Net;
 
 use super::*;
-use crate::kernel::Route;
 use crate::kernel::fake::Fake;
+use crate::kernel::{MAIN_TABLE, Route};
 
 const POLICY: &str = r#"
 [[interface]]
 name = "lan0"
 phone_addresses = ["10.0.0.200/29"]
+
+[[interface]]
+name = "br0"
+dhcp = true
 "#;
 
 /// lan0 (eligible, default route), wlan0 (no carrier), br0 with port eth1,
@@ -40,11 +44,13 @@ fn kernel() -> Fake {
         prefix: 8,
     });
     s.routes.push(Route {
+        table: crate::kernel::MAIN_TABLE,
         dst: "0.0.0.0".parse().unwrap(),
         prefix: 0,
         gateway: Some("10.0.0.1".parse().unwrap()),
         oif: Some(lan),
         protocol: 4,
+        metric: 0,
     });
     drop(s);
     kernel
@@ -66,7 +72,7 @@ fn each_link_gets_a_verdict() {
         vec![
             ("lan0".into(), None),
             ("wlan0".into(), reason("no carrier (cable or Wi-Fi down)")),
-            ("br0".into(), reason("not in the helper policy")),
+            ("br0".into(), None),
             ("eth1".into(), reason("a port of br0; use that instead")),
             ("lo".into(), reason("loopback")),
             ("phone0".into(), reason("a phone's TUN")),
@@ -86,6 +92,9 @@ fn the_eligible_link_carries_its_details() {
     };
     assert_eq!(lan.addresses, vec![net("10.0.0.2", 24)]);
     assert_eq!(lan.phone_addresses, vec![net("10.0.0.200", 29)]);
+    assert!(!lan.dhcp);
+    let br0 = &all[2];
+    assert!(br0.dhcp && br0.phone_addresses.is_empty() && br0.ineligible.is_none());
     assert!(!all[1].up && !all[1].default_route);
 }
 
@@ -96,4 +105,36 @@ fn an_unreadable_policy_is_the_reason_not_a_failure() {
         lan.1.as_deref(),
         Some("the helper policy cannot be read: policy /x: not found")
     );
+}
+
+#[test]
+fn the_default_route_is_the_one_in_use() {
+    let kernel = kernel();
+    let default_via = |table, oif, metric| Route {
+        table,
+        dst: "0.0.0.0".parse().unwrap(),
+        prefix: 0,
+        gateway: Some("10.2.0.1".parse().unwrap()),
+        oif: Some(oif),
+        protocol: 4,
+        metric,
+    };
+    {
+        let mut s = kernel.lock();
+        let br0 = s.links["br0"].index;
+        // A second uplink, there in case the first goes, and a phone's table.
+        s.routes.push(default_via(MAIN_TABLE, br0, 600));
+        s.routes.push(default_via(0x0a00_00c8, br0, 0));
+    }
+    let lan_is_default = |kernel: &Fake| {
+        let all = survey(kernel, &Ok(POLICY.parse().unwrap())).unwrap();
+        (all[0].default_route, all[2].default_route)
+    };
+    assert_eq!(lan_is_default(&kernel), (true, false));
+    {
+        let mut s = kernel.lock();
+        let lan = s.links["lan0"].index;
+        s.routes.retain(|r| r.oif != Some(lan) || r.prefix != 0);
+    }
+    assert_eq!(lan_is_default(&kernel), (false, true), "the uplink left");
 }

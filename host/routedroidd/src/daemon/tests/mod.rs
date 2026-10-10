@@ -4,8 +4,15 @@
 mod fake_adb;
 mod fake_app;
 mod fake_helper;
+mod fake_replies;
 
+mod app;
+mod auto;
 mod connections;
+mod doctor;
+mod leased;
+mod reconnect;
+mod screen;
 
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
@@ -46,6 +53,7 @@ impl Drop for Scratch {
 
 struct Lab {
     adb: FakeAdb,
+    devices: AttachedDevices,
     helper: FakeHelper,
     connections: DeviceConnections,
     events: broadcast::Receiver<Event>,
@@ -54,15 +62,26 @@ struct Lab {
 
 impl Lab {
     async fn new(serials: &[&str]) -> Self {
+        Self::carrying(serials, None).await
+    }
+
+    /// A daemon that installs `app` on phones that need it.
+    async fn carrying(serials: &[&str], app: Option<crate::app::BundledApp>) -> Self {
         let scratch = Scratch::new();
         let adb = FakeAdb::new(scratch.path(), serials);
         let helper = FakeHelper::spawn(scratch.path());
         let events = EventBus::new();
         let devices = AttachedDevices::start(adb.adb()).await;
-        let connections =
-            DeviceConnections::new(adb.adb(), helper.socket.clone(), events.clone(), devices);
+        let connections = DeviceConnections::new(
+            adb.adb(),
+            helper.socket.clone(),
+            events.clone(),
+            devices.clone(),
+        )
+        .with_app(app);
         Self {
             adb,
+            devices,
             helper,
             connections,
             events: events.subscribe(),
@@ -104,13 +123,14 @@ impl Lab {
 
 fn request(serial: &str, phone_ip: [u8; 4]) -> StartRequest {
     StartRequest {
-        serial: serial.into(),
-        lan_if: "lan0".into(),
+        serial: Some(serial.into()),
+        lan_if: Some("lan0".into()),
         phone_ip: Some(Ipv4Addr::from(phone_ip)),
         tun: None,
         mtu: None,
-        dns: DnsChoice::None,
+        dns: Some(DnsChoice::None),
         connect_timeout_secs: Some(10),
+        reconnect_secs: None,
         allow_network_adb: false,
     }
 }

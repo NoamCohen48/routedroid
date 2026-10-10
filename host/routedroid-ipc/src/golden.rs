@@ -65,28 +65,33 @@ fn requests() {
     );
 }
 
+mod phones;
+mod screen;
+
 #[test]
 fn start_requests() {
     let minimal = StartRequest {
-        serial: "R58M".into(),
-        lan_if: "eno1".into(),
+        serial: Some("R58M".into()),
+        lan_if: Some("eno1".into()),
         phone_ip: None,
         tun: None,
         mtu: None,
-        dns: DnsChoice::Auto,
+        dns: None,
         connect_timeout_secs: None,
+        reconnect_secs: None,
         allow_network_adb: false,
     };
     pinned(
         ask(1, Request::Start(minimal.clone())),
-        r#"{"id":1,"type":"start","serial":"R58M","lan_if":"eno1","dns":"auto","allow_network_adb":false}"#,
+        r#"{"id":1,"type":"start","serial":"R58M","lan_if":"eno1","allow_network_adb":false}"#,
     );
     let full = StartRequest {
         phone_ip: Some(IP),
         tun: Some("phone3".into()),
         mtu: Some(1400),
-        dns: DnsChoice::Servers(vec![Ipv4Addr::new(9, 9, 9, 9)]),
+        dns: Some(DnsChoice::Servers(vec![Ipv4Addr::new(9, 9, 9, 9)])),
         connect_timeout_secs: Some(30),
+        reconnect_secs: Some(0),
         allow_network_adb: true,
         ..minimal.clone()
     };
@@ -95,11 +100,11 @@ fn start_requests() {
         concat!(
             r#"{"id":2,"type":"start","serial":"R58M","lan_if":"eno1","phone_ip":"192.168.1.50","#,
             r#""tun":"phone3","mtu":1400,"dns":{"servers":["9.9.9.9"]},"connect_timeout_secs":30,"#,
-            r#""allow_network_adb":true}"#
+            r#""reconnect_secs":0,"allow_network_adb":true}"#
         ),
     );
     let no_dns = Request::Start(StartRequest {
-        dns: DnsChoice::None,
+        dns: Some(DnsChoice::None),
         ..minimal
     });
     assert!(
@@ -107,12 +112,13 @@ fn start_requests() {
             .unwrap()
             .contains(r#""dns":"none""#)
     );
-    let sparse: ClientMessage =
-        serde_json::from_str(r#"{"id":3,"type":"start","serial":"s","lan_if":"eno1"}"#).unwrap();
+    let sparse: ClientMessage = serde_json::from_str(r#"{"id":3,"type":"start"}"#).unwrap();
     assert!(matches!(
         sparse.request,
         Request::Start(StartRequest {
-            dns: DnsChoice::Auto,
+            serial: None,
+            lan_if: None,
+            dns: None,
             ..
         })
     ));
@@ -134,9 +140,12 @@ fn simple_responses() {
     pinned(
         answer(Response::Started {
             serial: "R58M".into(),
+            name: None,
+            lan_if: "eno1".into(),
+            phone_ip: None,
             tun: "phone0".into(),
         }),
-        r#"{"msg":"response","id":7,"type":"started","serial":"R58M","tun":"phone0"}"#,
+        r#"{"msg":"response","id":7,"type":"started","serial":"R58M","lan_if":"eno1","tun":"phone0"}"#,
     );
     pinned(
         answer(Response::Error {
@@ -162,6 +171,14 @@ fn outcomes() {
             r#""outcome":{"result":"clean","reason":"phone_stopped"}}"#
         ),
     );
+    pinned(
+        ConnectionState::InstallingApp,
+        r#"{"state":"installing_app"}"#,
+    );
+    pinned(
+        ConnectionState::Reconnecting { wait_secs: 120 },
+        r#"{"state":"reconnecting","wait_secs":120}"#,
+    );
     let failed = ConnectionState::Ended {
         outcome: Outcome::failed(Kind::Vpn, "denied"),
     };
@@ -186,17 +203,19 @@ fn outcomes() {
 fn lists() {
     let device = DeviceInfo {
         serial: "R58M".into(),
+        name: Some("pixel".into()),
+        auto: true,
         state: "device".into(),
         model: Some("SM_J810G".into()),
         unusable_reason: None,
-        connection: Some(ConnectionState::WaitingForApp),
+        connection: Some(ConnectionState::WaitingForApp { screen: None }),
     };
     pinned(
         answer(Response::Devices {
             devices: vec![device],
         }),
         concat!(
-            r#"{"msg":"response","id":7,"type":"devices","devices":[{"serial":"R58M","#,
+            r#"{"msg":"response","id":7,"type":"devices","devices":[{"serial":"R58M","name":"pixel","auto":true,"#,
             r#""state":"device","model":"SM_J810G","unusable_reason":null,"#,
             r#""connection":{"state":"waiting_for_app"}}]}"#
         ),
@@ -213,6 +232,7 @@ fn lists() {
             address: Ipv4Addr::new(192, 168, 1, 200),
             prefix: 29,
         }],
+        dhcp: true,
         ineligible: None,
     };
     pinned(
@@ -222,7 +242,7 @@ fn lists() {
         concat!(
             r#"{"msg":"response","id":7,"type":"interfaces","interfaces":[{"name":"eno1","up":true,"#,
             r#""addresses":[{"address":"192.168.1.10","prefix":24}],"default_route":true,"#,
-            r#""phone_addresses":[{"address":"192.168.1.200","prefix":29}],"ineligible":null}]}"#
+            r#""phone_addresses":[{"address":"192.168.1.200","prefix":29}],"dhcp":true,"ineligible":null}]}"#
         ),
     );
 }
@@ -231,6 +251,7 @@ fn lists() {
 fn status() {
     let connection = ConnectionInfo {
         serial: "R58M".into(),
+        name: None,
         lan_if: "eno1".into(),
         tun: "phone0".into(),
         mtu: 1400,
@@ -265,7 +286,7 @@ fn events() {
     pinned(
         push(Event::Connection {
             serial: serial(),
-            state: ConnectionState::Handshaking,
+            state: ConnectionState::Handshaking { screen: None },
         }),
         r#"{"msg":"event","event":"connection","serial":"R58M","state":{"state":"handshaking"}}"#,
     );
@@ -321,6 +342,12 @@ fn a_start_with_an_unknown_field_is_refused() {
 }
 
 #[test]
+fn bytes_read_like_bytes() {
+    assert_eq!(bytes(999), "999 B");
+    assert_eq!(bytes(1_234_567), "1.2 MB");
+}
+
+#[test]
 fn states_read_the_same_everywhere() {
     let ended = ConnectionState::Ended {
         outcome: Outcome::failed(Kind::Vpn, "denied"),
@@ -333,8 +360,14 @@ fn states_read_the_same_everywhere() {
     };
     assert_eq!(clean.to_string(), "ended: stopped");
     assert_eq!(
-        ConnectionState::WaitingForApp.to_string(),
+        ConnectionState::WaitingForApp { screen: None }.to_string(),
         "waiting for app"
     );
-    assert!(format!("{:#}", ConnectionState::WaitingForApp).contains("VPN dialog"));
+    assert!(
+        format!("{:#}", ConnectionState::Handshaking { screen: None }).contains("VPN permission")
+    );
+    assert_eq!(ConnectionState::InstallingApp.to_string(), "installing app");
+    let away = ConnectionState::Reconnecting { wait_secs: 120 };
+    assert_eq!(away.to_string(), "reconnecting");
+    assert!(format!("{away:#}").contains("held for up to 120 s"));
 }

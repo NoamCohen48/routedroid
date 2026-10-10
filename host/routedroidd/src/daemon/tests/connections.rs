@@ -29,7 +29,7 @@ async fn a_phone_goes_active_carries_packets_and_stops_cleanly() {
         .start(request(PHONE, [10, 0, 0, 7]))
         .await
         .unwrap();
-    assert_eq!(tun.as_str(), "phone0");
+    assert_eq!(tun.tun.as_str(), "phone0");
     let mut app = FakeApp::connect(&lab.adb, PHONE).await;
     assert_eq!(
         app.configure.addresses[0].address,
@@ -109,11 +109,13 @@ async fn starts_are_checked_against_the_live_connections() {
         .start(request(OTHER, [10, 0, 0, 8]))
         .await
         .unwrap();
-    assert_eq!(tun.as_str(), "phone1", "the next free TUN");
+    assert_eq!(tun.tun.as_str(), "phone1", "the next free TUN");
 
     // Neither app ever connects: a stop now ends before the session began.
-    lab.until(PHONE, |s| *s == ConnectionState::WaitingForApp)
-        .await;
+    lab.until(PHONE, |s| {
+        matches!(s, ConnectionState::WaitingForApp { .. })
+    })
+    .await;
     let outcome = lab.connections.stop(PHONE).await.unwrap();
     assert_eq!(
         outcome,
@@ -122,6 +124,25 @@ async fn starts_are_checked_against_the_live_connections() {
         }
     );
     assert!(lab.connections.stop(OTHER).await.unwrap().is_clean());
+    assert!(lab.connections.info().is_empty());
+}
+
+#[tokio::test]
+async fn a_start_outside_the_policy_is_refused_before_it_begins() {
+    let lab = Lab::new(&[PHONE]).await;
+    let outside = lab.connections.start(request(PHONE, [10, 9, 9, 9])).await;
+    let error = outside.unwrap_err();
+    assert_eq!(error.kind(), Kind::Usage);
+    assert!(
+        error
+            .to_string()
+            .starts_with("10.9.9.9 is not a phone address"),
+        "{error}"
+    );
+    let mut elsewhere = request(PHONE, [10, 0, 0, 7]);
+    elsewhere.lan_if = Some("eth9".into());
+    let error = lab.connections.start(elsewhere).await.unwrap_err();
+    assert_eq!(error.to_string(), "eth9: no such interface");
     assert!(lab.connections.info().is_empty());
 }
 

@@ -6,7 +6,7 @@
 use anyhow::Result;
 use routedroid_helper_ipc::{Interface, Net, TUN_PREFIX};
 
-use crate::kernel::{Address, Kernel, Link, LinkKind};
+use crate::kernel::{Address, Kernel, Link, LinkKind, MAIN_TABLE, Route};
 use crate::policy::Policy;
 
 /// Why `link` can never carry phones, if it can't. `links` names masters.
@@ -35,6 +35,7 @@ pub fn survey(kernel: &impl Kernel, policy: &Result<Policy>) -> Result<Vec<Inter
     links.sort_by_key(|link| link.index);
     let addresses = kernel.addresses()?;
     let routes = kernel.routes()?;
+    let default_links = default_links(&routes);
     Ok(links
         .iter()
         .map(|link| {
@@ -54,6 +55,7 @@ pub fn survey(kernel: &impl Kernel, policy: &Result<Policy>) -> Result<Vec<Inter
                     .collect(),
                 Err(_) => Vec::new(),
             };
+            let dhcp = policy.as_ref().is_ok_and(|p| p.dhcp(&link.name));
             let ineligible = unsuitable(link, &links).or_else(|| {
                 if !link.carrier {
                     Some("no carrier (cable or Wi-Fi down)".into())
@@ -61,7 +63,7 @@ pub fn survey(kernel: &impl Kernel, policy: &Result<Policy>) -> Result<Vec<Inter
                     Some("no IPv4 address".into())
                 } else if let Err(e) = policy {
                     Some(format!("the helper policy cannot be read: {e:#}"))
-                } else if phone_addresses.is_empty() {
+                } else if phone_addresses.is_empty() && !dhcp {
                     Some("not in the helper policy".into())
                 } else {
                     None
@@ -70,15 +72,30 @@ pub fn survey(kernel: &impl Kernel, policy: &Result<Policy>) -> Result<Vec<Inter
             Interface {
                 name: link.name.clone(),
                 up: link.up && link.carrier,
-                default_route: routes
-                    .iter()
-                    .any(|r| r.prefix == 0 && r.oif == Some(link.index)),
+                default_route: default_links.contains(&link.index),
                 addresses,
                 phone_addresses,
+                dhcp,
                 ineligible,
             }
         })
         .collect())
+}
+
+/// Where the PC's traffic leaves: the main table's default route with the
+/// lowest metric (all of its hops). A second uplink's default, there only
+/// in case the first goes, and phones' own egress tables do not count.
+fn default_links(routes: &[Route]) -> Vec<u32> {
+    let defaults = routes
+        .iter()
+        .filter(|r| r.table == MAIN_TABLE && r.prefix == 0);
+    let Some(best) = defaults.clone().map(|r| r.metric).min() else {
+        return Vec::new();
+    };
+    defaults
+        .filter(|r| r.metric == best)
+        .filter_map(|r| r.oif)
+        .collect()
 }
 
 fn net(address: &Address) -> Net {

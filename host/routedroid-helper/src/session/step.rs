@@ -4,6 +4,7 @@
 //! from recovery, without touching anyone else's state.
 
 use anyhow::{Context, Result};
+use routedroid_dhcp::Held;
 use routedroid_helper_ipc::IfName;
 use tracing::{info, warn};
 
@@ -21,6 +22,7 @@ pub fn apply<K: Kernel>(
 ) -> Result<()> {
     let session = plan.session();
     match op {
+        Op::Lease { .. } => Ok(()),
         Op::Tun { name } => {
             *tun = Some(
                 env.kernel
@@ -32,6 +34,14 @@ pub fn apply<K: Kernel>(
         Op::Sysctl { ifname, leaf } => {
             env.claims
                 .acquire(&env.kernel, session, &SysctlKey::new(ifname.clone(), *leaf))
+        }
+        Op::Egress { lan_if, .. } => {
+            let lan = env
+                .kernel
+                .link(lan_if)?
+                .with_context(|| format!("{lan_if} is gone"))?;
+            let egress = op.egress().expect("an egress op");
+            env.kernel.add_egress(&egress, lan.index)
         }
         Op::Route { dst, tun, src } => {
             let link = owned_link(&env.kernel, tun, session)?
@@ -48,6 +58,26 @@ pub fn apply<K: Kernel>(
 pub fn undo<K: Kernel>(env: &Env<K>, session: SessionId, op: &Op) -> Result<()> {
     let kernel = &env.kernel;
     match op {
+        // Nothing can carry a RELEASE off a vanished interface; the lease expires.
+        Op::Lease {
+            lan_if, address, ..
+        } if kernel.link(lan_if)?.is_none() => {
+            warn!(%lan_if, %address, "cannot RELEASE: the interface is gone; the lease will expire");
+            Ok(())
+        }
+        Op::Lease {
+            lan_if,
+            client_id,
+            address,
+            server_id,
+            server_mac,
+        } => kernel.release_lease(&Held {
+            iface: lan_if.to_string(),
+            client_id: client_id.clone(),
+            address: *address,
+            server_id: *server_id,
+            server_mac: server_mac.clone(),
+        }),
         Op::Tun { name } => match owned_link(kernel, name, session)? {
             Some(link) => {
                 warn!(tun = %name, "TUN outlived its owner; deleting");
@@ -72,6 +102,8 @@ pub fn undo<K: Kernel>(env: &Env<K>, session: SessionId, op: &Op) -> Result<()> 
             env.claims
                 .release(kernel, session, &SysctlKey::new(ifname.clone(), *leaf))
         }
+        // Rule and routes are identified by table and protocol, both ours.
+        Op::Egress { .. } => kernel.delete_egress(&op.egress().expect("an egress op")),
         Op::Route { dst, tun, src } => {
             // The route lives and dies with our TUN: no tagged TUN, no route.
             let Some(link) = owned_link(kernel, tun, session)? else {

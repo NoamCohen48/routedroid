@@ -28,6 +28,8 @@ impl App {
             },
             Event::Traffic { serial, traffic } => {
                 if let Some(connection) = self.connections.get_mut(&serial) {
+                    let rates = self.rates.entry(serial).or_default();
+                    rates.record(std::time::Instant::now(), &traffic);
                     connection.traffic = traffic;
                 }
                 vec![]
@@ -40,7 +42,7 @@ impl App {
 
     fn apply_connection(&mut self, serial: String, state: ConnectionState) -> Vec<Command> {
         if let Some(device) = self
-            .devices
+            .attached
             .iter_mut()
             .find(|device| device.serial == serial)
         {
@@ -49,8 +51,15 @@ impl App {
                 _ => Some(state.clone()),
             };
         }
+        let commands = self.fold_connection(serial, state);
+        self.rebuild_rows();
+        commands
+    }
+
+    fn fold_connection(&mut self, serial: String, state: ConnectionState) -> Vec<Command> {
         if let ConnectionState::Ended { outcome } = state {
             self.connections.remove(&serial);
+            self.rates.remove(&serial);
             let end = LastEnd {
                 text: outcome.to_string(),
                 failed: !outcome.is_clean(),

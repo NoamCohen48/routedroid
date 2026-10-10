@@ -1,5 +1,5 @@
-//! Before a session: `Hello`, then any number of `Ping`s and `Interfaces`,
-//! then `Start`, all within the deadline.
+//! Before a session: `Hello`, then any number of `Ping`s, `Interfaces`,
+//! `Inspect`s and `Repair`s, then `Start`, all within the deadline.
 
 use std::sync::Arc;
 
@@ -9,10 +9,11 @@ use tokio::task::spawn_blocking;
 use tokio::time::{Instant, timeout_at};
 use tracing::warn;
 
+use super::address::Start;
 use super::error;
+use crate::doctor;
 use crate::env::Env;
 use crate::kernel::System;
-use crate::plan::Request as StartRequest;
 use crate::policy::Policy;
 use crate::survey::survey;
 
@@ -22,7 +23,7 @@ pub async fn setup(
     conn: &SeqPacket,
     buf: &mut [u8],
     deadline: Instant,
-) -> Result<Option<StartRequest>> {
+) -> Result<Option<Start>> {
     let mut greeted = false;
     loop {
         let received = match timeout_at(deadline, conn.recv(buf)).await {
@@ -58,19 +59,26 @@ pub async fn setup(
                 Ok(Datagram::Control(Request::Start {
                     lan_if,
                     phone_ip,
+                    device,
                     tun,
                     mtu,
                 })),
             ) => {
-                return Ok(Some(StartRequest {
+                return Ok(Some(Start {
                     lan_if,
                     phone_ip,
+                    device,
                     tun,
                     mtu,
                 }));
             }
             (true, Ok(Datagram::Control(Request::Interfaces))) => {
                 conn.send_control(&interfaces(env).await).await?;
+                continue;
+            }
+            (true, Ok(Datagram::Control(request @ (Request::Inspect | Request::Repair)))) => {
+                conn.send_control(&doctor(env, request == Request::Repair).await)
+                    .await?;
                 continue;
             }
             (true, Ok(Datagram::Control(Request::Ping))) => {
@@ -95,5 +103,22 @@ async fn interfaces(env: &Arc<Env<System>>) -> Reply {
         Ok(Ok(interfaces)) => Reply::Interfaces { interfaces },
         Ok(Err(e)) => error(ErrorCode::QueryFailed, format!("{e:#}")),
         Err(e) => error(ErrorCode::QueryFailed, format!("survey panicked: {e}")),
+    }
+}
+
+async fn doctor(env: &Arc<Env<System>>, fix: bool) -> Reply {
+    let env = Arc::clone(env);
+    let ran = spawn_blocking(move || {
+        if fix {
+            doctor::repair(&env).map(|(done, remaining)| Reply::Repaired { done, remaining })
+        } else {
+            doctor::inspect(&env).map(|findings| Reply::Health { findings })
+        }
+    })
+    .await;
+    match ran {
+        Ok(Ok(reply)) => reply,
+        Ok(Err(e)) => error(ErrorCode::QueryFailed, format!("{e:#}")),
+        Err(e) => error(ErrorCode::QueryFailed, format!("doctor panicked: {e}")),
     }
 }

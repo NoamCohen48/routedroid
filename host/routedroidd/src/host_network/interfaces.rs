@@ -43,6 +43,7 @@ pub async fn interfaces(socket: &Path) -> Result<Vec<InterfaceInfo>> {
             addresses: i.addresses.into_iter().map(net).collect(),
             default_route: i.default_route,
             phone_addresses: i.phone_addresses.into_iter().map(net).collect(),
+            dhcp: i.dhcp,
             ineligible: i.ineligible,
         })
         .collect())

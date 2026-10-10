@@ -1,6 +1,6 @@
 //! What flows between the UI and the task that owns the daemon connection.
 
-use routedroid_ipc::{ConnectionInfo, DeviceInfo, Event, InterfaceInfo, Outcome, StartRequest};
+use routedroid_ipc::{ConnectionInfo, DeviceInfo, Event, InterfaceInfo, Phone, StartRequest};
 
 /// UI → client task: something to ask the daemon.
 #[derive(Debug, Clone)]
@@ -8,8 +8,17 @@ pub enum Command {
     RefreshDevices,
     RefreshStatus,
     RefreshInterfaces,
-    Start(StartRequest),
-    Stop { serial: String },
+    /// Start, then remember the phone (on the LAN it was given) if `remember`.
+    Start {
+        request: StartRequest,
+        remember: Option<Box<Phone>>,
+    },
+    Stop {
+        serial: String,
+    },
+    Forget {
+        phone: String,
+    },
 }
 
 /// Client task → UI: what the daemon said, or what happened to the connection.
@@ -26,12 +35,19 @@ pub enum Incoming {
     Interfaces(Vec<InterfaceInfo>),
     Started {
         serial: String,
+        lan_if: String,
         tun: String,
     },
-    Stopped {
-        serial: String,
-        outcome: Outcome,
+    /// The phone is remembered (or forgotten), as `label`.
+    Remembered {
+        label: String,
+        auto: bool,
     },
+    Forgotten {
+        label: String,
+    },
+    /// A stop was answered; the connection's `ended` event says how it ended.
+    Stopped,
     /// A request failed; `what` names it for the log line, and `serial`
     /// the phone it was about, if any.
     Failed {

@@ -2,13 +2,14 @@ use super::*;
 
 fn request() -> StartRequest {
     StartRequest {
-        serial: "R58M".into(),
-        lan_if: "eno1".into(),
+        serial: Some("R58M".into()),
+        lan_if: Some("eno1".into()),
         phone_ip: Some(Ipv4Addr::new(192, 168, 1, 50)),
         tun: None,
         mtu: None,
-        dns: DnsChoice::Auto,
+        dns: Some(DnsChoice::Auto),
         connect_timeout_secs: None,
+        reconnect_secs: None,
         allow_network_adb: false,
     }
 }
@@ -28,6 +29,7 @@ fn defaults_are_the_daemons() {
     let spec = StartSpec::parse(request()).unwrap();
     assert_eq!(spec.mtu, DEFAULT_MTU);
     assert_eq!(spec.connect_timeout, DEFAULT_CONNECT_TIMEOUT);
+    assert_eq!(spec.reconnect_wait, DEFAULT_RECONNECT_WAIT);
     assert_eq!(spec.tun, None);
     assert_eq!(spec.dns, DnsChoice::Auto);
 }
@@ -35,13 +37,13 @@ fn defaults_are_the_daemons() {
 #[test]
 fn bad_names_are_usage_errors() {
     let long = StartRequest {
-        lan_if: "a-name-longer-than-15".into(),
+        lan_if: Some("a-name-longer-than-15".into()),
         ..request()
     };
     assert_eq!(refused(long, "lan_if"), Kind::Usage);
     refused(
         StartRequest {
-            lan_if: "phone0".into(),
+            lan_if: Some("phone0".into()),
             ..request()
         },
         "not a LAN interface",
@@ -71,11 +73,11 @@ fn addresses_must_be_unicast_hosts() {
         };
         refused(request, "unicast");
     }
-    let dns = DnsChoice::Servers(vec!["224.0.0.251".parse().unwrap()]);
+    let dns = Some(DnsChoice::Servers(vec!["224.0.0.251".parse().unwrap()]));
     refused(StartRequest { dns, ..request() }, "DNS server");
     refused(
         StartRequest {
-            dns: DnsChoice::Servers(vec![]),
+            dns: Some(DnsChoice::Servers(vec![])),
             ..request()
         },
         "empty",
@@ -109,16 +111,23 @@ fn mtu_and_timeout_are_bounded() {
         connect_timeout_secs: Some(u64::MAX),
         ..request()
     };
-    assert_eq!(
-        StartSpec::parse(long).unwrap().connect_timeout,
-        MAX_CONNECT_TIMEOUT
-    );
+    assert_eq!(StartSpec::parse(long).unwrap().connect_timeout, MAX_WAIT);
+    let wait = |secs| {
+        let request = StartRequest {
+            reconnect_secs: Some(secs),
+            ..request()
+        };
+        StartSpec::parse(request).unwrap().reconnect_wait
+    };
+    // Zero is allowed for this one: it means "do not wait".
+    assert_eq!(wait(0), Duration::ZERO);
+    assert_eq!(wait(u64::MAX), MAX_WAIT);
 }
 
 #[test]
 fn transport_rule_applies_before_anything_else() {
     let network = StartRequest {
-        serial: "10.0.0.2:5555".into(),
+        serial: Some("10.0.0.2:5555".into()),
         ..request()
     };
     assert_eq!(refused(network, "network ADB"), Kind::Transport);

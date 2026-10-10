@@ -33,6 +33,11 @@ fn start_applies_tagged_state_and_stop_restores_the_baseline() {
         );
         assert_eq!(state.sysctls[&key("lan0", Leaf::ProxyArp)], ENABLED);
         assert_eq!(state.sysctls[&key("phone0", Leaf::Forwarding)], ENABLED);
+        // The phone's own table: its subnet, then the unreachable default.
+        let table = u32::from(std::net::Ipv4Addr::new(10, 0, 0, 5));
+        assert!(state.rules.iter().any(|r| r.table == table));
+        let mine: Vec<_> = state.routes.iter().filter(|r| r.table == table).collect();
+        assert_eq!(mine.len(), 2, "{mine:?}");
     }
     assert_eq!(lab.journals().len(), 1);
     assert!(session.tun().is_some());
@@ -127,4 +132,49 @@ fn foreign_objects_with_our_names_are_never_touched() {
         baseline,
         "and never deleted by the rollback"
     );
+}
+
+#[test]
+fn a_held_lease_is_released_last() {
+    let lab = Lab::new();
+    let baseline = lab.kernel.snapshot();
+    let session = Session::start(
+        Arc::clone(&lab.env),
+        lab.leased_plan(1, "phone0", "10.0.0.144").unwrap(),
+    )
+    .unwrap();
+    assert!(lab.kernel.lock().released.is_empty());
+    lab.kernel.lock().failing.insert("release_lease");
+    let kept = Session::stop(session).unwrap_err();
+    assert!(format!("{kept:#}").contains("release_lease"), "{kept:#}");
+    assert_eq!(
+        lab.kernel.snapshot(),
+        baseline,
+        "everything else is undone first"
+    );
+    assert_eq!(lab.journals().len(), 1, "the lease keeps the journal");
+    lab.kernel.lock().failing.clear();
+    crate::recovery::cleanup(&lab.env).unwrap();
+    assert_eq!(
+        lab.kernel.lock().released,
+        [crate::test_util::held("10.0.0.144")]
+    );
+    assert!(lab.journals().is_empty());
+}
+
+#[test]
+fn a_vanished_lan_interface_still_lets_the_session_stop() {
+    use crate::kernel::Kernel;
+    let lab = Lab::new();
+    let session = Session::start(
+        Arc::clone(&lab.env),
+        lab.leased_plan(1, "phone0", "10.0.0.144").unwrap(),
+    )
+    .unwrap();
+    let lan = lab.kernel.lock().links["lan0"].index;
+    lab.kernel.delete_link(lan).unwrap();
+    Session::stop(session).unwrap();
+    assert!(lab.journals().is_empty());
+    assert!(lab.kernel.lock().released.is_empty(), "no RELEASE to send");
+    assert!(lab.kernel.lock().rules.is_empty(), "the egress went too");
 }

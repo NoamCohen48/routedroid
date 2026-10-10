@@ -1,21 +1,27 @@
-//! The production [`Kernel`]: rtnetlink for links, addresses, neighbours
-//! and routes; the `nft` binary for the firewall; `/proc/sys` for sysctls.
+//! The production [`Kernel`]: rtnetlink for links, addresses, neighbours,
+//! routes and rules; the `nft` binary for the firewall; `/proc/sys` for sysctls.
 
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
+use routedroid_dhcp::Held;
 use routedroid_helper_ipc::IfName;
 
-use super::{Address, Firewall, HostRoute, Kernel, Link, NftTable, Route};
+use super::{
+    Address, Egress, Firewall, ForwardDrop, HostRoute, Kernel, Link, NftTable, Route, Rule,
+};
 use crate::op::SysctlKey;
 
+mod chains;
 mod command;
+mod egress;
 mod link;
 mod neighbourhood;
 mod netlink;
 mod nft;
 mod route;
+mod rule;
 mod ruleset;
 mod sysctl;
 mod tun;
@@ -57,6 +63,10 @@ impl Kernel for System {
         route::all()
     }
 
+    fn rules(&self) -> Result<Vec<Rule>> {
+        rule::all()
+    }
+
     fn create_tun(&self, name: &IfName, alias: &str, mtu: u32) -> Result<Device> {
         let device = Device::create(name)?;
         // The fd keeps the name ours, so this lookup cannot find someone else's link.
@@ -79,6 +89,14 @@ impl Kernel for System {
         route::delete(route)
     }
 
+    fn add_egress(&self, egress: &Egress, lan_index: u32) -> Result<()> {
+        egress::add(egress, lan_index)
+    }
+
+    fn delete_egress(&self, egress: &Egress) -> Result<()> {
+        egress::delete(egress)
+    }
+
     fn create_firewall(&self, firewall: &Firewall) -> Result<()> {
         nft::create(&self.nft, firewall)
     }
@@ -87,8 +105,20 @@ impl Kernel for System {
         nft::find(&self.nft, name)
     }
 
+    fn nft_tables(&self) -> Result<Vec<(String, NftTable)>> {
+        nft::all(&self.nft)
+    }
+
+    fn forward_drops(&self) -> Result<Vec<ForwardDrop>> {
+        chains::forward_drops(&self.nft)
+    }
+
     fn delete_nft_table(&self, handle: u64) -> Result<()> {
         nft::delete(&self.nft, handle)
+    }
+
+    fn release_lease(&self, lease: &Held) -> Result<()> {
+        routedroid_dhcp::release_now(lease)
     }
 
     fn sysctl_read(&self, key: &SysctlKey) -> Result<Option<String>> {

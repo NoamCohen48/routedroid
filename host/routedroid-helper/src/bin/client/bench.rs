@@ -13,7 +13,12 @@ use crate::run::ClientArgs;
 const WINDOW: u32 = 64;
 
 /// Returns the number of echo replies seen before the deadline.
-pub async fn run(link: &mut Link, args: &ClientArgs, target: Ipv4Addr) -> Result<u32> {
+pub async fn run(
+    link: &mut Link,
+    args: &ClientArgs,
+    phone_ip: Ipv4Addr,
+    target: Ipv4Addr,
+) -> Result<u32> {
     // Let the kernel finish bringing the TUN up before timing.
     tokio::time::sleep(Duration::from_millis(300)).await;
     let id = (std::process::id() & 0xffff) as u16;
@@ -26,8 +31,13 @@ pub async fn run(link: &mut Link, args: &ClientArgs, target: Ipv4Addr) -> Result
     // the relay. A lost reply keeps its slot; the deadline ends the run.
     while replies < args.bench {
         if sent < args.bench && sent - replies < WINDOW {
-            link.send_packet(&icmp::echo_request(args.phone_ip, target, id, sent as u16))
-                .await?;
+            link.send_packet(&icmp::echo_request(
+                phone_ip,
+                target,
+                id,
+                u16::try_from(sent & 0xffff).expect("masked"),
+            ))
+            .await?;
             sent += 1;
             if sent == args.bench / 2 {
                 args.crash("during_traffic");

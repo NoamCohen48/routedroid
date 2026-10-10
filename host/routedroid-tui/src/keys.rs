@@ -52,6 +52,15 @@ fn handle_normal(app: &mut App, code: KeyCode) -> Vec<Command> {
             Some(device) => return app.open_form(device.serial.clone()),
             None => app.error("no device selected"),
         },
+        KeyCode::Char('f') => match app.selected_device() {
+            Some(device) if device.name.is_some() || device.auto => {
+                return vec![Command::Forget {
+                    phone: device.serial.clone(),
+                }];
+            }
+            Some(device) => app.error(format!("{}: not remembered", device.serial)),
+            None => app.error("no device selected"),
+        },
         KeyCode::Char('x') => match app.selected_device() {
             Some(device) if device.connection.is_some() => {
                 app.mode = Mode::ConfirmStop {

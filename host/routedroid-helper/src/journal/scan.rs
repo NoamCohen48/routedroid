@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use tracing::info;
 
-use super::{Journal, Taken, dir};
+use super::{Journal, Reservation, Taken, dir};
 use crate::session_id::SessionId;
 use crate::storage;
 
@@ -21,10 +21,28 @@ pub fn take_all(dir: &Path) -> Result<Vec<(PathBuf, Result<Taken>)>> {
         info!(path = %tmp.display(), "removing a journal that was never created");
         fs::remove_file(&tmp).with_context(|| format!("remove {}", tmp.display()))?;
     }
+    take_each(dir)
+}
+
+/// `take_all` for a look only: temporaries stay where they are.
+pub fn peek_all(dir: &Path) -> Result<Vec<(PathBuf, Result<Taken>)>> {
+    let _lock = storage::lock(dir)?;
+    take_each(dir)
+}
+
+fn take_each(dir: &Path) -> Result<Vec<(PathBuf, Result<Taken>)>> {
     Ok(dir::list(dir, dir::SUFFIX)?
         .into_iter()
         .map(|path| (path.clone(), Journal::take(&path)))
         .collect())
+}
+
+/// What every journal, live or orphaned, reserves.
+pub fn reservations(dir: &Path) -> Result<Vec<Reservation>> {
+    dir::list(dir, dir::SUFFIX)?
+        .iter()
+        .map(|path| Ok(dir::read_header(path)?.reservation))
+        .collect()
 }
 
 /// Every session that still has a journal, live or orphaned.

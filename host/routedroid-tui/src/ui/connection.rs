@@ -5,13 +5,17 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph, Wrap};
-use routedroid_ipc::ConnectionInfo;
+use routedroid_ipc::{ConnectionInfo, bytes};
 
+use super::rates;
 use crate::app::App;
 use crate::describe;
 
-/// Border plus five lines of details.
-pub const HEIGHT: u16 = 7;
+/// Border, five lines of details and two of throughput, and one for a long
+/// state to wrap into.
+pub const HEIGHT: u16 = 10;
+/// "  traffic: ": every detail's label, right-aligned, and its colon.
+pub const LABEL_WIDTH: usize = 11;
 
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let device = app.selected_device();
@@ -20,10 +24,15 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         None => " Connection ".to_string(),
     };
     let lines = match (app.selected_connection(), device) {
-        (Some(connection), _) => details(connection),
+        (Some(connection), _) => {
+            let mut lines = details(connection);
+            let width = area.width.saturating_sub(2);
+            lines.extend(rates::lines(app.rates.get(&connection.serial), width));
+            lines
+        }
         (None, Some(device)) => match (&device.connection, app.last_end.get(&device.serial)) {
             (Some(state), _) => vec![
-                pair("state", state.to_string(), None),
+                pair("state", format!("{state:#}"), None),
                 "(fetching details)".into(),
             ],
             (None, Some(end)) => {
@@ -83,15 +92,19 @@ fn details(connection: &ConnectionInfo) -> Vec<Line<'static>> {
             ),
             None,
         ),
-        pair("state", connection.state.to_string(), Some(state_color)),
+        pair(
+            "state",
+            format!("{:#}", connection.state),
+            Some(state_color),
+        ),
         pair(
             "traffic",
             format!(
-                "to phone {} pkts / {} B   from phone {} pkts / {} B",
+                "to phone {} pkts / {}   from phone {} pkts / {}",
                 traffic.packets_to_phone,
-                traffic.bytes_to_phone,
+                bytes(traffic.bytes_to_phone),
                 traffic.packets_from_phone,
-                traffic.bytes_from_phone
+                bytes(traffic.bytes_from_phone)
             ),
             None,
         ),
@@ -106,7 +119,7 @@ fn details(connection: &ConnectionInfo) -> Vec<Line<'static>> {
     ]
 }
 
-fn pair(label: &str, value: String, color: Option<Color>) -> Line<'static> {
+pub(super) fn pair(label: &str, value: String, color: Option<Color>) -> Line<'static> {
     let value = match color {
         Some(color) => Span::from(value).fg(color),
         None => Span::from(value),

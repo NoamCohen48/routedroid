@@ -12,6 +12,8 @@ use crate::messages::{Command, Incoming};
 fn device(serial: &str, connection: Option<ConnectionState>) -> DeviceInfo {
     DeviceInfo {
         serial: serial.into(),
+        name: None,
+        auto: false,
         state: "device".into(),
         model: None,
         unusable_reason: None,
@@ -22,6 +24,7 @@ fn device(serial: &str, connection: Option<ConnectionState>) -> DeviceInfo {
 fn connection(serial: &str) -> ConnectionInfo {
     ConnectionInfo {
         serial: serial.into(),
+        name: None,
         lan_if: "eth0".into(),
         tun: "phone0".into(),
         mtu: 1400,
@@ -68,6 +71,22 @@ fn traffic_updates_the_right_connection() {
 }
 
 #[test]
+fn traffic_builds_a_graph_that_ends_with_the_connection() {
+    let mut app = app_with_two_devices();
+    for bytes in [0, 1000] {
+        let traffic = Traffic {
+            bytes_to_phone: bytes,
+            ..Traffic::default()
+        };
+        let serial = "one".into();
+        app.apply(Incoming::Event(Event::Traffic { serial, traffic }));
+    }
+    assert_eq!(app.rates["one"].to_phone.len(), 1);
+    app.apply(ended("one", Outcome::failed(Kind::Vpn, "phone refused")));
+    assert!(app.rates.is_empty());
+}
+
+#[test]
 fn a_failed_end_stays_on_the_row_until_the_next_start() {
     let mut app = app_with_two_devices();
     app.apply(ended("one", Outcome::failed(Kind::Vpn, "phone refused")));
@@ -78,6 +97,7 @@ fn a_failed_end_stays_on_the_row_until_the_next_start() {
     assert_eq!(app.log.last().unwrap().level, Level::Error);
     app.apply(Incoming::Started {
         serial: "one".into(),
+        lan_if: "eno1".into(),
         tun: "phone0".into(),
     });
     assert!(!app.last_end.contains_key("one"));
@@ -137,8 +157,60 @@ fn cursor_stays_in_range_when_devices_vanish() {
         devices: vec![device("one", None)],
     }));
     assert_eq!(app.cursor, 0);
+    app.apply(Incoming::Connections(vec![]));
     app.apply(Incoming::Event(Event::Devices { devices: vec![] }));
     assert!(app.selected_device().is_none());
+}
+
+#[test]
+fn an_unplugged_phone_keeps_its_row_while_its_connection_lives() {
+    let mut app = app_with_two_devices();
+    app.apply(Incoming::Event(Event::Devices {
+        devices: vec![device("two", None)],
+    }));
+    let away = ConnectionState::Reconnecting { wait_secs: 120 };
+    app.apply(Incoming::Event(Event::Connection {
+        serial: "one".into(),
+        state: away.clone(),
+    }));
+    let row = app
+        .devices
+        .iter()
+        .find(|d| d.serial == "one")
+        .expect("still listed");
+    assert_eq!((row.state.as_str(), &row.connection), ("gone", &Some(away)));
+    app.cursor = app.devices.iter().position(|d| d.serial == "one").unwrap();
+    crate::keys::handle(&mut app, crossterm::event::KeyCode::Char('x').into());
+    assert_eq!(
+        app.mode,
+        Mode::ConfirmStop {
+            serial: "one".into()
+        }
+    );
+
+    // Back: one row again, the cursor still on it; ended: the row goes.
+    app.apply(Incoming::Event(Event::Devices {
+        devices: vec![device("two", None), device("one", None)],
+    }));
+    assert_eq!(app.devices.len(), 2);
+    assert_eq!(app.selected_device().unwrap().serial, "one");
+    app.apply(Incoming::Event(Event::Devices {
+        devices: vec![device("two", None)],
+    }));
+    app.apply(ended("one", Outcome::failed(Kind::Adb, "gone for good")));
+    assert_eq!(app.devices.len(), 1);
+}
+
+#[test]
+fn a_device_list_is_logged_when_it_changes() {
+    let mut app = app_with_two_devices();
+    let lines = app.log.len();
+    let same = vec![device("one", None), device("two", None)];
+    app.apply(Incoming::Event(Event::Devices { devices: same }));
+    assert_eq!(app.log.len(), lines, "the same list again is not news");
+    let fewer = vec![device("two", None)];
+    app.apply(Incoming::Event(Event::Devices { devices: fewer }));
+    assert_eq!(app.log.len(), lines + 1);
 }
 
 #[test]

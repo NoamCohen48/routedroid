@@ -7,13 +7,16 @@ use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::{Result, bail};
+use routedroid_dhcp::Held;
 use routedroid_helper_ipc::IfName;
 
 use super::{
-    Address, Firewall, HostRoute, Kernel, Link, LinkKind, NftTable, ROUTE_PROTOCOL, Route,
+    Address, Egress, Firewall, ForwardDrop, HostRoute, Kernel, Link, LinkKind, NftTable, Route,
+    Rule,
 };
 use crate::op::{SysctlKey, nft_table_name};
 
+mod routing;
 mod state;
 
 pub use state::State;
@@ -48,8 +51,8 @@ impl Fake {
             .filter(|(_, value)| *value != "0")
             .collect();
         format!(
-            "links={:?}\nroutes={:?}\ntables={:?}\nsysctls={sysctls:?}",
-            s.links, s.routes, s.tables
+            "links={:?}\nroutes={:?}\nrules={:?}\ntables={:?}\nsysctls={sysctls:?}",
+            s.links, s.routes, s.rules, s.tables
         )
     }
 
@@ -91,6 +94,10 @@ impl Kernel for Fake {
         Ok(self.call("routes")?.routes.clone())
     }
 
+    fn rules(&self) -> Result<Vec<Rule>> {
+        Ok(self.call("rules")?.rules.clone())
+    }
+
     fn create_tun(&self, name: &IfName, alias: &str, _mtu: u32) -> Result<FakeTun> {
         let mut state = self.call("create_tun")?;
         if state.links.contains_key(name.as_str()) {
@@ -110,32 +117,19 @@ impl Kernel for Fake {
     }
 
     fn add_route(&self, route: &HostRoute) -> Result<()> {
-        let mut state = self.call("add_route")?;
-        if state
-            .routes
-            .iter()
-            .any(|r| r.dst == route.dst && r.prefix == 32)
-        {
-            bail!("add route {}/32: EEXIST", route.dst);
-        }
-        let entry = Route {
-            dst: route.dst,
-            prefix: 32,
-            gateway: None,
-            oif: Some(route.oif),
-            protocol: ROUTE_PROTOCOL,
-        };
-        state.routes.push(entry);
-        Ok(())
+        self.call("add_route")?.add_route(route)
     }
 
     fn delete_route(&self, route: &HostRoute) -> Result<()> {
-        let mut state = self.call("delete_route")?;
-        let before = state.routes.len();
-        state.routes.retain(|r| !route.matches(r));
-        if state.routes.len() == before {
-            bail!("delete route {}/32: ESRCH", route.dst);
-        }
+        self.call("delete_route")?.delete_route(route)
+    }
+
+    fn add_egress(&self, egress: &Egress, lan_index: u32) -> Result<()> {
+        self.call("add_egress")?.add_egress(egress, lan_index)
+    }
+
+    fn delete_egress(&self, egress: &Egress) -> Result<()> {
+        self.call("delete_egress")?.delete_egress(egress);
         Ok(())
     }
 
@@ -160,6 +154,19 @@ impl Kernel for Fake {
             .tables
             .get(name)
             .map(|(table, _)| table.clone()))
+    }
+
+    fn nft_tables(&self) -> Result<Vec<(String, NftTable)>> {
+        let state = self.call("nft_tables")?;
+        Ok(state
+            .tables
+            .iter()
+            .map(|(name, (table, _))| (name.clone(), table.clone()))
+            .collect())
+    }
+
+    fn forward_drops(&self) -> Result<Vec<ForwardDrop>> {
+        Ok(self.call("forward_drops")?.forward_drops.clone())
     }
 
     fn delete_nft_table(&self, handle: u64) -> Result<()> {
@@ -188,6 +195,11 @@ impl Kernel for Fake {
                 .cloned()
                 .unwrap_or_else(|| "0".into()),
         ))
+    }
+
+    fn release_lease(&self, lease: &Held) -> Result<()> {
+        self.call("release_lease")?.released.push(lease.clone());
+        Ok(())
     }
 
     fn sysctl_write(&self, key: &SysctlKey, value: &str) -> Result<()> {

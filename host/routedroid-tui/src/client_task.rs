@@ -94,10 +94,12 @@ async fn serve(
                 running.spawn(async move {
                     let (what, serial) = name(&command);
                     // A broken connection also ends `events`, which reconnects.
-                    let outcome = execute(&calls, command).await.unwrap_or_else(|error| {
-                        Incoming::Failed { what, serial, message: format!("{error:#}") }
+                    let outcomes = execute(&calls, command).await.unwrap_or_else(|error| {
+                        vec![Incoming::Failed { what, serial, message: format!("{error:#}") }]
                     });
-                    let _ = incoming.send(outcome).await;
+                    for outcome in outcomes {
+                        let _ = incoming.send(outcome).await;
+                    }
                 });
             }
             Some(_) = running.join_next() => {}
@@ -105,16 +107,40 @@ async fn serve(
     }
 }
 
-/// One call; a daemon `Error` becomes `Incoming::Failed`, a transport error propagates.
-async fn execute(calls: &Calls, command: Command) -> Result<Incoming> {
+/// One command; a daemon `Error` becomes `Incoming::Failed`, a transport
+/// error propagates. A start that remembers is two calls, the second only
+/// once the first is accepted.
+async fn execute(calls: &Calls, command: Command) -> Result<Vec<Incoming>> {
     let (what, serial) = name(&command);
     let request = match command {
         Command::RefreshDevices => Request::Devices,
         Command::RefreshStatus => Request::Status,
         Command::RefreshInterfaces => Request::Interfaces,
-        Command::Start(request) => Request::Start(request),
+        Command::Start {
+            request,
+            remember: Some(mut phone),
+        } => {
+            let started = call(calls, Request::Start(request), what, serial.clone()).await?;
+            let Incoming::Started { lan_if, .. } = &started else {
+                return Ok(vec![started]);
+            };
+            phone.lan_if = Some(lan_if.clone());
+            let remembered = call(calls, Request::Remember(*phone), "remember", serial).await?;
+            return Ok(vec![started, remembered]);
+        }
+        Command::Start { request, .. } => Request::Start(request),
         Command::Stop { serial } => Request::Stop { serial },
+        Command::Forget { phone } => Request::Forget { phone },
     };
+    Ok(vec![call(calls, request, what, serial).await?])
+}
+
+async fn call(
+    calls: &Calls,
+    request: Request,
+    what: &'static str,
+    serial: Option<String>,
+) -> Result<Incoming> {
     Ok(match calls.call(request).await? {
         Response::Error { kind, message } => Incoming::Failed {
             what,
@@ -124,9 +150,29 @@ async fn execute(calls: &Calls, command: Command) -> Result<Incoming> {
         Response::Devices { devices } => Incoming::Devices(devices),
         Response::Status { connections } => Incoming::Connections(connections),
         Response::Interfaces { interfaces } => Incoming::Interfaces(interfaces),
-        Response::Started { serial, tun } => Incoming::Started { serial, tun },
-        Response::Stopped { serial, outcome } => Incoming::Stopped { serial, outcome },
-        other @ (Response::Version { .. } | Response::Subscribed) => Incoming::Failed {
+        Response::Started {
+            serial,
+            lan_if,
+            tun,
+            ..
+        } => Incoming::Started {
+            serial,
+            lan_if,
+            tun,
+        },
+        Response::Stopped { .. } => Incoming::Stopped,
+        Response::Remembered { phone } => Incoming::Remembered {
+            label: phone.label(),
+            auto: phone.auto,
+        },
+        Response::Forgotten { phone } => Incoming::Forgotten {
+            label: phone.label(),
+        },
+        other @ (Response::Version { .. }
+        | Response::Subscribed
+        | Response::Doctor { .. }
+        | Response::Phones { .. }
+        | Response::Notifications { .. }) => Incoming::Failed {
             what,
             serial,
             message: format!("unexpected answer {other:?}"),
@@ -140,7 +186,8 @@ fn name(command: &Command) -> (&'static str, Option<String>) {
         Command::RefreshDevices => ("devices", None),
         Command::RefreshStatus => ("status", None),
         Command::RefreshInterfaces => ("interfaces", None),
-        Command::Start(request) => ("start", Some(request.serial.clone())),
+        Command::Start { request, .. } => ("start", request.serial.clone()),
         Command::Stop { serial } => ("stop", Some(serial.clone())),
+        Command::Forget { phone } => ("forget", Some(phone.clone())),
     }
 }

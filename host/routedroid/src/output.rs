@@ -2,7 +2,9 @@
 //! place on the LAN. Connection states describe themselves (`Display` in
 //! the ipc crate), so every client words them the same.
 
-use routedroid_ipc::NetworkInfo;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use routedroid_ipc::{Lease, NetworkInfo};
 
 /// Prints rows as left-aligned columns, each as wide as its widest cell.
 pub fn print_table(rows: &[Vec<String>]) {
@@ -54,59 +56,35 @@ pub fn network_line(network: &NetworkInfo) -> String {
         }
     };
     if let Some(lease) = &network.lease {
-        line += &format!(", leased from {}", lease.server);
+        line += &format!(
+            ", leased from {} ({})",
+            lease.server,
+            lease_left(lease, now())
+        );
     }
     line
 }
 
-/// "1.2 MB" for counters a person reads.
-pub fn bytes(count: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "kB", "MB", "GB", "TB"];
-    let mut value = count as f64;
-    let mut unit = 0;
-    while value >= 1000.0 && unit < UNITS.len() - 1 {
-        value /= 1000.0;
-        unit += 1;
-    }
-    match unit {
-        0 => format!("{count} B"),
-        _ => format!("{value:.1} {}", UNITS[unit]),
+/// "1h 05m left" until the lease runs out unless renewed (renewals are announced).
+pub fn lease_left(lease: &Lease, now: u64) -> String {
+    let minutes = lease.expires_at.saturating_sub(now) / 60;
+    match minutes {
+        _ if lease.expires_at <= now => "expired".into(),
+        0 => "under a minute left".into(),
+        1..60 => format!("{minutes}m left"),
+        _ => format!("{}h {:02}m left", minutes / 60, minutes % 60),
     }
 }
+
+/// Unix seconds.
+pub fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// "1.2 MB" for counters a person reads (shared with the TUI).
+pub use routedroid_ipc::bytes;
 
 #[cfg(test)]
-mod tests {
-    use std::net::Ipv4Addr;
-
-    use routedroid_ipc::Lease;
-
-    use super::*;
-
-    #[test]
-    fn bytes_read_like_bytes() {
-        assert_eq!(bytes(999), "999 B");
-        assert_eq!(bytes(1_234_567), "1.2 MB");
-    }
-
-    #[test]
-    fn the_network_line_names_address_dns_and_lease() {
-        let mut network = NetworkInfo {
-            phone_ip: Ipv4Addr::new(192, 168, 1, 50),
-            host_ip: Ipv4Addr::new(192, 168, 1, 10),
-            lan_prefix: 24,
-            dns: vec![],
-            lease: None,
-        };
-        let line = network_line(&network);
-        assert_eq!(
-            line,
-            "phone is 192.168.1.50 on the LAN (host 192.168.1.10/24), no DNS"
-        );
-        network.dns = vec![Ipv4Addr::new(192, 168, 1, 1)];
-        network.lease = Some(Lease {
-            server: Ipv4Addr::new(192, 168, 1, 1),
-            expires_at: 0,
-        });
-        assert!(network_line(&network).ends_with("DNS 192.168.1.1, leased from 192.168.1.1"));
-    }
-}
+mod tests;

@@ -1,6 +1,7 @@
 //! `adb -s SERIAL <command>`: the per-device half of the binding.
 
 use std::process::Stdio;
+use std::time::Duration;
 
 use anyhow::{Context, bail};
 use tokio::process::Command;
@@ -32,6 +33,11 @@ impl AdbDevice {
         Ok(self.run_with_stdin(args, None).await?.0)
     }
 
+    /// [`Self::run`] for a command that may take longer than adb's usual timeout.
+    pub(super) async fn run_for(&self, args: &[&str], timeout: Duration) -> Result<String> {
+        Ok(self.exec(args, None, timeout).await?.0)
+    }
+
     /// `adb -s SERIAL shell <args>` with optional bytes on stdin. Returns
     /// `(stdout, stderr)`: many shell tools exit 0 and print their errors.
     pub(super) async fn shell(
@@ -44,10 +50,40 @@ impl AdbDevice {
         self.run_with_stdin(&full, stdin).await
     }
 
+    /// [`Self::shell`] for a command that may take longer than adb's usual timeout.
+    pub(super) async fn shell_for(
+        &self,
+        args: &[&str],
+        timeout: Duration,
+    ) -> Result<(String, String)> {
+        self.shell_with(args, None, timeout).await
+    }
+
+    /// [`Self::shell`] with bytes on stdin and its own timeout.
+    pub(super) async fn shell_with(
+        &self,
+        args: &[&str],
+        stdin: Option<&[u8]>,
+        timeout: Duration,
+    ) -> Result<(String, String)> {
+        let mut full = vec!["shell"];
+        full.extend_from_slice(args);
+        self.exec(&full, stdin, timeout).await
+    }
+
     async fn run_with_stdin(
         &self,
         args: &[&str],
         stdin: Option<&[u8]>,
+    ) -> Result<(String, String)> {
+        self.exec(args, stdin, self.adb.timeout).await
+    }
+
+    async fn exec(
+        &self,
+        args: &[&str],
+        stdin: Option<&[u8]>,
+        timeout: Duration,
     ) -> Result<(String, String)> {
         let mut cmd = Command::new(&self.adb.binary);
         cmd.arg("-s")
@@ -88,11 +124,11 @@ impl AdbDevice {
             }
             Ok::<_, anyhow::Error>((stdout, stderr))
         };
-        match tokio::time::timeout(self.adb.timeout, fut).await {
+        match tokio::time::timeout(timeout, fut).await {
             Ok(r) => r.fault(Kind::Adb),
             Err(_) => Err(Fault::msg(
                 Kind::Adb,
-                format!("{desc} timed out after {:?}", self.adb.timeout),
+                format!("{desc} timed out after {timeout:?}"),
             )),
         }
     }

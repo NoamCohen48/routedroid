@@ -10,9 +10,13 @@ use std::time::Duration;
 use routedroid_ipc::{ConnectionInfo, ConnectionState, NetworkInfo, Outcome, Traffic};
 use tokio::sync::watch;
 
+mod app;
+mod away;
 mod drive;
 mod end;
+mod resume;
 mod run;
+mod screen;
 mod sink;
 
 use super::connections::DeviceConnections;
@@ -81,6 +85,13 @@ impl DeviceConnection {
         &self.spec
     }
 
+    /// The phone's address: requested, or leased once the helper has one.
+    pub fn phone_ip(&self) -> Option<std::net::Ipv4Addr> {
+        self.spec
+            .phone_ip
+            .or_else(|| self.network.borrow().as_ref().map(|n| n.phone_ip))
+    }
+
     pub fn state(&self) -> ConnectionState {
         self.state.borrow().clone()
     }
@@ -93,6 +104,7 @@ impl DeviceConnection {
         let spec = &self.spec;
         ConnectionInfo {
             serial: spec.serial.clone(),
+            name: None,
             lan_if: spec.lan_if.to_string(),
             tun: spec.tun.to_string(),
             mtu: spec.mtu,

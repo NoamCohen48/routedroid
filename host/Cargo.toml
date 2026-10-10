@@ -7,6 +7,7 @@ members = [
     "routedroid-tui",
     "routedroid-proto",
     "routedroid-helper-ipc",
+    "routedroid-dhcp",
     "routedroid-helper",
 ]
 # cargo fuzz targets: nightly-only, built on their own.
@@ -22,12 +23,15 @@ publish = false
 
 # Every external and internal dependency, versioned once; crates add features.
 [workspace.dependencies]
+routedroid-dhcp = { path = "routedroid-dhcp", default-features = false }
 routedroid-helper-ipc = { path = "routedroid-helper-ipc" }
 routedroid-ipc = { path = "routedroid-ipc" }
 routedroid-proto = { path = "routedroid-proto" }
 anyhow = "1"
 chrono = { version = "0.4", default-features = false }
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+clap_mangen = "0.2"
 crossterm = "0.29"
 futures-util = { version = "0.3", default-features = false }
 getrandom = { version = "0.3", features = ["std"] }
@@ -48,6 +52,7 @@ subtle = "2"
 thiserror = "2"
 tokio = { version = "1", default-features = false }
 tokio-util = "0.7"
+zbus = { version = "5", default-features = false }
 toml = { version = "0.9", default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

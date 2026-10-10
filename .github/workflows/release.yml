@@ -1,0 +1,151 @@
+# A tag vX.Y.Z (matching [workspace.package] version in host/Cargo.toml)
+# publishes a GitHub release once CI passes on it:
+#
+#   - the signed app (APK), which routedroidd also carries and installs on
+#     phones that lack it or have an older one;
+#   - the host's .deb and .rpm, and a tarball (binaries plus install.sh) for
+#     other systemd distributions;
+#   - SHA256SUMS.
+#
+# It then runs docs.yml, which rebuilds the site's apt repository and
+# downloads from the releases.
+#
+# Signing needs the ROUTEDROID_SIGNING_* secrets (android/release-key.sh makes
+# a key and sets them): phones refuse unsigned APKs, so without them there is
+# no release. Run it by hand (workflow_dispatch) to build everything without
+# releasing.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        name: The tag is the product version
+        run: |
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' host/Cargo.toml)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME, but host/Cargo.toml says $version"; exit 1
+          fi
+
+  android:
+    needs: version
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Signing key
+        env:
+          KEYSTORE: ${{ secrets.ROUTEDROID_SIGNING_KEYSTORE }}
+        run: |
+          if [ -z "$KEYSTORE" ]; then
+            echo "::error::no ROUTEDROID_SIGNING_KEYSTORE secret: run android/release-key.sh once"; exit 1
+          fi
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "ROUTEDROID_SIGNING_STORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+      - run: ./gradlew --no-daemon :app:assembleRelease
+        env:
+          ROUTEDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ROUTEDROID_SIGNING_STORE_PASSWORD }}
+          ROUTEDROID_SIGNING_KEY_ALIAS: ${{ secrets.ROUTEDROID_SIGNING_KEY_ALIAS }}
+          ROUTEDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ROUTEDROID_SIGNING_KEY_PASSWORD }}
+      - run: mkdir -p out && cp app/build/outputs/apk/release/app-release.apk "out/routedroid-${{ needs.version.outputs.version }}.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: android/out/*.apk
+
+  host:
+    needs: [version, android]
+    # The oldest supported build host: packages require the newest glibc the
+    # binaries link against, so this sets the floor (2.35).
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android
+          path: app
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host
+      - run: host/packaging/build.sh
+        env:
+          ROUTEDROID_APK: app/routedroid-${{ needs.version.outputs.version }}.apk
+      - run: integration-tests/packages/containers.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: host
+          path: host/target/packages/*
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [ci, version, host, android]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+      - run: cd dist && sha256sum -- * > SHA256SUMS
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cd dist
+          deb=$(ls -- *.deb) rpm=$(ls -- *.rpm) tarball=$(ls -- *.tar.gz)
+          cat > notes.md <<EOF
+          ## Install
+
+          On the PC (the daemon installs the app on the phone when it connects):
+
+          | | |
+          |---|---|
+          | Debian, Ubuntu | \`sudo apt install ./$deb\` |
+          | Fedora | \`sudo dnf install ./$rpm\` |
+          | Other systemd distributions (glibc 2.35+, with nftables and adb) | \`tar -xzf $tarball && sudo ./${tarball%.tar.gz}/install.sh\` |
+
+          Debian and Ubuntu can also take it, and later updates, from the apt repository:
+          see [Install](https://noamcohen48.github.io/routedroid/install.html).
+
+          Then \`sudo routedroid setup\` (from the tarball: \`sudo /usr/local/bin/routedroid setup\`).
+          It asks which interface phones join through and says what is left, usually
+          just \`routedroid start\`. The README has the rest.
+
+          The APK is here too, for installing the app by hand (\`adb install routedroid-$VERSION.apk\`).
+          Check downloads with \`sha256sum -c SHA256SUMS --ignore-missing\`.
+          EOF
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "Routedroid $VERSION" --notes-file notes.md --generate-notes \
+            "$deb" "$rpm" "$tarball" ./*.apk SHA256SUMS
+      # A release made with this token starts no workflow by itself; a
+      # dispatch does. The site then carries the apt repository and downloads.
+      - name: Publish the apt repository and downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run docs.yml --repo "$GITHUB_REPOSITORY" --ref main

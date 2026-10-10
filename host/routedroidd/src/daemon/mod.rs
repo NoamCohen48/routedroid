@@ -6,41 +6,69 @@
 //! - [`AttachedDevices`]: what adb reports, kept current.
 //! - [`DeviceConnections`]: the phones we have put on the LAN.
 //! - [`EventBus`]: what clients are told about either.
+//!
+//! Remembered phones ([`Phones`]) are connected as they are plugged in.
 
+mod auto;
 mod background;
 mod connection;
 mod connections;
 mod devices;
+pub mod doctor;
 mod events;
+mod phones;
 mod spec;
 #[cfg(test)]
 mod tests;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::adb::Adb;
+use crate::app::BundledApp;
 pub use connection::DeviceConnection;
 pub use connections::DeviceConnections;
 pub use devices::{AttachedDevices, Snapshot};
 pub use events::EventBus;
+pub use phones::{Phones, default_path as default_phones_path};
 
 #[derive(Clone)]
 pub struct Daemon {
     devices: AttachedDevices,
     connections: DeviceConnections,
     events: EventBus,
+    _auto: Arc<background::Background>,
+    notifications: crate::notify::Setting,
+    _notify: Option<Arc<background::Background>>,
 }
 
 impl Daemon {
-    pub async fn start(adb: Adb, helper_socket: PathBuf) -> Self {
+    pub async fn start(
+        adb: Adb,
+        helper_socket: PathBuf,
+        app: Option<BundledApp>,
+        phones: Phones,
+        notifications: crate::notify::Setting,
+    ) -> Self {
         let devices = AttachedDevices::start(adb.clone()).await;
         let events = EventBus::new();
         let connections =
-            DeviceConnections::new(adb, helper_socket, events.clone(), devices.clone());
+            DeviceConnections::new(adb, helper_socket, events.clone(), devices.clone())
+                .with_app(app)
+                .with_phones(phones);
+        let auto = background::Background::spawn(auto::run(connections.clone(), devices.changes()));
+        let notify = notifications.allowed().then(|| {
+            let phones = connections.phones().clone();
+            let run = crate::notify::run(events.subscribe(), phones, notifications.clone());
+            background::Background::spawn(run)
+        });
         Self {
             devices,
             connections,
             events,
+            notifications,
+            _auto: Arc::new(auto),
+            _notify: notify.map(Arc::new),
         }
     }
 
@@ -50,6 +78,10 @@ impl Daemon {
 
     pub fn connections(&self) -> DeviceConnections {
         self.connections.clone()
+    }
+
+    pub fn notifications(&self) -> crate::notify::Setting {
+        self.notifications.clone()
     }
 
     pub fn events(&self) -> EventBus {

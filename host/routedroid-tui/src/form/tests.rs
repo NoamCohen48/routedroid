@@ -11,6 +11,7 @@ fn interface(name: &str, default_route: bool, ineligible: Option<&str>) -> Inter
         addresses: vec![],
         default_route,
         phone_addresses: vec![],
+        dhcp: false,
         ineligible: ineligible.map(Into::into),
     }
 }
@@ -70,12 +71,12 @@ fn empty_fields_leave_the_defaults_to_the_daemon() {
     let mut form = form();
     form.lan_if = LineInput::new(" eth0 ");
     let request = form.to_request().unwrap();
-    assert_eq!(request.lan_if, "eth0");
+    assert_eq!(request.lan_if.as_deref(), Some("eth0"));
     assert_eq!(
         (request.phone_ip, request.mtu, request.tun),
         (None, None, None)
     );
-    assert_eq!(request.dns, DnsChoice::Auto);
+    assert_eq!(request.dns, None);
     assert_eq!(request.connect_timeout_secs, None);
 }
 
@@ -87,24 +88,29 @@ fn filled_fields_become_the_request() {
     form.dns = LineInput::new("1.1.1.1, 8.8.8.8");
     form.mtu = LineInput::new("1280");
     form.timeout = LineInput::new("2m");
+    form.reconnect_wait = LineInput::new("5m");
     form.allow_network_adb = true;
     let request = form.to_request().unwrap();
     assert_eq!(request.phone_ip.unwrap().to_string(), "10.0.0.5");
-    assert!(matches!(request.dns, DnsChoice::Servers(servers) if servers.len() == 2));
+    assert!(matches!(request.dns, Some(DnsChoice::Servers(servers)) if servers.len() == 2));
     assert_eq!(
         (request.mtu, request.connect_timeout_secs),
         (Some(1280), Some(120))
     );
+    assert_eq!(request.reconnect_secs, Some(300));
     assert!(request.allow_network_adb);
     form.dns = LineInput::new("none");
-    assert_eq!(form.to_request().unwrap().dns, DnsChoice::None);
+    assert_eq!(form.to_request().unwrap().dns, Some(DnsChoice::None));
 }
 
 #[test]
 fn invalid_fields_are_named_in_the_error() {
     let mut form = form();
     let error = |form: &StartForm| form.to_request().unwrap_err().to_string();
-    assert!(error(&form).contains("LAN interface"));
+    assert!(
+        form.to_request().unwrap().lan_if.is_none(),
+        "empty: the one allowed"
+    );
     form.lan_if = LineInput::new("eth0");
     form.phone_ip = LineInput::new("nope");
     assert!(error(&form).contains("phone IP"));
@@ -114,6 +120,9 @@ fn invalid_fields_are_named_in_the_error() {
     form.dns = LineInput::default();
     form.timeout = LineInput::new("soon");
     assert!(error(&form).contains("timeout"));
+    form.timeout = LineInput::default();
+    form.reconnect_wait = LineInput::new("later");
+    assert!(error(&form).contains("reconnect wait"));
 }
 
 #[test]

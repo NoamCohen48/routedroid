@@ -1,12 +1,14 @@
-# fmt, lints, tests and the no-root namespace rigs for the host; unit tests,
-# lint and a debug build for the app. The emulator rigs need a device and
-# run by hand (integration-tests/emulator/README.md).
+# fmt, lints, tests and the no-root namespace rigs for the host; the .deb and
+# .rpm in containers; unit tests, lint and a debug build for the app. The
+# emulator rigs run in e2e.yml; the VM lab needs a real phone and runs by
+# hand (integration-tests/vm/README.md).
 name: ci
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_call: # the release runs it first
 
 permissions:
   contents: read
@@ -30,15 +32,32 @@ jobs:
           workspaces: host
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo clippy -p routedroid-helper --features testing --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
-      - name: Namespace rigs (helper)
+      - name: Namespace rigs (helper, DHCP)
         run: |
           # Ubuntu confines unprivileged user namespaces; the rigs need them.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          sudo apt-get update -q && sudo apt-get install -yq nftables socat
+          sudo apt-get update -q && sudo apt-get install -yq nftables dnsmasq socat
           cargo build --release --locked -p routedroid-helper --features testing
+          cargo build --release --locked -p routedroid-dhcp
           ../integration-tests/helper/kill-matrix.sh userns
           ../integration-tests/helper/multi-session.sh
+          ../integration-tests/helper/dhcp-session.sh
+          ../integration-tests/dhcp/netns-dhcp.sh
+
+  packages:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host
+      # Install, upgrade and remove in Debian, Ubuntu and Fedora containers.
+      - run: host/packaging/build.sh
+      - run: integration-tests/packages/containers.sh
+      # The apt repository built from them, installed from with signed-by.
+      - run: integration-tests/packages/apt-repo.sh
 
   scripts:
     runs-on: ubuntu-24.04
@@ -52,7 +71,7 @@ jobs:
       - name: The emulator rig's protocol builders match the fixtures
         run: python3 -c 'import importlib.util as u; s = u.spec_from_file_location("h", "integration-tests/emulator/fake_host.py"); m = u.module_from_spec(s); s.loader.exec_module(m); m.self_test()'
       - name: shellcheck
-        run: shellcheck -x $(git ls-files '*.sh') integration-tests/lib.sh
+        run: git ls-files -z '*.sh' | xargs -0 shellcheck -x
 
   fuzz:
     runs-on: ubuntu-24.04
@@ -65,7 +84,7 @@ jobs:
       - run: cargo +nightly install cargo-fuzz --locked
       - name: One minute per target
         run: |
-          for target in frame bodies bootstrap; do
+          for target in frame bodies bootstrap dhcp; do
             cargo +nightly fuzz run "$target" -- -max_total_time=60
           done
 

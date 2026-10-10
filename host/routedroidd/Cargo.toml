@@ -16,14 +16,17 @@ routedroid-ipc.workspace = true
 routedroid-proto.workspace = true
 anyhow.workspace = true
 clap = { workspace = true, features = ["env"] }
+clap_mangen.workspace = true
 futures-util.workspace = true
 hex.workspace = true
 rustix = { workspace = true, features = ["fs", "process"] }
 serde.workspace = true
 serde_json.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "process", "time", "sync", "signal"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "process", "time", "sync", "signal", "fs"] }
+toml = { workspace = true, features = ["std", "parse", "display", "serde"] }
 tokio-util = { workspace = true, features = ["codec"] }
 tracing.workspace = true
+zbus = { workspace = true, features = ["tokio"] }
 tracing-subscriber = { workspace = true, features = ["json"] }
 
 [dev-dependencies]

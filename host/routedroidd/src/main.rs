@@ -6,12 +6,14 @@
 //! (`routedroid-ipc`).
 
 mod adb;
+mod app;
 mod app_listener;
 mod daemon;
 mod device;
 mod fault;
 mod host_network;
 mod logging;
+mod notify;
 mod server;
 mod session;
 
@@ -36,13 +38,30 @@ pub struct Args {
     /// Path to the adb binary.
     #[arg(long, env = "ROUTEDROID_ADB", default_value = "adb")]
     pub adb: String,
+    /// Where remembered phones are kept (`routedroid phones`); settings
+    /// (`routedroid notifications`) go in `settings.toml` beside it.
+    #[arg(long, env = "ROUTEDROID_PHONES", default_value_os_t = daemon::default_phones_path())]
+    pub phones: PathBuf,
+    /// Desktop notifications when a phone joins the LAN, goes away, waits
+    /// to be unlocked or is disconnected (`--notify false`: none, whatever
+    /// `routedroid notifications` says).
+    #[arg(long, env = "ROUTEDROID_NOTIFY", default_value_t = true, action = clap::ArgAction::Set)]
+    pub notify: bool,
     /// Privileged helper's socket.
     #[arg(long, default_value = host_network::DEFAULT_SOCKET)]
     pub helper_socket: PathBuf,
+    /// Print the man page (for packaging).
+    #[arg(long, hide = true)]
+    pub manpage: bool,
 }
 
 fn main() {
     let args = Args::parse();
+    if args.manpage {
+        use clap::CommandFactory;
+        let page = clap_mangen::Man::new(Args::command()).render(&mut std::io::stdout());
+        std::process::exit(i32::from(page.is_err()));
+    }
     if let Err(e) = logging::init(&args.log) {
         eprintln!("routedroidd: {e}");
         std::process::exit(2);

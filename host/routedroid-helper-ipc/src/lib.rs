@@ -5,20 +5,24 @@
 //! packets (`Datagram`).
 
 mod datagram;
+mod device;
+mod finding;
 mod ifname;
 mod interface;
 mod message;
 mod seqpacket;
 
 pub use datagram::{Datagram, DecodeError, MAX_DATAGRAM, MAX_PACKET};
+pub use device::{BadDeviceId, DeviceId};
+pub use finding::Finding;
 pub use ifname::{IfName, IfNameError};
 pub use interface::{Interface, Net};
-pub use message::{ErrorCode, Reply, Request};
+pub use message::{ErrorCode, Lease, Reply, Request};
 pub use seqpacket::{Activated, Activation, Listener, SeqPacket};
 
 /// Bumped on any incompatible change to [`Request`], [`Reply`] or the
 /// datagram layout. The helper refuses a controller that says otherwise.
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
 /// Every TUN the helper creates is named with this prefix; it refuses others.
 pub const TUN_PREFIX: &str = "phone";

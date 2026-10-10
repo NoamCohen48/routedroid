@@ -4,7 +4,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::Ipv4Addr;
 
-use crate::kernel::{Address, Firewall, Link, LinkKind, NftTable, Route};
+use routedroid_dhcp::Held;
+
+use crate::kernel::{Address, Firewall, ForwardDrop, Link, LinkKind, NftTable, Route, Rule};
 use crate::op::SysctlKey;
 
 #[derive(Default)]
@@ -13,9 +15,14 @@ pub struct State {
     pub addresses: Vec<Address>,
     pub neighbours: Vec<(u32, Ipv4Addr)>,
     pub routes: Vec<Route>,
+    pub rules: Vec<Rule>,
     pub tables: BTreeMap<String, (NftTable, Firewall)>,
+    /// The host firewall's forward chains that drop by default.
+    pub forward_drops: Vec<ForwardDrop>,
     /// Values of existing interfaces' keys; unset ones read as "0".
     pub sysctls: BTreeMap<SysctlKey, String>,
+    /// Every lease RELEASEd, in order.
+    pub released: Vec<Held>,
     /// Names of trait methods that fail until removed.
     pub failing: BTreeSet<&'static str>,
     next_index: u32,

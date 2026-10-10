@@ -11,11 +11,21 @@ controller.
   `routedroid` (`Start{lan_if, phone_ip, tun, mtu}`, `Stop`, `Ping`); the helper
   derives the host address/prefix itself and validates every name;
 - **operator policy** (`/etc/routedroid/helper.toml`, root-owned, not writable
-  by others; `--policy` overrides) names the LAN interfaces and phone address
-  blocks a controller may use; anything else, or an unreadable policy, is
-  `Refused` before the kernel is touched. Gateways, the host's own addresses,
-  known neighbours, already-routed addresses and the network/broadcast
-  address are refused too;
+  by others; `--policy` overrides) names the LAN interfaces, the phone
+  address blocks a controller may request there and whether it may lease
+  one (`dhcp = true`); anything else, or an unreadable policy, is `Refused`
+  before the kernel is touched or a packet sent. Gateways, the host's own
+  addresses, known neighbours, already-routed addresses and the
+  network/broadcast address are refused too, and so is an address that
+  answers an ARP probe (RFC 5227);
+- **DHCP leases** when `Start` has no `phone_ip`: the helper leases one on the
+  LAN interface with a client-id derived from the device (`routedroid:<id>:<mac>`,
+  stable per phone and host), declines offers that are in use or excluded,
+  journals the lease as the session's first op (so stop, undo and crash
+  cleanup all RELEASE it), and for the session announces the address, renews
+  the lease (`Reply::Lease` to the controller) and ends the session with
+  `SessionEnded` if another station claims the address or the lease is lost.
+  The session firewall keeps DHCP between the phone and the LAN apart;
 - **exclusive TUN ownership** with whole-packet relay to the controller over the
   same seqpacket connection (`[0x10][IPv4 packet]`);
 - **write-ahead journal** (`<state>/journal/<session>.journal`, state dir
@@ -30,6 +40,15 @@ controller.
   unresolved journal after *any* exit (including SIGKILL), and every `serve`
   does the same before it accepts; `routedroid-helper check` exits 1 while an
   orphaned or unreadable journal exists;
+- **doctor** (`Inspect`/`Repair` over the socket, `routedroid-helper doctor
+  [--repair]` as root, `routedroid doctor [--repair]` for everyone else):
+  orphaned or unreadable journals with the undo each still needs, objects
+  proven Routedroid's (a `routedroid:<session>` tag, protocol 82 in a phone's
+  egress table) that no journal accounts for, sysctl holders without a
+  journal, and the host's own forward chains with policy drop (which drop
+  phone traffic Routedroid's chain accepted). Without `--repair` it changes
+  nothing and names every change it would make; objects are listed before
+  journals are read, so a session starting meanwhile is never a leftover;
 - **controller death** closes the socket → the helper undoes everything and exits;
 - **shared sysctls are reference-counted** (`/var/lib/routedroid/sysctl/<key>.json`,
   updated under `flock`): the first session on a LAN interface records the
@@ -37,10 +56,18 @@ controller.
   the last one out restores the baseline — and only if the kernel still shows
   the value Routedroid wrote.
 
-Mutations per session, in order (deny-first): TUN, nftables table
+Mutations per session, in order (deny-first): the lease (if any), TUN, nftables table
 `inet routedroid_<tun>` (one table per session), `forwarding` on the TUN and LAN
-interface, `proxy_arp` on the LAN interface, `/32` route to the phone via the
-TUN. A phone address that is already routed anywhere on the host is refused.
+interface, `proxy_arp` on the LAN interface, the phone's egress, `/32` route
+to the phone via the TUN. A phone address that is already routed anywhere on
+the host is refused.
+
+The **egress** keeps the phone's traffic on its LAN whatever the host's own
+default route is: rule `from <phone>/32 lookup <phone as a number>` (priority
+1082, proto 82), and in that table the LAN's subnet, its gateway (the lease's
+router, else the LAN interface's own default route; with neither, the LAN
+only) and an `unreachable` default. `ip rule` and `ip route show table all`
+show it while a session runs.
 
 ## Run
 
@@ -58,7 +85,19 @@ with `--features testing` and are never installed:
 ```sh
 cargo build --release -p routedroid-helper --features testing
 host/target/release/routedroid-helper-client --lan-if eno1 --phone-ip 10.100.102.222 --bench 2000 --hold 5
+host/target/release/routedroid-helper-client --lan-if eno1 --hold 60   # leased
 ```
+
+## DHCP test
+
+`integration-tests/helper/dhcp-session.sh` (no root) runs the helper against
+dnsmasq in network namespaces: a leased start (address, lease, DNS,
+client-id), traffic, the renewal at T1 with its ACK kept from the phone
+(`RENEW=0` skips the 70 s wait), RELEASE on stop and after a helper crash, a
+station claiming the address ending the session (and the DECLINE), a requested
+address in use refused, DHCP off in the policy and no server refused; egress
+through the LAN's router while the host's default route is elsewhere, the LAN
+only without a gateway, and the LAN interface vanishing mid-session — 32 checks.
 
 ## Multi-session test
 
@@ -66,7 +105,8 @@ host/target/release/routedroid-helper-client --lan-if eno1 --phone-ip 10.100.102
 interface through one helper (`serve --socket` serves every connection, the
 stand-in for `Accept=yes` instances), a third one probing phone-to-phone
 traffic, duplicate TUN / address refusals, refcounted sysctl restore, and one
-client's SIGKILL leaving the other session intact — 28 checks.
+client's SIGKILL leaving the other session intact, and doctor finding and
+repairing what a deleted journal left behind — 41 checks.
 
 ## Kill tests
 
@@ -75,8 +115,8 @@ user namespace; cleanup is invoked the way `ExecStopPost` would). `sudo
 kill-matrix.sh systemd LAN_IF PHONE_IP` runs the same matrix against the real
 units; the installed policy must allow `LAN_IF` and `PHONE_IP`. Stages: client SIGKILL after start / mid-traffic / before stop /
 disconnect without Stop; helper SIGKILL at `pending`, `applied`, `done` of each
-of the six mutations, while `active`, and at `undo_pending`, `undo_applied`,
-`undone` of each — 231 checks. The systemd mode needs a helper built with
+of the seven mutations, while `active`, and at `undo_pending`, `undo_applied`,
+`undone` of each — 264 checks. The systemd mode needs a helper built with
 `--features testing` installed. The crash hook is a root-owned file
 (`/run/routedroid/crash-at`) the helper compares stage names against; it is
 deleted the moment it fires, so only one process dies per injected stage and the

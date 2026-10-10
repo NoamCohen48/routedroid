@@ -5,6 +5,7 @@ use routedroid_ipc::{ConnectionState, DeviceInfo, InterfaceInfo};
 
 use super::{handle, paste};
 use crate::app::{App, Level, Mode};
+use crate::form::Field;
 use crate::messages::{Command, Incoming};
 
 fn press(app: &mut App, code: KeyCode) -> Vec<Command> {
@@ -21,6 +22,8 @@ fn app_with(connection: Option<ConnectionState>) -> App {
     let mut app = App::new();
     let device = DeviceInfo {
         serial: "abc".into(),
+        name: None,
+        auto: false,
         state: "device".into(),
         model: None,
         unusable_reason: None,
@@ -60,12 +63,13 @@ fn start_form_submits_a_start_request() {
     type_text(&mut app, ".0");
     let commands = press(&mut app, KeyCode::Enter);
     match commands.as_slice() {
-        [Command::Start(request)] => {
+        [Command::Start { request, remember }] => {
             assert_eq!(
-                (request.serial.as_str(), request.lan_if.as_str()),
-                ("abc", "eth0")
+                (request.serial.as_deref(), request.lan_if.as_deref()),
+                (Some("abc"), Some("eth0"))
             );
             assert_eq!(request.phone_ip.unwrap().to_string(), "10.0.0.5");
+            assert_eq!(*remember, None, "nothing asked to remember it");
         }
         other => panic!("unexpected {other:?}"),
     }
@@ -81,6 +85,7 @@ fn the_interface_is_picked_with_the_arrows() {
         addresses: vec![],
         default_route: false,
         phone_addresses: vec![],
+        dhcp: false,
         ineligible: None,
     };
     app.apply(Incoming::Interfaces(vec![
@@ -117,6 +122,8 @@ fn paste_and_toggle_fill_the_form() {
 fn invalid_form_stays_open_and_logs_red() {
     let mut app = app_with(None);
     press(&mut app, KeyCode::Char('s'));
+    press(&mut app, KeyCode::Tab);
+    type_text(&mut app, "nope");
     assert!(press(&mut app, KeyCode::Enter).is_empty());
     assert!(matches!(app.mode, Mode::StartForm(_)));
     assert_eq!(app.log.last().unwrap().level, Level::Error);
@@ -154,4 +161,31 @@ fn page_keys_scroll_the_log() {
     assert_eq!(app.log.scroll(), 10);
     press(&mut app, KeyCode::End);
     assert_eq!(app.log.scroll(), 0);
+}
+
+#[test]
+fn a_name_in_the_form_remembers_the_phone() {
+    let mut app = app_with(None);
+    press(&mut app, KeyCode::Char('s'));
+    while !matches!(&app.mode, Mode::StartForm(form) if form.focused == Field::Name) {
+        press(&mut app, KeyCode::Tab);
+    }
+    type_text(&mut app, "pixel");
+    press(&mut app, KeyCode::Tab);
+    press(&mut app, KeyCode::Char(' '));
+    match press(&mut app, KeyCode::Enter).as_slice() {
+        [
+            Command::Start {
+                remember: Some(phone),
+                ..
+            },
+        ] => {
+            assert_eq!(
+                (phone.serial.as_str(), phone.name.as_deref()),
+                ("abc", Some("pixel"))
+            );
+            assert!(phone.auto, "the box was ticked");
+        }
+        other => panic!("unexpected {other:?}"),
+    }
 }

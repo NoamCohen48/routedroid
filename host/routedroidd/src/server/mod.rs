@@ -15,7 +15,9 @@ use tracing::{info, warn};
 use self::client::{ClientConnection, Handles};
 use crate::Args;
 use crate::adb::{Adb, DEFAULT_TIMEOUT};
-use crate::daemon::Daemon;
+use crate::app::BundledApp;
+use crate::daemon::{Daemon, Phones};
+use crate::notify::Setting;
 
 /// The control socket and the daemon behind it: owns both for the process's
 /// life and takes both down together.
@@ -28,12 +30,17 @@ pub struct Server {
 impl Server {
     pub async fn bind(args: Args) -> Result<Self> {
         let bound = bind::listen(&args.socket)?;
+        let app = BundledApp::embedded();
         let daemon = Daemon::start(
             Adb::new(&args.adb, DEFAULT_TIMEOUT),
             args.helper_socket.clone(),
+            app,
+            Phones::load(args.phones.clone()),
+            Setting::load(args.phones.with_file_name("settings.toml"), args.notify),
         )
         .await;
-        info!(socket = %args.socket.display(), "routedroidd ready");
+        let app = app.map_or_else(|| "none".to_string(), |app| app.version());
+        info!(socket = %args.socket.display(), %app, "routedroidd ready");
         Ok(Self {
             bound,
             path: args.socket,
@@ -78,6 +85,7 @@ impl Server {
         let handles = Handles {
             devices: self.daemon.devices(),
             connections: self.daemon.connections(),
+            notifications: self.daemon.notifications(),
         };
         let client = ClientConnection::new(handles, self.daemon.events(), stream);
         tokio::spawn(client.run());

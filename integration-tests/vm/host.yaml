@@ -1,0 +1,14 @@
+#cloud-config
+# The PC Routedroid runs on: real root, real systemd, the phone on USB.
+hostname: host
+users:
+  - name: dev
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    groups: [plugdev]
+    ssh_authorized_keys: [@KEY@]
+package_update: true
+packages: [adb, android-sdk-platform-tools-common, nftables, tcpdump, curl, iperf3, netcat-openbsd, rsync]
+runcmd:
+  - systemctl enable --now nftables
+  - loginctl enable-linger dev

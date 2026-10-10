@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use clap::Parser;
-use routedroid_helper_ipc::{DEFAULT_SOCKET, IfName};
+use routedroid_helper_ipc::{DEFAULT_SOCKET, DeviceId, IfName};
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
@@ -23,8 +23,12 @@ struct Cli {
     socket: PathBuf,
     #[arg(long)]
     lan_if: IfName,
+    /// The phone's address; leased from the LAN's DHCP server when absent.
     #[arg(long)]
-    phone_ip: Ipv4Addr,
+    phone_ip: Option<Ipv4Addr>,
+    /// The phone's serial, which its DHCP identity is derived from.
+    #[arg(long, default_value = "rig")]
+    serial: String,
     #[arg(long, default_value = "phone0")]
     tun: IfName,
     #[arg(long, default_value_t = 1400)]
@@ -55,6 +59,7 @@ fn main() -> Result<()> {
     let args = run::ClientArgs {
         lan_if: cli.lan_if,
         phone_ip: cli.phone_ip,
+        device: DeviceId::from_serial(&cli.serial),
         tun: cli.tun,
         mtu: cli.mtu,
         hold: Duration::from_secs(cli.hold),

@@ -1,6 +1,7 @@
 //! A stand-in privileged helper on a real SOCK_SEQPACKET socket: it answers
 //! the handshake, grants or refuses `Start`, echoes every packet back (as if
-//! the LAN answered), and acknowledges `Stop`.
+//! the LAN answered), and acknowledges `Stop`. Without a requested address
+//! it "leases" `LEASED_IP`; `kick` then renews once and ends the session.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,6 +10,9 @@ use std::sync::{Arc, Mutex};
 use routedroid_helper_ipc::{
     Datagram, ErrorCode, Listener, MAX_DATAGRAM, Reply, Request, SeqPacket, VERSION,
 };
+use tokio::sync::Notify;
+
+use super::fake_replies::{ENDED, LEASED_IP, interfaces, lease, leftover};
 
 pub const HOST_IP: [u8; 4] = [10, 0, 0, 1];
 
@@ -18,6 +22,8 @@ pub struct FakeHelper {
     /// Every control request, in arrival order.
     pub seen: Arc<Mutex<Vec<Request>>>,
     pub refuse: Arc<AtomicBool>,
+    /// Renew the started session's lease (to expire at 2000), then end it.
+    pub kick: Arc<Notify>,
 }
 
 impl FakeHelper {
@@ -28,6 +34,7 @@ impl FakeHelper {
             socket,
             seen: Arc::default(),
             refuse: Arc::default(),
+            kick: Arc::default(),
         };
         let serving = helper.clone();
         tokio::spawn(async move {
@@ -45,7 +52,20 @@ impl FakeHelper {
 
     async fn serve(self, conn: SeqPacket) {
         let mut buf = vec![0u8; MAX_DATAGRAM];
-        while let Ok(Some(datagram)) = conn.recv(&mut buf).await {
+        let mut started = false;
+        loop {
+            let datagram = tokio::select! {
+                received = conn.recv(&mut buf) => match received {
+                    Ok(Some(datagram)) => datagram,
+                    _ => return,
+                },
+                () = self.kick.notified(), if started => {
+                    let _ = conn.send_control(&Reply::Lease { lease: lease(2000) }).await;
+                    let ended = Reply::Error { code: ErrorCode::SessionEnded, message: ENDED.into() };
+                    let _ = conn.send_control(&ended).await;
+                    return;
+                }
+            };
             let request = match Datagram::<Request>::decode(datagram) {
                 Ok(Datagram::Packet(packet)) => {
                     let _ = conn.send_packet(packet).await;
@@ -64,18 +84,42 @@ impl FakeHelper {
                     },
                     true,
                 ),
-                Request::Start { tun, .. } => (
-                    Reply::Started {
+                Request::Start { tun, phone_ip, .. } => {
+                    started = true;
+                    let started = Reply::Started {
                         session: "fake".into(),
                         tun,
+                        phone_ip: phone_ip.unwrap_or(LEASED_IP.into()),
                         host_ip: HOST_IP.into(),
                         lan_prefix: 24,
+                        lease: phone_ip.is_none().then(|| lease(1000)),
+                    };
+                    (started, false)
+                }
+                Request::Stop => (Reply::Stopped, true),
+                Request::Ping => (Reply::Pong, false),
+                Request::Interfaces => (
+                    Reply::Interfaces {
+                        interfaces: interfaces(),
                     },
                     false,
                 ),
-                Request::Stop => (Reply::Stopped, true),
-                Request::Ping => (Reply::Pong, false),
-                Request::Interfaces => (Reply::Interfaces { interfaces: vec![] }, false),
+                Request::Inspect => (
+                    Reply::Health {
+                        findings: vec![leftover()],
+                    },
+                    false,
+                ),
+                Request::Repair => {
+                    let done = leftover().repair;
+                    (
+                        Reply::Repaired {
+                            done,
+                            remaining: vec![],
+                        },
+                        false,
+                    )
+                }
             };
             let _ = conn.send_control(&reply).await;
             if last {

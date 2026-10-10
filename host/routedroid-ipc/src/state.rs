@@ -11,15 +11,41 @@ pub enum ConnectionState {
     /// Helper session and reverse mapping being set up (and, without a
     /// static address, the DHCP lease being acquired).
     Starting,
-    /// App launched; waiting for it to dial in (consent dialog may be up).
-    WaitingForApp,
-    /// App connected; the HELLO/AUTH/CONFIGURE handshake is in progress.
-    Handshaking,
+    /// The phone lacks the app, or has an older one than the daemon
+    /// carries: it is being installed (before anything else is set up).
+    InstallingApp,
+    /// App launched; waiting for it to dial in.
+    WaitingForApp {
+        /// Set while the phone's screen keeps it from going on.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        screen: Option<Screen>,
+    },
+    /// App connected; the HELLO/AUTH/CONFIGURE handshake is in progress,
+    /// the VPN consent dialog included.
+    Handshaking {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        screen: Option<Screen>,
+    },
     Active,
+    /// The phone went away after being active (unplugged, or adb lost it).
+    /// Its host side, address and lease included, is held for up to
+    /// `wait_secs` while it comes back; then the connection resumes.
+    Reconnecting {
+        wait_secs: u64,
+    },
     Stopping,
     Ended {
         outcome: Outcome,
     },
+}
+
+/// A phone that needs a person before it can go on: the app does not start
+/// behind the lock screen, and the VPN dialog cannot be answered there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Screen {
+    Off,
+    Locked,
 }
 
 /// How a connection ended: on purpose, or because something failed.

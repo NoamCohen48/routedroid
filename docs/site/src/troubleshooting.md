@@ -1,0 +1,99 @@
+# Troubleshooting
+
+Start with:
+
+```sh
+routedroid doctor
+```
+
+It checks adb and its phones, the helper, the policy, the firewall, and what Routedroid
+left behind. A failing check says what to do, and doctor exits 1.
+
+## The daemon is unreachable (exit 3)
+
+```sh
+systemctl --user start routedroid
+journalctl --user -u routedroid
+```
+
+## The helper refused, or is unreachable
+
+Check that `routedroid-helper.socket` is active, and that you are in group `routedroid`
+(`sudo routedroid setup` adds you). `doctor` tells the two cases apart.
+
+The helper admits root and the group's members, as the group database has them when your
+daemon connects, so no logout is needed after joining. A helper socket from an older version
+refuses with "Permission denied" until it restarts:
+`sudo systemctl restart routedroid-helper.socket`.
+
+If your account comes from a directory (LDAP, Active Directory), the helper finds your groups
+only through a local service such as SSSD or nslcd. Its sandbox may not reach the network,
+so an NSS module that does that itself refuses everyone it knows.
+
+The helper logs to `journalctl -u 'routedroid-helper@*'`.
+
+## "not in the helper policy"
+
+The interface isn't allowed in `/etc/routedroid/helper.toml`. Run `sudo routedroid setup`, or
+see [The helper policy](policy.md). An address outside `phone_addresses` is refused the same
+way.
+
+## No lease
+
+The LAN has no DHCP server, or it doesn't answer this client. Use `--phone-ip` with an
+address from `phone_addresses`.
+
+## "is the Routedroid app installed?"
+
+This daemon carries no app (a source build). Install it with `adb install` and the APK.
+
+## "could not install the Routedroid app"
+
+The phone refused the daemon's app, and the reason follows the message.
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE` means another build of the app, signed with another
+key, is installed. Uninstall it with `adb uninstall dev.routedroid`.
+
+## Waiting for the app
+
+The app was launched but hasn't connected. Check that the app is installed.
+`--connect-timeout` gives it more time.
+
+## "the phone is locked: unlock it to continue"
+
+The app doesn't start behind the lock screen, and the VPN dialog can't be answered there, so
+the daemon checks the phone's screen while it waits. Unlock the phone, and the connection
+goes on by itself. If the phone's screen is off, wake it first.
+
+## Stuck at handshaking
+
+The phone is showing the VPN permission dialog. Unlock the phone and answer it. Without an
+answer within 2 minutes, the connection ends.
+
+## Connected, but the phone gets no traffic
+
+Look for a firewall warning in `routedroid doctor` (see [Firewalls](firewalls.md)). Also
+make sure the LAN isn't isolating clients, as some guest Wi-Fi networks do.
+
+## Watching packets
+
+```sh
+tcpdump -ni phone0                        # what the phone sends and receives
+tcpdump -ni eno1 host 192.168.1.57        # the same packets on the LAN
+ip rule; ip route show table all          # the phone's egress
+```
+
+The phone's own address appears on both, with no NAT.
+
+## After a crash or a power loss
+
+`routedroid doctor` lists what was left behind, and `routedroid doctor --repair` removes it.
+Repair touches only objects that carry Routedroid's tags. Usually there is nothing to do:
+the helper undoes a dead connection by itself.
+
+## Logs
+
+| What | Where |
+|---|---|
+| the daemon | `journalctl --user -u routedroid` |
+| the helper | `journalctl -u 'routedroid-helper@*'` |
+| the app | `adb logcat -s DeviceLink PacketPath BootstrapProvider` |

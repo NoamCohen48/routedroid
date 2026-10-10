@@ -5,6 +5,9 @@
 
 pass=0; fail=0
 
+# A daemon a rig starts here must not pop up on the desktop of whoever runs it.
+export ROUTEDROID_NOTIFY=false
+
 # check NAME CMD...: run CMD, count and print the outcome.
 check() {
     local name=$1; shift
@@ -52,5 +55,13 @@ in_ns() { "${NS[@]}" "$@"; }
 wait_for_socket() {
     local _
     for _ in $(seq 1 30); do [[ -S $1 ]] && return 0; sleep 0.1; done
+    return 1
+}
+
+# eventually CMD...: CMD succeeds within 3 s (teardown after a controller
+# leaves is asynchronous).
+eventually() {
+    local _
+    for _ in $(seq 1 30); do "$@" && return 0; sleep 0.1; done
     return 1
 }
